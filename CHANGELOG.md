@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-16
+
 ### Added
 - 장르/스타일 드롭다운에 "+ 직접 추가" 기능 (팝업 입력, localStorage 영속, x 버튼 삭제)
 - CHANGELOG.md 기반 릴리즈 노트 자동화 (GitHub Actions 연동)
