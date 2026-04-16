@@ -1,0 +1,170 @@
+# StyleStudio 릴리스 워크플로우
+# 버전 태그 푸시 시 macOS/Windows 빌드 및 GitHub Releases 업로드
+
+name: Release StyleStudio
+
+on:
+  push:
+    tags:
+      - 'v*'  # v1.0.0 형식의 태그에 반응
+
+jobs:
+  # 릴리스를 먼저 생성하여 병렬 빌드의 race condition 방지
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+    steps:
+      - name: Create or reuse release for tag
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          if ! gh release view "$TAG" --repo "$REPO" 2>/dev/null; then
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --title "StyleStudio ${TAG}" \
+              --notes "$(printf '%s\n' \
+                '## StyleStudio 업데이트' \
+                '' \
+                '새 버전이 출시되었습니다.' \
+                '' \
+                '### 설치 방법' \
+                '- **macOS**: `.dmg` 파일을 다운로드하여 Applications 폴더에 드래그' \
+                '- **Windows**: `.msi` 파일을 다운로드하여 실행' \
+                '' \
+                '_자동 생성된 릴리스입니다._')"
+          fi
+          RID=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.id')
+          echo "release_id=${RID}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS (Apple Silicon + Intel Universal)
+          - platform: macos-latest
+            args: --target universal-apple-darwin
+          # Windows
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install dependencies (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # .env 파일 생성 (OAuth 환경 변수)
+      - name: Create .env file
+        run: |
+          echo "VITE_GOOGLE_CLIENT_ID=${{ secrets.STYLESTUDIO_GOOGLE_CLIENT_ID }}" >> .env
+          echo "VITE_GOOGLE_CLIENT_SECRET=${{ secrets.STYLESTUDIO_GOOGLE_CLIENT_SECRET }}" >> .env
+          echo "VITE_ALLOWED_DOMAIN=${{ secrets.STYLESTUDIO_ALLOWED_DOMAIN }}" >> .env
+
+      # Base64로 인코딩된 키를 디코딩하여 환경 변수로 설정
+      - name: Decode signing key (macOS/Linux)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          echo "${{ secrets.STYLESTUDIO_SIGNING_KEY_BASE64 }}" | base64 --decode > /tmp/signing_key.txt
+          echo "TAURI_SIGNING_PRIVATE_KEY=$(cat /tmp/signing_key.txt)" >> $GITHUB_ENV
+
+      - name: Decode signing key (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $key = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.STYLESTUDIO_SIGNING_KEY_BASE64 }}"))
+          echo "TAURI_SIGNING_PRIVATE_KEY=$key" >> $env:GITHUB_ENV
+
+      - name: Build and Release (macOS without Apple signing)
+        if: matrix.platform == 'macos-latest'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.STYLESTUDIO_SIGNING_KEY_PASSWORD }}
+          # Apple 코드 서명 비활성화 (인증서 없음)
+          APPLE_SIGNING_IDENTITY: "-"
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ github.ref_name }}
+          retryAttempts: 5
+          args: ${{ matrix.args }}
+
+      - name: Build and Release (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.STYLESTUDIO_SIGNING_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ github.ref_name }}
+          retryAttempts: 5
+          args: ${{ matrix.args }}
+
+  # 롤링 릴리스 업데이트 (자동 업데이트용 고정 URL)
+  update-latest:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download latest.json from versioned release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 버전 릴리스에서 latest.json 다운로드
+          gh release download "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "latest.json" \
+            --dir ./artifacts
+
+      - name: Update rolling release (latest)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 기존 롤링 릴리스 삭제 (있으면)
+          gh release delete latest \
+            --repo "${{ github.repository }}" \
+            --yes || true
+
+          # 기존 태그 삭제 (있으면)
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/latest" || true
+
+          # 새 롤링 릴리스 생성
+          gh release create latest \
+            --repo "${{ github.repository }}" \
+            --title "StyleStudio Latest (Auto-Update)" \
+            --notes "자동 업데이트용 릴리스입니다. 직접 다운로드하지 마세요. 최신 버전: ${{ github.ref_name }}" \
+            --prerelease \
+            ./artifacts/latest.json
