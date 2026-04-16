@@ -8,6 +8,9 @@ on:
     tags:
       - 'v*'  # v1.0.0 형식의 태그에 반응
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # 릴리스를 먼저 생성하여 병렬 빌드의 race condition 방지
   create-release:
