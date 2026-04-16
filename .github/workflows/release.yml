@@ -59,30 +59,31 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGELOG_NOTES: ${{ steps.changelog.outputs.notes }}
         run: |
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
-          NOTES="${{ steps.changelog.outputs.notes }}"
 
-          RELEASE_BODY="$(printf '%s\n' \
-            "## StyleStudio ${TAG}" \
-            '' \
-            "${NOTES}" \
-            '' \
-            '### 설치 방법' \
-            '- **macOS**: `.dmg` 파일을 다운로드하여 Applications 폴더에 드래그' \
-            '- **Windows**: `.msi` 파일을 다운로드하여 실행')"
+          # 릴리즈 본문을 파일로 생성 (셸 해석 방지)
+          {
+            echo "## StyleStudio ${TAG}"
+            echo ""
+            echo "$CHANGELOG_NOTES"
+            echo ""
+            echo "### 설치 방법"
+            echo "- **macOS**: \`.dmg\` 파일을 다운로드하여 Applications 폴더에 드래그"
+            echo "- **Windows**: \`.msi\` 파일을 다운로드하여 실행"
+          } > release_body.md
 
           if ! gh release view "$TAG" --repo "$REPO" 2>/dev/null; then
             gh release create "$TAG" \
               --repo "$REPO" \
               --title "StyleStudio ${TAG}" \
-              --notes "$RELEASE_BODY"
+              --notes-file release_body.md
           else
-            # 이미 릴리스가 있으면 노트 업데이트
             gh release edit "$TAG" \
               --repo "$REPO" \
-              --notes "$RELEASE_BODY"
+              --notes-file release_body.md
           fi
           RID=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.id')
           echo "release_id=${RID}" >> "$GITHUB_OUTPUT"
