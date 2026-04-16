@@ -5,6 +5,25 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
 
+// localStorage 키
+const CUSTOM_GENRES_KEY = 'stylestudio-custom-genres';
+const CUSTOM_STYLES_KEY = 'stylestudio-custom-styles';
+
+// localStorage에서 커스텀 항목 로드
+function loadCustomItems(key: string): string[] {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+// localStorage에 커스텀 항목 저장
+function saveCustomItems(key: string, items: string[]) {
+  localStorage.setItem(key, JSON.stringify(items));
+}
+
 interface ConceptLeftPanelProps {
   referenceImage?: string;
   generatedImage?: string;
@@ -22,6 +41,79 @@ interface ConceptLeftPanelProps {
   }) => void;
 }
 
+/** 커스텀 항목 추가 팝업 */
+function CustomInputPopup({
+  title,
+  placeholder,
+  onSave,
+  onClose,
+}: {
+  title: string;
+  placeholder: string;
+  onSave: (value: string) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleSave = () => {
+    const trimmed = value.trim();
+    if (trimmed) {
+      onSave(trimmed);
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-80 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-3 border-b border-gray-200">
+          <h4 className="font-semibold text-gray-800">{title}</h4>
+        </div>
+        <div className="p-4 space-y-3">
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSave();
+              if (e.key === 'Escape') onClose();
+            }}
+            placeholder={placeholder}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!value.trim()}
+              className="px-4 py-2 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              저장
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 컨셉 세션 좌측 입력 패널 */
 export const ConceptLeftPanel = memo(({
   referenceImage,
@@ -34,12 +126,18 @@ export const ConceptLeftPanel = memo(({
   onGamePlayStyleDraftChange,
   onGameInfoChange,
 }: ConceptLeftPanelProps) => {
-  const [customGenre, setCustomGenre] = useState('');
-  const [customStyle, setCustomStyle] = useState('');
   const [referenceGameInput, setReferenceGameInput] = useState('');
   const [localReferenceGames, setLocalReferenceGames] = useState<string[]>(referenceGames || []);
   const [previewImage, setPreviewImage] = useState<{ src: string; title: string } | null>(null);
   const playStyleRef = useRef<HTMLTextAreaElement>(null);
+
+  // 커스텀 장르/스타일 (localStorage 기반)
+  const [customGenres, setCustomGenres] = useState<string[]>(() => loadCustomItems(CUSTOM_GENRES_KEY));
+  const [customStyles, setCustomStyles] = useState<string[]>(() => loadCustomItems(CUSTOM_STYLES_KEY));
+
+  // 팝업 상태
+  const [showGenrePopup, setShowGenrePopup] = useState(false);
+  const [showStylePopup, setShowStylePopup] = useState(false);
 
   // 세션 전환 시 게임 플레이 입력값 동기화
   useEffect(() => {
@@ -92,7 +190,7 @@ export const ConceptLeftPanel = memo(({
 
     setup();
     return () => { if (unlisten) unlisten(); };
-  }, []); // 의존성 배열을 비워서 한 번만 실행되도록 수정
+  }, []);
 
   // Tauri dialog를 사용한 파일 선택
   const handleFileSelect = useCallback(async () => {
@@ -146,6 +244,25 @@ export const ConceptLeftPanel = memo(({
     });
   }, [gameGenres, localReferenceGames, artStyles, onGameInfoChange]);
 
+  // 커스텀 장르 추가 (localStorage에 저장)
+  const handleAddCustomGenre = useCallback((genre: string) => {
+    if (!customGenres.includes(genre) && !GAME_GENRE_PRESETS.includes(genre as any)) {
+      const updated = [...customGenres, genre];
+      setCustomGenres(updated);
+      saveCustomItems(CUSTOM_GENRES_KEY, updated);
+    }
+    handleAddGenre(genre);
+  }, [customGenres, handleAddGenre]);
+
+  // 커스텀 장르 삭제 (localStorage에서 제거)
+  const handleRemoveCustomGenre = useCallback((genre: string) => {
+    const updated = customGenres.filter(g => g !== genre);
+    setCustomGenres(updated);
+    saveCustomItems(CUSTOM_GENRES_KEY, updated);
+    // 선택 목록에서도 제거
+    handleRemoveGenre(genre);
+  }, [customGenres, handleRemoveGenre]);
+
   // 스타일 추가
   const handleAddStyle = useCallback((style: string) => {
     if (style && !artStyles.includes(style)) {
@@ -167,6 +284,42 @@ export const ConceptLeftPanel = memo(({
       artStyles: artStyles.filter(s => s !== style),
     });
   }, [gameGenres, localReferenceGames, artStyles, onGameInfoChange]);
+
+  // 커스텀 스타일 추가 (localStorage에 저장)
+  const handleAddCustomStyle = useCallback((style: string) => {
+    if (!customStyles.includes(style) && !ART_STYLE_PRESETS.includes(style as any)) {
+      const updated = [...customStyles, style];
+      setCustomStyles(updated);
+      saveCustomItems(CUSTOM_STYLES_KEY, updated);
+    }
+    handleAddStyle(style);
+  }, [customStyles, handleAddStyle]);
+
+  // 커스텀 스타일 삭제 (localStorage에서 제거)
+  const handleRemoveCustomStyle = useCallback((style: string) => {
+    const updated = customStyles.filter(s => s !== style);
+    setCustomStyles(updated);
+    saveCustomItems(CUSTOM_STYLES_KEY, updated);
+    handleRemoveStyle(style);
+  }, [customStyles, handleRemoveStyle]);
+
+  // 장르 드롭다운 변경 핸들러
+  const handleGenreSelectChange = useCallback((value: string) => {
+    if (value === '__custom__') {
+      setShowGenrePopup(true);
+    } else if (value) {
+      handleAddGenre(value);
+    }
+  }, [handleAddGenre]);
+
+  // 스타일 드롭다운 변경 핸들러
+  const handleStyleSelectChange = useCallback((value: string) => {
+    if (value === '__custom__') {
+      setShowStylePopup(true);
+    } else if (value) {
+      handleAddStyle(value);
+    }
+  }, [handleAddStyle]);
 
   // 레퍼런스 게임 추가
   const handleAddReferenceGame = useCallback(() => {
@@ -291,47 +444,41 @@ export const ConceptLeftPanel = memo(({
               ))}
             </div>
 
-            {/* 프리셋 선택 */}
+            {/* 드롭다운: 프리셋 + 커스텀 + 직접 추가 */}
             <select
               onChange={(e) => {
-                if (e.target.value) {
-                  handleAddGenre(e.target.value);
-                  e.target.value = '';
-                }
+                handleGenreSelectChange(e.target.value);
+                e.target.value = '';
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-2"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
             >
               <option value="">장르 선택...</option>
               {GAME_GENRE_PRESETS.map(genre => (
                 <option key={genre} value={genre}>{genre}</option>
               ))}
+              {customGenres.map(genre => (
+                <option key={`custom-${genre}`} value={genre}>{genre}</option>
+              ))}
+              <option value="__custom__">+ 장르 직접 추가</option>
             </select>
 
-            {/* 커스텀 입력 */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={customGenre}
-                onChange={(e) => setCustomGenre(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleAddGenre(customGenre);
-                    setCustomGenre('');
-                  }
-                }}
-                placeholder="직접 입력..."
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              <button
-                onClick={() => {
-                  handleAddGenre(customGenre);
-                  setCustomGenre('');
-                }}
-                className="px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
+            {/* 커스텀 장르 목록 (삭제 가능) */}
+            {customGenres.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {customGenres.map((genre) => (
+                  <div key={genre} className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded text-xs text-gray-600">
+                    <span>{genre}</span>
+                    <button
+                      onClick={() => handleRemoveCustomGenre(genre)}
+                      className="text-gray-400 hover:text-red-500 transition-colors"
+                      title="커스텀 장르 삭제"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 원하는 스타일 */}
@@ -361,47 +508,41 @@ export const ConceptLeftPanel = memo(({
               ))}
             </div>
 
-            {/* 프리셋 선택 */}
+            {/* 드롭다운: 프리셋 + 커스텀 + 직접 추가 */}
             <select
               onChange={(e) => {
-                if (e.target.value) {
-                  handleAddStyle(e.target.value);
-                  e.target.value = '';
-                }
+                handleStyleSelectChange(e.target.value);
+                e.target.value = '';
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-2"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
             >
               <option value="">스타일 선택...</option>
               {ART_STYLE_PRESETS.map(style => (
                 <option key={style} value={style}>{style}</option>
               ))}
+              {customStyles.map(style => (
+                <option key={`custom-${style}`} value={style}>{style}</option>
+              ))}
+              <option value="__custom__">+ 스타일 직접 추가</option>
             </select>
 
-            {/* 커스텀 입력 */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={customStyle}
-                onChange={(e) => setCustomStyle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleAddStyle(customStyle);
-                    setCustomStyle('');
-                  }
-                }}
-                placeholder="직접 입력..."
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              <button
-                onClick={() => {
-                  handleAddStyle(customStyle);
-                  setCustomStyle('');
-                }}
-                className="px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
+            {/* 커스텀 스타일 목록 (삭제 가능) */}
+            {customStyles.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {customStyles.map((style) => (
+                  <div key={style} className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded text-xs text-gray-600">
+                    <span>{style}</span>
+                    <button
+                      onClick={() => handleRemoveCustomStyle(style)}
+                      className="text-gray-400 hover:text-red-500 transition-colors"
+                      title="커스텀 스타일 삭제"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 게임 플레이 방식 */}
@@ -475,6 +616,7 @@ export const ConceptLeftPanel = memo(({
         </div>
       </div>
 
+      {/* 이미지 미리보기 모달 */}
       {previewImage && (
         <div
           className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
@@ -499,6 +641,26 @@ export const ConceptLeftPanel = memo(({
             />
           </div>
         </div>
+      )}
+
+      {/* 장르 직접 추가 팝업 */}
+      {showGenrePopup && (
+        <CustomInputPopup
+          title="장르를 입력하세요"
+          placeholder="새 장르명 입력..."
+          onSave={handleAddCustomGenre}
+          onClose={() => setShowGenrePopup(false)}
+        />
+      )}
+
+      {/* 스타일 직접 추가 팝업 */}
+      {showStylePopup && (
+        <CustomInputPopup
+          title="스타일을 입력하세요"
+          placeholder="새 스타일명 입력..."
+          onSave={handleAddCustomStyle}
+          onClose={() => setShowStylePopup(false)}
+        />
       )}
     </div>
   );

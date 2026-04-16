@@ -135,23 +135,22 @@ export function ConceptHistory({
             <p className="text-sm">아직 생성된 이미지가 없습니다</p>
           </div>
         ) : (
-          <div className="flex gap-3 p-3 h-full">
+          <div className="flex gap-[10px] px-[10px] py-[6px] h-full items-stretch">
             {history.map((entry) => (
               <div
                 key={entry.id}
-                className={`flex-shrink-0 w-48 rounded-lg border overflow-hidden transition-all cursor-pointer ${
+                className={`group flex-shrink-0 rounded-lg border overflow-hidden transition-all cursor-pointer h-full ${
                   selectedEntryId === entry.id
-                    ? 'bg-purple-50 border-purple-300 shadow-md'
-                    : 'bg-gray-50 border-gray-200 hover:shadow-md'
+                    ? 'border-purple-400 shadow-md ring-2 ring-purple-300'
+                    : 'border-gray-200 hover:shadow-md'
                 }`}
                 onClick={() => onSelect(entry)}
               >
-                {/* 이미지 */}
-                <div className="relative h-32 bg-gray-100">
+                <div className="relative h-full bg-gray-100">
                   <img
                     src={entry.imageBase64}
-                    alt={entry.prompt}
-                    className="w-full h-full object-cover"
+                    alt={entry.prompt || '생성 이미지'}
+                    className="h-full w-auto object-contain block"
                   />
 
                   {/* 그리드 표시 */}
@@ -162,8 +161,8 @@ export function ConceptHistory({
                     </div>
                   )}
 
-                  {/* 액션 버튼 */}
-                  <div className="absolute top-1 right-1 flex gap-1">
+                  {/* 액션 버튼 (호버 시 표시) */}
+                  <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -183,35 +182,6 @@ export function ConceptHistory({
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
-                </div>
-
-                {/* 정보 */}
-                <div className="p-2">
-                  <p className="text-xs text-gray-600 line-clamp-2 mb-1">
-                    {entry.prompt || '자동 생성'}
-                  </p>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <span>{entry.settings.ratio}</span>
-                    <span>•</span>
-                    <span className="uppercase">{entry.settings.size}</span>
-                  </div>
-                  {entry.gameInfo && entry.gameInfo.genres.length > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {entry.gameInfo.genres.slice(0, 2).map((genre, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-block px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded"
-                        >
-                          {genre}
-                        </span>
-                      ))}
-                      {entry.gameInfo.genres.length > 2 && (
-                        <span className="text-xs text-gray-500">
-                          +{entry.gameInfo.genres.length - 2}
-                        </span>
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
             ))}

@@ -209,6 +209,8 @@ function App() {
   // 자동 저장 Hook
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSessionsRef = useRef<Session[] | null>(null);
+  const sessionsRef = useRef(sessions);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
 
   const flushPendingSessions = useCallback(async () => {
     if (!pendingSessionsRef.current) return;
@@ -225,13 +227,16 @@ function App() {
 
   const handleSessionUpdate = useCallback(
     (session: Session) => {
-      const updatedSessions = currentSession
-        ? updateSessionInList(sessions, session.id, session)
-        : addSessionToList(sessions, session);
+      // ref 기반으로 최신 sessions를 참조하여 콜백 안정성 확보
+      // (sessions/currentSession 의존성 제거 → memo 컴포넌트 불필요 재렌더링 방지)
+      const currentSessions = sessionsRef.current;
+      const sessionExists = currentSessions.some(s => s.id === session.id);
+      const updatedSessions = sessionExists
+        ? updateSessionInList(currentSessions, session.id, session)
+        : addSessionToList(currentSessions, session);
 
-      // 입력 반응성을 유지하기 위해 상태 반영은 우선, 저장은 지연 처리
       startTransition(() => {
-        setCurrentSession(session);
+        setCurrentSession(prev => prev?.id === session.id ? session : prev);
         setSessions(updatedSessions);
       });
 
@@ -243,7 +248,24 @@ function App() {
         void flushPendingSessions();
       }, 1000);
     },
-    [currentSession, sessions, flushPendingSessions]
+    [flushPendingSessions]
+  );
+
+  // 경량 저장 전용 함수 (세션 전환 시 언마운트 cleanup용)
+  // React 상태를 업데이트하지 않고 디스크에만 저장하여 렉 방지
+  const handleSessionSaveOnly = useCallback(
+    (session: Session) => {
+      if (persistTimerRef.current) {
+        clearTimeout(persistTimerRef.current);
+      }
+      // React 상태 업데이트 없이 디스크에만 비동기 저장
+      const updatedSessions = updateSessionInList(sessionsRef.current, session.id, session);
+      pendingSessionsRef.current = updatedSessions;
+      persistTimerRef.current = setTimeout(() => {
+        void flushPendingSessions();
+      }, 100);
+    },
+    [flushPendingSessions]
   );
 
   useEffect(() => {
@@ -1088,6 +1110,7 @@ function App() {
             session={currentSession}
             apiKey={apiKey}
             onSessionUpdate={handleSessionUpdate}
+            onSessionSaveOnly={handleSessionSaveOnly}
           />
         ) : currentSession?.type === 'ILLUSTRATION' ? (
           // ILLUSTRATION 세션 전용 UI

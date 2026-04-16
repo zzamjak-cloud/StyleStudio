@@ -13,10 +13,11 @@ interface ConceptPanelProps {
   session: Session;
   apiKey: string;
   onSessionUpdate: (session: Session) => void;
+  onSessionSaveOnly?: (session: Session) => void;
 }
 
 /** 컨셉 세션 메인 패널 */
-export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate }: ConceptPanelProps) => {
+export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionSaveOnly }: ConceptPanelProps) => {
   // 컨셉 데이터 초기화
   const [conceptData, setConceptData] = useState<ConceptSessionData>(() => {
     return session.conceptData || {
@@ -74,9 +75,11 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate }: ConceptP
   // 세션 저장용 ref (이미지 생성, 히스토리 삭제, 언마운트 시에만 저장)
   const sessionRef = useRef(session);
   const onSessionUpdateRef = useRef(onSessionUpdate);
+  const onSessionSaveOnlyRef = useRef(onSessionSaveOnly);
   const conceptDataRef = useRef(conceptData);
   useEffect(() => { sessionRef.current = session; }, [session]);
   useEffect(() => { onSessionUpdateRef.current = onSessionUpdate; }, [onSessionUpdate]);
+  useEffect(() => { onSessionSaveOnlyRef.current = onSessionSaveOnly; }, [onSessionSaveOnly]);
   useEffect(() => { conceptDataRef.current = conceptData; }, [conceptData]);
 
   // 명시적 세션 저장 함수 (ref 기반으로 안정적인 참조)
@@ -88,10 +91,11 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate }: ConceptP
     });
   }, []);
 
-  // 언마운트 시 현재 상태 저장 (세션 전환 등으로 이탈 시 데이터 보존)
+  // 언마운트 시 경량 저장 (startTransition/setCurrentSession을 거치지 않아 딜레이 없음)
   useEffect(() => {
     return () => {
-      onSessionUpdateRef.current({
+      const saveFn = onSessionSaveOnlyRef.current || onSessionUpdateRef.current;
+      saveFn({
         ...sessionRef.current,
         conceptData: conceptDataRef.current,
         updatedAt: new Date().toISOString(),

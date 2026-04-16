@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, memo } from 'react';
-import { Sparkles, Loader2, Settings, AlertTriangle } from 'lucide-react';
+import { Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 import { ConceptSessionData } from '../../types/concept';
 
 interface ConceptRightPanelProps {
@@ -91,7 +91,7 @@ export const ConceptRightPanel = memo(({
       </div>
 
       {/* 컨텐츠 영역 */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {/* 프롬프트 입력 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -109,22 +109,6 @@ export const ConceptRightPanel = memo(({
           <p className="mt-1 text-xs text-gray-500">
             좌측의 게임 정보와 참조 이미지를 바탕으로 AI가 컨셉을 생성합니다
           </p>
-        </div>
-
-        {/* 모델 선택 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            모델 선택
-          </label>
-          <select
-            value={settings.model}
-            onChange={(e) => onSettingsChange({ ...settings, model: e.target.value as any })}
-            disabled={disabled}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-50"
-          >
-            <option value="nanobanana-pro">나노바나나 프로</option>
-            <option value="nanobanana-2">나노바나나 2</option>
-          </select>
         </div>
 
         {/* 생성 버튼 */}
@@ -153,24 +137,35 @@ export const ConceptRightPanel = memo(({
         )}
 
         {/* 구분선 */}
-        <div className="border-t border-gray-200 pt-4">
-          <div className="flex items-center gap-2 mb-4">
-            <Settings className="w-4 h-4 text-gray-600" />
-            <h4 className="text-sm font-medium text-gray-700">생성 설정</h4>
+        <div className="border-t border-gray-200 pt-4 space-y-4">
+          {/* 모델 선택 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              모델 선택
+            </label>
+            <select
+              value={settings.model}
+              onChange={(e) => onSettingsChange({ ...settings, model: e.target.value as any })}
+              disabled={disabled}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-50"
+            >
+              <option value="nanobanana-pro">나노바나나 프로</option>
+              <option value="nanobanana-2">나노바나나 2</option>
+            </select>
           </div>
 
           {/* 비율 선택 */}
-          <div className="mb-4">
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               이미지 비율
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-5 gap-1">
               {['1:1', '16:9', '9:16', '4:3', '3:4'].map((ratio) => (
                 <button
                   key={ratio}
                   onClick={() => onSettingsChange({ ...settings, ratio: ratio as any })}
                   disabled={disabled}
-                  className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                  className={`px-1 py-1.5 text-xs rounded-md border transition-colors ${
                     settings.ratio === ratio
                       ? 'bg-purple-500 text-white border-purple-500'
                       : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
@@ -183,17 +178,17 @@ export const ConceptRightPanel = memo(({
           </div>
 
           {/* 크기 선택 */}
-          <div className="mb-4">
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               이미지 크기
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-1">
               {['1k', '2k', '3k'].map((size) => (
                 <button
                   key={size}
                   onClick={() => handleSizeClick(size as '1k' | '2k' | '3k')}
                   disabled={disabled}
-                  className={`px-3 py-2 text-sm rounded-lg border transition-colors uppercase ${
+                  className={`px-1 py-1.5 text-xs rounded-md border transition-colors uppercase ${
                     settings.size === size
                       ? 'bg-purple-500 text-white border-purple-500'
                       : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
@@ -213,13 +208,13 @@ export const ConceptRightPanel = memo(({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               그리드 레이아웃
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-4 gap-1">
               {['1x1', '2x2', '3x3', '4x4'].map((grid) => (
                 <button
                   key={grid}
                   onClick={() => onSettingsChange({ ...settings, grid: grid as any })}
                   disabled={disabled}
-                  className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                  className={`px-1 py-1.5 text-xs rounded-md border transition-colors ${
                     settings.grid === grid
                       ? 'bg-purple-500 text-white border-purple-500'
                       : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
@@ -229,7 +224,7 @@ export const ConceptRightPanel = memo(({
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500">
               그리드로 여러 베리에이션을 한 번에 생성합니다
             </p>
           </div>

@@ -18,6 +18,43 @@ jobs:
     outputs:
       release_id: ${{ steps.release.outputs.release_id }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - name: Extract changelog for current version
+        id: changelog
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+
+          # CHANGELOG.md에서 현재 버전 섹션 추출
+          NOTES=""
+          if [ -f CHANGELOG.md ]; then
+            NOTES=$(awk -v ver="$VERSION" '
+              /^## \[/ {
+                if (found) exit
+                if (index($0, "[" ver "]")) found=1
+                next
+              }
+              found { print }
+            ' CHANGELOG.md)
+          fi
+
+          # CHANGELOG에 해당 버전 내용이 없으면 기본 메시지 사용
+          if [ -z "$NOTES" ]; then
+            NOTES="새 버전 ${TAG}이 출시되었습니다."
+          fi
+
+          # 멀티라인 출력을 GITHUB_OUTPUT에 저장
+          {
+            echo "notes<<CHANGELOG_EOF"
+            echo "$NOTES"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create or reuse release for tag
         id: release
         env:
@@ -25,20 +62,27 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
+          NOTES="${{ steps.changelog.outputs.notes }}"
+
+          RELEASE_BODY="$(printf '%s\n' \
+            "## StyleStudio ${TAG}" \
+            '' \
+            "${NOTES}" \
+            '' \
+            '### 설치 방법' \
+            '- **macOS**: `.dmg` 파일을 다운로드하여 Applications 폴더에 드래그' \
+            '- **Windows**: `.msi` 파일을 다운로드하여 실행')"
+
           if ! gh release view "$TAG" --repo "$REPO" 2>/dev/null; then
             gh release create "$TAG" \
               --repo "$REPO" \
               --title "StyleStudio ${TAG}" \
-              --notes "$(printf '%s\n' \
-                '## StyleStudio 업데이트' \
-                '' \
-                '새 버전이 출시되었습니다.' \
-                '' \
-                '### 설치 방법' \
-                '- **macOS**: `.dmg` 파일을 다운로드하여 Applications 폴더에 드래그' \
-                '- **Windows**: `.msi` 파일을 다운로드하여 실행' \
-                '' \
-                '_자동 생성된 릴리스입니다._')"
+              --notes "$RELEASE_BODY"
+          else
+            # 이미 릴리스가 있으면 노트 업데이트
+            gh release edit "$TAG" \
+              --repo "$REPO" \
+              --notes "$RELEASE_BODY"
           fi
           RID=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.id')
           echo "release_id=${RID}" >> "$GITHUB_OUTPUT"
