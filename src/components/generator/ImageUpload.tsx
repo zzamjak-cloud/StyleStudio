@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { Image as ImageIcon, FolderOpen, HelpCircle, X } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { logger } from '../../lib/logger';
+import { useImagePaste } from '../../hooks/useImagePaste';
 
 interface ImageUploadProps {
   onImageSelect: (imageData: string) => void;
@@ -84,6 +85,18 @@ export function ImageUpload({ onImageSelect }: ImageUploadProps) {
       img.src = dataUrl;
     });
   };
+
+  // 클립보드(Ctrl+V) 붙여넣기 지원 — Tauri 드래그 플로우와 동일하게 투명 배경 흰색 변환 후 업로드
+  const handlePastedImage = useCallback(async (dataUrl: string) => {
+    try {
+      const converted = await convertTransparentToWhite(dataUrl);
+      onImageSelectRef.current(converted);
+    } catch (error) {
+      logger.error('❌ 클립보드 이미지 변환 실패:', error);
+      onImageSelectRef.current(dataUrl);
+    }
+  }, []);
+  useImagePaste({ onPaste: handlePastedImage });
 
   // Tauri로 이미지 로드
   const loadTauriImage = async (filePath: string) => {

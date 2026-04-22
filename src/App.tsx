@@ -452,12 +452,16 @@ function App() {
     const isRefinementMode = currentSession && analysisResult && !isEmptySession;
 
     if (isRefinementMode) {
-      const hasNewImages = uploadedImages.length > currentSession.imageCount;
+      // 배열 길이만 비교하면 이미지 제거 후 동일 개수 교체가 "신규 없음"으로 오판되므로 내용 비교
+      const prev = currentSession.referenceImages ?? [];
+      const curr = uploadedImages;
+      const imagesChanged =
+        prev.length !== curr.length || !prev.every((img) => curr.includes(img));
 
-      if (!hasNewImages) {
+      if (!imagesChanged) {
         setInfoDialog({
           title: '신규 이미지 필요',
-          message: '신규 이미지가 없습니다. 이미지를 추가한 후 다시 분석해주세요.'
+          message: '이미지가 변경되지 않았습니다. 새 이미지를 추가하거나 교체한 후 다시 시도해주세요.'
         });
         return;
       }
@@ -949,10 +953,29 @@ function App() {
   }, [currentSession, setInfoDialog]);
 
   const handleGenerateImage = async () => {
-    if (!analysisResult) {
+    if (uploadedImages.length === 0) {
       setInfoDialog({
-        title: '분석 결과 없음',
-        message: '분석 결과가 없습니다'
+        title: '분석 이미지 없음',
+        message: '등록된 분석 이미지가 없습니다. 이미지를 업로드한 후 다시 시도해주세요.'
+      });
+      return;
+    }
+    // 분석 결과가 없거나 모든 주요 필드가 비어 있는 "빈 analysis"인 경우도 미분석 상태로 간주
+    const isAnalysisEmpty =
+      !analysisResult ||
+      (
+        analysisResult.style.art_style === '' &&
+        analysisResult.style.technique === '' &&
+        analysisResult.character.gender === '' &&
+        analysisResult.character.age_group === '' &&
+        analysisResult.composition.pose === '' &&
+        analysisResult.composition.angle === '' &&
+        analysisResult.negative_prompt === ''
+      );
+    if (isAnalysisEmpty) {
+      setInfoDialog({
+        title: '분석 필요',
+        message: '아직 이미지 분석이 이루어지지 않았습니다. 먼저 이미지 분석을 진행해주세요.'
       });
       return;
     }

@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Added
+- 클립보드 이미지 붙여넣기(Ctrl+V) 지원 — 분석 패널(AnalysisPanel), 생성 참조 업로더(ImageUpload), 컨셉 참조 패널(ConceptLeftPanel)의 이미지 추가 지점에 공통 적용 (`src/hooks/useImagePaste.ts` 신규)
+
+### Fixed
+- 분석 이미지를 제거하고 동일 개수의 새 이미지를 넣었을 때 "신규 이미지가 없습니다" 팝업이 잘못 뜨던 버그 — 배열 길이 비교 대신 이미지 내용 비교로 수정
+- 이미지 분석이 이루어지지 않은 상태(빈 analysis 포함)에서 "이미지 생성" 버튼 클릭 시 화면이 넘어가던 문제 — `handleGenerateImage`에 이미지/분석 상태 가드 추가
+
+### Changed
+- "이미지 생성" 버튼 가드 메시지 분리 — 이미지 미등록/분석 미완료 상황별 안내 팝업 적용
+
 ## [0.4.2] - 2026-04-22
 
 ### Fixed

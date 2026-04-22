@@ -4,6 +4,7 @@ import { GAME_GENRE_PRESETS, ART_STYLE_PRESETS } from '../../types/concept';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
+import { useImagePaste } from '../../hooks/useImagePaste';
 
 // localStorage 키
 const CUSTOM_GENRES_KEY = 'stylestudio-custom-genres';
@@ -191,6 +192,13 @@ export const ConceptLeftPanel = memo(({
     setup();
     return () => { if (unlisten) unlisten(); };
   }, []);
+
+  // 클립보드(Ctrl+V) 붙여넣기 지원 — 드래그 드롭과 동일 경로로 이미지 전달
+  useImagePaste({
+    onPaste: (dataUrl) => {
+      imageChangeRef.current(dataUrl);
+    },
+  });
 
   // Tauri dialog를 사용한 파일 선택
   const handleFileSelect = useCallback(async () => {

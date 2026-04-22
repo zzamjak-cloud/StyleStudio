@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Sparkles, Save, Plus, Trash2, Wand2, HelpCircle, X } from 'lucide-react';
 import { ImageAnalysisResult } from '../../types/analysis';
 import { fileToBase64 } from '../../utils/fileUtils';
+import { useImagePaste } from '../../hooks/useImagePaste';
 import { StyleCard } from './StyleCard';
 import { CharacterCard } from './CharacterCard';
 import { CompositionCard } from './CompositionCard';
@@ -50,6 +51,18 @@ export function AnalysisPanel({
 }: AnalysisPanelProps) {
   const [deleteImageConfirm, setDeleteImageConfirm] = useState<number | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+
+  // 클립보드(Ctrl+V)에서 이미지 붙여넣기 지원
+  const handlePastedImage = useCallback(
+    (dataUrl: string) => {
+      onAddImage?.(dataUrl);
+    },
+    [onAddImage]
+  );
+  useImagePaste({
+    enabled: !!onAddImage && !!currentSession,
+    onPaste: handlePastedImage,
+  });
 
   // 배경 타입 체크
   const isBackgroundType = currentSession?.type === 'BACKGROUND' || currentSession?.type === 'PIXELART_BACKGROUND';
