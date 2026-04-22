@@ -850,6 +850,8 @@ function App() {
         settings: {
           aspectRatio: '1:1',
           imageModel: 'gemini-3-pro-image-preview',
+          imageSize: '1K',
+          pixelArtGrid: '1x1',
         },
       };
     }

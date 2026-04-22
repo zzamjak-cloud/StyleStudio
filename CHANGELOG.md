@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- 채팅 세션에서 이미지 비율(1:1/16:9/9:16/4:3/3:4) 선택이 실제 생성에 반영되지 않고 1:1로 고정되던 문제 — UI 설정이 `chatData.settings`로 동기화되지 않아 API 요청에 누락되었음
+- 이미지 크기 기본값(1K)이 세팅되지 않고, 선택한 크기가 생성 요청에 전달되지 않던 문제 — `imageConfig.imageSize` 필드 누락
+- 그리드 레이아웃(2x2/3x3/4x4) 선택이 생성에 전혀 반영되지 않던 문제 — 프롬프트 prefix로 결합하도록 수정
+- 스타일 프리셋이 생성 이미지에 반영되지 않던 문제 — 프롬프트 prefix로 결합 및 `ART_STYLE_PRESETS` 한글 키로 통일
+
+### Changed
+- 채팅 세션 이미지 크기 옵션을 Gemini API 호환 값(1K/2K/4K)으로 교정 (기존 `3K`는 API 미지원)
+- 채팅 세션 모델 옵션 라벨을 실제 모델 ID(`gemini-3-pro-image-preview`, `gemini-3.1-flash-image-preview`)와 매핑
+- 채팅 세션 AI 설정을 세션 데이터(`chatData.settings`)에 영속화하여 세션별로 유지
+
 ## [0.4.1] - 2026-04-16
 
 ### Added

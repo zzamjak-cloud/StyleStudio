@@ -23,8 +23,10 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
     messages,
     summary,
     needsSummarization,
+    settings,
     addMessage,
     deleteMessage,
+    updateSettings,
     markSummarized,
   } = useChatSession(session, onSessionUpdate);
 
@@ -32,14 +34,6 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
 
   // 이미지 미리보기 모달 상태
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-
-  // AI 설정 상태
-  const [aiSettings, setAISettings] = useState({
-    model: 'nanobanana-pro',
-    ratio: '1:1',
-    size: '2k',
-    grid: '1x1'
-  });
 
   // 메시지 스크롤 영역 ref
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -287,8 +281,8 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
 
       {/* 우측 AI 설정 패널 */}
       <ChatAISettings
-        settings={aiSettings}
-        onSettingsChange={setAISettings}
+        settings={settings}
+        onSettingsChange={updateSettings}
       />
 
       {/* 이미지 미리보기 모달 */}

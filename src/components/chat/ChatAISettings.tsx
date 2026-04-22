@@ -1,39 +1,44 @@
 import { useState } from 'react';
 import { Settings, Palette, AlertTriangle, ChevronDown } from 'lucide-react';
+import { ChatGenerationSettings } from '../../types/chat';
+import { ART_STYLE_PRESETS } from '../../types/concept';
+import { PixelArtGridLayout } from '../../types/pixelart';
+import { IMAGE_MODELS } from '../../hooks/api/useGeminiImageGenerator';
 
 interface ChatAISettingsProps {
-  settings: {
-    model: string;
-    ratio: string;
-    size: string;
-    grid: string;
-    stylePreset?: string;
-    customStyle?: string;
-  };
-  onSettingsChange: (settings: any) => void;
+  settings: ChatGenerationSettings;
+  onSettingsChange: (settings: Partial<ChatGenerationSettings>) => void;
 }
+
+type ImageSize = ChatGenerationSettings['imageSize'];
+type AspectRatio = ChatGenerationSettings['aspectRatio'];
 
 /** 채팅 세션 우측 AI 설정 패널 */
 export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsProps) {
-  // 비용 경고 팝업 상태
-  const [costWarning, setCostWarning] = useState<{ size: '2k' | '3k' } | null>(null);
+  // 비용 경고 팝업 상태 (2K 이상은 비용 증가 경고)
+  const [costWarning, setCostWarning] = useState<{ size: '2K' | '4K' } | null>(null);
 
-  // 이미지 크기 변경 핸들러 (비용 경고 포함)
-  const handleSizeClick = (size: '1k' | '2k' | '3k') => {
-    if (size === '2k' || size === '3k') {
+  // 이미지 크기 변경 핸들러 (1K는 바로 적용, 2K/4K는 경고 후 적용)
+  const handleSizeClick = (size: ImageSize) => {
+    if (size === '2K' || size === '4K') {
       setCostWarning({ size });
     } else {
-      onSettingsChange({ ...settings, size });
+      onSettingsChange({ imageSize: size });
     }
   };
 
   // 비용 경고 확인 후 크기 변경
   const confirmSizeChange = () => {
     if (costWarning) {
-      onSettingsChange({ ...settings, size: costWarning.size });
+      onSettingsChange({ imageSize: costWarning.size });
       setCostWarning(null);
     }
   };
+
+  const aspectRatios: AspectRatio[] = ['1:1', '16:9', '9:16', '4:3', '3:4'];
+  const imageSizes: ImageSize[] = ['1K', '2K', '4K'];
+  const gridLayouts: PixelArtGridLayout[] = ['1x1', '2x2', '3x3', '4x4'];
+
   return (
     <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
       {/* 헤더 */}
@@ -52,12 +57,17 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
             모델 선택
           </label>
           <select
-            value={settings.model || 'nanobanana-pro'}
-            onChange={(e) => onSettingsChange({ ...settings, model: e.target.value })}
+            value={settings.imageModel}
+            onChange={(e) =>
+              onSettingsChange({ imageModel: e.target.value as ChatGenerationSettings['imageModel'] })
+            }
             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           >
-            <option value="nanobanana-pro">나노바나나 프로</option>
-            <option value="nanobanana-2">나노바나나 2</option>
+            {IMAGE_MODELS.map(({ id, label }) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -67,12 +77,12 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
             이미지 비율
           </label>
           <div className="grid grid-cols-3 gap-2">
-            {['1:1', '16:9', '9:16', '4:3', '3:4'].map((ratio) => (
+            {aspectRatios.map((ratio) => (
               <button
                 key={ratio}
-                onClick={() => onSettingsChange({ ...settings, ratio })}
+                onClick={() => onSettingsChange({ aspectRatio: ratio })}
                 className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
-                  settings.ratio === ratio
+                  settings.aspectRatio === ratio
                     ? 'bg-purple-500 text-white border-purple-500'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
                 }`}
@@ -89,22 +99,22 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
             이미지 크기
           </label>
           <div className="grid grid-cols-3 gap-2">
-            {['1k', '2k', '3k'].map((size) => (
+            {imageSizes.map((size) => (
               <button
                 key={size}
-                onClick={() => handleSizeClick(size as '1k' | '2k' | '3k')}
+                onClick={() => handleSizeClick(size)}
                 className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
-                  settings.size === size
+                  settings.imageSize === size
                     ? 'bg-purple-500 text-white border-purple-500'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
                 }`}
               >
-                {size.toUpperCase()}
+                {size}
               </button>
             ))}
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            <span className="text-green-600 font-medium">1K 권장</span> · 2K/3K는 비용이 크게 증가합니다
+            <span className="text-green-600 font-medium">1K 권장</span> · 2K/4K는 비용이 크게 증가합니다
           </p>
         </div>
 
@@ -114,12 +124,12 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
             그리드 레이아웃
           </label>
           <div className="grid grid-cols-2 gap-2">
-            {['1x1', '2x2', '3x3', '4x4'].map((grid) => (
+            {gridLayouts.map((grid) => (
               <button
                 key={grid}
-                onClick={() => onSettingsChange({ ...settings, grid })}
+                onClick={() => onSettingsChange({ pixelArtGrid: grid })}
                 className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
-                  settings.grid === grid
+                  settings.pixelArtGrid === grid
                     ? 'bg-purple-500 text-white border-purple-500'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
                 }`}
@@ -140,37 +150,25 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
           </label>
           <div className="relative">
             <select
-              value={settings.stylePreset || ''}
+              value={settings.stylePreset ?? ''}
               onChange={(e) => {
-                if (e.target.value === 'custom') {
-                  onSettingsChange({
-                    ...settings,
-                    stylePreset: 'custom',
-                    customStyle: ''
-                  });
+                const value = e.target.value;
+                if (value === '') {
+                  onSettingsChange({ stylePreset: undefined, customStyle: undefined });
+                } else if (value === 'custom') {
+                  onSettingsChange({ stylePreset: 'custom', customStyle: '' });
                 } else {
-                  onSettingsChange({
-                    ...settings,
-                    stylePreset: e.target.value,
-                    customStyle: undefined
-                  });
+                  onSettingsChange({ stylePreset: value, customStyle: undefined });
                 }
               }}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent appearance-none pr-10"
             >
               <option value="">스타일 선택...</option>
-              <option value="low-poly">로우 폴리</option>
-              <option value="cartoon-render">카툰 렌더</option>
-              <option value="cell-shading">셀 셰이딩</option>
-              <option value="soft-3d">소프트 3D</option>
-              <option value="flat-design">플랫디자인</option>
-              <option value="vector-art">벡터아트</option>
-              <option value="pixel-art">픽셀아트</option>
-              <option value="minimalism">미니멀리즘</option>
-              <option value="vivid">비비드</option>
-              <option value="neon">네온</option>
-              <option value="clay">클레이</option>
-              <option value="byungmat">병맛</option>
+              {ART_STYLE_PRESETS.map((preset) => (
+                <option key={preset} value={preset}>
+                  {preset}
+                </option>
+              ))}
               <option value="custom">직접 입력</option>
             </select>
             <ChevronDown
@@ -181,11 +179,8 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
           {settings.stylePreset === 'custom' && (
             <input
               type="text"
-              value={settings.customStyle || ''}
-              onChange={(e) => onSettingsChange({
-                ...settings,
-                customStyle: e.target.value
-              })}
+              value={settings.customStyle ?? ''}
+              onChange={(e) => onSettingsChange({ customStyle: e.target.value })}
               placeholder="스타일을 직접 입력하세요..."
               className="w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
@@ -213,7 +208,7 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
               </div>
               <div className="space-y-3 text-gray-700">
                 <p className="font-semibold text-lg text-amber-700">
-                  ⚠️ {costWarning.size.toUpperCase()} 이미지는 비용이 크게 증가합니다!
+                  ⚠️ {costWarning.size} 이미지는 비용이 크게 증가합니다!
                 </p>
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                   <ul className="space-y-2 text-sm">
@@ -227,7 +222,7 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
                     <li className="flex items-start gap-2">
                       <span className="text-amber-600">•</span>
                       <span>
-                        {costWarning.size === '2k' ? '2K는 1K 대비 약 4배' : '3K는 1K 대비 약 9배'}의 비용이 발생할 수 있습니다.
+                        {costWarning.size === '2K' ? '2K는 1K 대비 약 4배' : '4K는 1K 대비 약 16배'}의 비용이 발생할 수 있습니다.
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
@@ -254,7 +249,7 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
                 onClick={confirmSizeChange}
                 className="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
               >
-                {costWarning.size.toUpperCase()} 사용
+                {costWarning.size} 사용
               </button>
             </div>
           </div>

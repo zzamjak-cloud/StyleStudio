@@ -1,4 +1,5 @@
 import { ImageGenerationModel } from '../hooks/api/useGeminiImageGenerator';
+import { PixelArtGridLayout } from './pixelart';
 
 // 개별 채팅 메시지
 export interface ChatMessage {
@@ -25,6 +26,10 @@ export interface ChatSessionData {
 export interface ChatGenerationSettings {
   aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
   imageModel: ImageGenerationModel;
+  imageSize: '1K' | '2K' | '4K';
+  pixelArtGrid: PixelArtGridLayout;
+  stylePreset?: string;
+  customStyle?: string;
 }
 
 // 토큰 수 추정 (한국어 ~2자/토큰, 이미지 ~258토큰)

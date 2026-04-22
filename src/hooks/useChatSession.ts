@@ -29,7 +29,13 @@ export function useChatSession(
 ): UseChatSessionReturn {
   const chatData = session.chatData;
   const messages = chatData?.messages ?? [];
-  const settings = chatData?.settings ?? { aspectRatio: '1:1' as const, imageModel: 'gemini-3-pro-image-preview' as const };
+  const settings: ChatGenerationSettings = {
+    aspectRatio: '1:1',
+    imageModel: 'gemini-3-pro-image-preview',
+    imageSize: '1K',
+    pixelArtGrid: '1x1',
+    ...chatData?.settings,
+  };
   const summary = chatData?.summary;
   const summarizedUpTo = chatData?.summarizedUpTo;
   const totalTokenCount = chatData?.totalTokenCount ?? 0;
@@ -52,7 +58,12 @@ export function useChatSession(
     const currentChatData = latestSession.chatData ?? {
       messages: [],
       totalTokenCount: 0,
-      settings: { aspectRatio: '1:1' as const, imageModel: 'gemini-3-pro-image-preview' as const },
+      settings: {
+        aspectRatio: '1:1' as const,
+        imageModel: 'gemini-3-pro-image-preview' as const,
+        imageSize: '1K' as const,
+        pixelArtGrid: '1x1' as const,
+      },
     };
     const updatedSession = updateSession(latestSession, {
       chatData: { ...currentChatData, ...updates },
@@ -106,11 +117,14 @@ export function useChatSession(
     logger.debug(`🗑️ 채팅 메시지 삭제: ${messageId}`);
   }, [updateChatData]);
 
-  // 이미지 생성 설정(화면비, 모델 등)을 부분 업데이트
+  // 이미지 생성 설정(화면비, 크기, 그리드, 프리셋 등)을 부분 업데이트
   const updateSettings = useCallback((newSettings: Partial<ChatGenerationSettings>) => {
-    const latestSettings = sessionRef.current.chatData?.settings ?? {
-      aspectRatio: '1:1' as const,
-      imageModel: 'gemini-3-pro-image-preview' as const,
+    const latestSettings: ChatGenerationSettings = {
+      aspectRatio: '1:1',
+      imageModel: 'gemini-3-pro-image-preview',
+      imageSize: '1K',
+      pixelArtGrid: '1x1',
+      ...sessionRef.current.chatData?.settings,
     };
     updateChatData({ settings: { ...latestSettings, ...newSettings } });
   }, [updateChatData]);

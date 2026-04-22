@@ -1,7 +1,29 @@
 import { useState, useCallback } from 'react';
 import { Session } from '../types/session';
-import { ChatMessage } from '../types/chat';
+import { ChatMessage, ChatGenerationSettings } from '../types/chat';
+import { getPixelArtGridInfo } from '../types/pixelart';
 import { logger } from '../lib/logger';
+
+// 사용자 메시지 앞에 스타일·그리드 힌트를 prefix로 결합해 Gemini가 해당 속성을 반영하도록 유도
+function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): string {
+  if (!settings) return '';
+  const parts: string[] = [];
+
+  const stylePreset = settings.stylePreset;
+  const style = stylePreset === 'custom' ? settings.customStyle?.trim() : stylePreset;
+  if (style) {
+    parts.push(`[스타일: ${style}]`);
+  }
+
+  if (settings.pixelArtGrid && settings.pixelArtGrid !== '1x1') {
+    const info = getPixelArtGridInfo(settings.pixelArtGrid);
+    parts.push(
+      `[그리드 레이아웃: ${settings.pixelArtGrid} — 하나의 이미지 안에 ${info.totalFrames}개 프레임을 ${info.rows}행 ${info.cols}열로 균등 배치]`
+    );
+  }
+
+  return parts.length > 0 ? parts.join(' ') + '\n\n' : '';
+}
 
 // 최대 재시도 횟수
 const MAX_RETRIES = 2;
@@ -123,17 +145,33 @@ export function useChatImageGeneration(
     setIsGenerating(true);
     setGenerationStatus('응답 생성 중...');
 
-    const imageModel = chatData?.settings?.imageModel ?? 'gemini-3-pro-image-preview';
-    const aspectRatio = chatData?.settings?.aspectRatio ?? '1:1';
-    const contents = buildContents(userMessage, userImages);
+    const settings = chatData?.settings;
+    const imageModel = settings?.imageModel ?? 'gemini-3-pro-image-preview';
+    const aspectRatio = settings?.aspectRatio ?? '1:1';
+    const imageSize = settings?.imageSize ?? '1K';
+
+    // 스타일 프리셋·그리드는 API 파라미터가 아니라 프롬프트 prefix로 결합하여 전달
+    const prefix = buildSettingsPrefix(settings);
+    const effectiveUserMessage = prefix ? prefix + userMessage : userMessage;
+    const contents = buildContents(effectiveUserMessage, userImages);
 
     const requestBody = {
       contents,
       generationConfig: {
         responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: { aspectRatio },
+        imageConfig: { aspectRatio, imageSize },
       },
     };
+
+    logger.debug('🎨 Chat 이미지 생성 요청:', {
+      imageModel,
+      aspectRatio,
+      imageSize,
+      pixelArtGrid: settings?.pixelArtGrid,
+      stylePreset: settings?.stylePreset,
+      customStyle: settings?.customStyle,
+      prefixApplied: !!prefix,
+    });
 
     let lastError: Error | null = null;
 
