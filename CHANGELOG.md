@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-04-22
+
 ### Added
 - 클립보드 이미지 붙여넣기(Ctrl+V) 지원 — 분석 패널(AnalysisPanel), 생성 참조 업로더(ImageUpload), 컨셉 참조 패널(ConceptLeftPanel)의 이미지 추가 지점에 공통 적용 (`src/hooks/useImagePaste.ts` 신규)
 
