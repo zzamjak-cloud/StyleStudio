@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, Key, FolderOpen, Trash2, LogOut, User } from 'lucide-react';
-import { open } from '@tauri-apps/plugin-dialog';
+import { X, Key, FolderOpen, LogOut, User } from 'lucide-react';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
-import { loadDefaultSessionSavePath, saveDefaultSessionSavePath } from '../../lib/storage';
+import { getAiGenRoot } from '../../lib/config/paths';
 import { useAuth } from '../../hooks/useAuth';
 
 interface SettingsModalProps {
@@ -14,7 +14,6 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose, currentApiKey, onSave }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState(currentApiKey);
-  const [defaultSavePath, setDefaultSavePath] = useState<string | null>(null);
   const [saveNotification, setSaveNotification] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [version, setVersion] = useState('');
@@ -44,18 +43,9 @@ export function SettingsModal({ isOpen, onClose, currentApiKey, onSave }: Settin
     }
   };
 
-  // 설정 모달이 열릴 때 기본 저장 폴더 로드
-  useEffect(() => {
-    if (isOpen) {
-      loadDefaultSessionSavePath().then(setDefaultSavePath);
-    }
-  }, [isOpen]);
-
-  const handleSave = async () => {
+  const handleSave = () => {
     if (apiKey.trim()) {
       onSave(apiKey.trim());
-      // 기본 저장 폴더도 저장
-      await saveDefaultSessionSavePath(defaultSavePath);
       setSaveNotification('설정이 저장되었습니다');
       setTimeout(() => {
         setSaveNotification(null);
@@ -66,26 +56,15 @@ export function SettingsModal({ isOpen, onClose, currentApiKey, onSave }: Settin
     }
   };
 
-  // 폴더 선택 다이얼로그
-  const handleSelectFolder = async () => {
+  // AI_Gen 루트 폴더 열기
+  const handleOpenFolder = async () => {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: '세션 저장 폴더 선택',
-      });
-
-      if (selected && typeof selected === 'string') {
-        setDefaultSavePath(selected);
-      }
+      const root = await getAiGenRoot();
+      await openPath(root);
     } catch (error) {
-      console.error('폴더 선택 오류:', error);
+      console.error('폴더 열기 실패:', error);
+      alert('폴더를 열지 못했습니다.');
     }
-  };
-
-  // 폴더 경로 초기화
-  const handleClearFolder = () => {
-    setDefaultSavePath(null);
   };
 
   if (!isOpen) return null;
@@ -136,35 +115,28 @@ export function SettingsModal({ isOpen, onClose, currentApiKey, onSave }: Settin
             </p>
           </div>
 
-          {/* 세션 저장 폴더 설정 */}
+          {/* 생성 이미지 저장 위치 안내 (v0.4.4) */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              기본 세션 저장 폴더
+              생성 이미지 저장 위치
             </label>
-            <div className="flex gap-2">
-              <div className="flex-1 px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-sm text-gray-600 truncate">
-                {defaultSavePath || '설정되지 않음'}
+            <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <div>
+                <p className="text-sm text-gray-700">
+                  <code className="text-xs bg-white px-1 py-0.5 rounded">~/Downloads/AI_Gen/</code>
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  세션별 하위 폴더에 자동 저장됩니다
+                </p>
               </div>
               <button
-                onClick={handleSelectFolder}
-                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                title="폴더 선택"
+                onClick={handleOpenFolder}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-purple-600 text-white hover:bg-purple-700"
               >
-                <FolderOpen size={20} className="text-gray-600" />
+                <FolderOpen size={14} />
+                폴더 열기
               </button>
-              {defaultSavePath && (
-                <button
-                  onClick={handleClearFolder}
-                  className="px-3 py-2 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
-                  title="초기화"
-                >
-                  <Trash2 size={20} className="text-red-500" />
-                </button>
-              )}
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              세션 export 시 기본으로 사용할 폴더를 설정합니다.
-            </p>
           </div>
 
           {/* 계정 정보 및 로그아웃 */}

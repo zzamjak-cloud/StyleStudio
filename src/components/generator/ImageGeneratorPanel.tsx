@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Wand2, ArrowLeft, ChevronDown, HelpCircle, X, FolderOpen, ZoomIn } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { join } from '@tauri-apps/api/path';
 import { getSessionImageFolder } from '../../lib/config/paths';
 import { ImageAnalysisResult } from '../../types/analysis';
@@ -935,33 +936,40 @@ export function ImageGeneratorPanel({
               </p>
             </div>
           </div>
-          {/* 자동 저장 폴더 정보 (v0.4.4: 세션별 고정 경로 표시) */}
+          {/* 자동 저장 폴더 열기 버튼 (v0.4.4) */}
           <div className="flex items-center gap-3">
-            {/* 폴더 경로 표시 + 커스텀 툴팁 */}
-            <div className="relative">
-              <div
-                className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg cursor-help hover:bg-green-100 transition-colors"
-                onMouseEnter={() => setShowPathTooltip(true)}
-                onMouseLeave={() => setShowPathTooltip(false)}
-              >
-                <FolderOpen size={16} className="text-green-600" />
-                <span className="text-sm text-green-700 font-medium max-w-xs truncate">
-                  AI_Gen/{sessionName}
-                </span>
-              </div>
+            <button
+              onClick={async () => {
+                try {
+                  const folder = await getSessionImageFolder(sessionName);
+                  await openPath(folder);
+                } catch (error) {
+                  logger.error('❌ 저장 폴더 열기 실패:', error);
+                  alert('저장 폴더를 열지 못했습니다.');
+                }
+              }}
+              onMouseEnter={() => setShowPathTooltip(true)}
+              onMouseLeave={() => setShowPathTooltip(false)}
+              className="relative flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+              title="탐색기에서 저장 폴더 열기"
+            >
+              <FolderOpen size={16} className="text-green-600" />
+              <span className="text-sm text-green-700 font-medium max-w-xs truncate">
+                AI_Gen/{sessionName}
+              </span>
 
               {/* 커스텀 툴팁 */}
               {showPathTooltip && (
                 <div className="absolute top-full right-0 mt-2 z-50 pointer-events-none">
                   <div className="bg-gray-900 text-white text-xs rounded-lg shadow-xl px-3 py-2 whitespace-nowrap">
-                    <div className="font-semibold mb-1">저장 위치:</div>
+                    <div className="font-semibold mb-1">저장 위치 (클릭하여 열기):</div>
                     <div className="text-gray-300">
                       ~/Downloads/AI_Gen/{sessionName}
                     </div>
                   </div>
                 </div>
               )}
-            </div>
+            </button>
 
             {/* 줌 컨트롤 */}
             {generatedImage && (
