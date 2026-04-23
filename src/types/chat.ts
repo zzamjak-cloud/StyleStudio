@@ -1,5 +1,6 @@
 import { ImageGenerationModel } from '../hooks/api/useGeminiImageGenerator';
 import { PixelArtGridLayout } from './pixelart';
+import { ReferenceDocument } from './referenceDocument';
 
 // 개별 채팅 메시지
 export interface ChatMessage {
@@ -8,6 +9,7 @@ export interface ChatMessage {
   content: string;
   images?: string[];
   timestamp: string;
+  documents?: ReferenceDocument[]; // v0.4.4: 첨부 문서
   isGeneratedImage?: boolean;
   tokenCount?: number;
   imageSignatures?: string[]; // AI 생성 이미지의 thought_signature (images 배열과 1:1 대응)
@@ -40,6 +42,12 @@ export function estimateTokenCount(message: ChatMessage): number {
   }
   if (message.images) {
     tokens += message.images.length * 258;
+  }
+  if (message.documents) {
+    for (const doc of message.documents) {
+      if (doc.content) tokens += Math.ceil(doc.content.length / 2);
+      if (doc.extractedImages) tokens += doc.extractedImages.length * 258;
+    }
   }
   return tokens;
 }

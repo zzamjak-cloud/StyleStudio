@@ -11,7 +11,9 @@ export interface ReferenceDocument {
     sheetCount?: number; // Excel 시트 수
     lineCount?: number; // 텍스트 줄 수
     characterCount?: number; // 문자 수
+    extractedImageCount?: number; // v0.4.4: PDF 내장 이미지 개수
   };
+  extractedImages?: string[]; // v0.4.4: PDF 내장 이미지 (data URL)
   createdAt: number;
   updatedAt: number;
 }
