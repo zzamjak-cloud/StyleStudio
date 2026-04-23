@@ -125,7 +125,9 @@ export function DocumentManager({ documents, apiKey, onAdd, onDelete }: Document
             sheetCount: parsed.metadata?.sheetCount,
             lineCount: finalContent.split('\n').length,
             characterCount: finalContent.length,
+            extractedImageCount: parsed.metadata?.extractedImageCount,
           },
+          extractedImages: parsed.extractedImages,
           createdAt: now,
           updatedAt: now,
         };
@@ -196,7 +198,9 @@ export function DocumentManager({ documents, apiKey, onAdd, onDelete }: Document
         metadata: {
           lineCount: finalContent.split('\n').length,
           characterCount: finalContent.length,
+          extractedImageCount: parsed.metadata?.extractedImageCount,
         },
+        extractedImages: parsed.extractedImages,
         createdAt: now,
         updatedAt: now,
       };

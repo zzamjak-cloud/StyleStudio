@@ -15,7 +15,9 @@ export interface ParsedFileContent {
     fileType: string;
     pageCount?: number;
     sheetCount?: number;
+    extractedImageCount?: number; // v0.4.4: PDF 내장 이미지 개수
   };
+  extractedImages?: string[]; // v0.4.4: PDF 내장 이미지 (data URL 배열)
 }
 
 /**
@@ -24,6 +26,131 @@ export interface ParsedFileContent {
 export function getFileType(fileName: string): string {
   const ext = fileName.toLowerCase().split('.').pop() || '';
   return ext;
+}
+
+/**
+ * PDF 페이지에서 내장 이미지를 추출해 PNG data URL 배열로 반환.
+ * 실패 시 빈 배열 반환 (텍스트 파싱은 계속 진행).
+ * 페이지당 최대 10장, 크기 50x50 미만 이미지는 스킵(아이콘 등 노이즈 제거).
+ */
+async function extractImagesFromPdfPage(page: any): Promise<string[]> {
+  const out: string[] = [];
+  try {
+    const ops = await page.getOperatorList();
+    const OPS = (pdfjsLib as any).OPS;
+    const targetOps = [
+      OPS.paintImageXObject,
+      OPS.paintInlineImageXObject,
+      OPS.paintJpegXObject,
+    ].filter((v: any) => v !== undefined);
+
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      if (!targetOps.includes(ops.fnArray[i])) continue;
+      const name = ops.argsArray[i]?.[0];
+      if (!name) continue;
+
+      // pdf.js 이미지 오브젝트는 resolve 콜백으로 획득
+      const img: any = await new Promise((resolve) => {
+        try {
+          page.objs.get(name, resolve);
+        } catch {
+          resolve(null);
+        }
+      });
+      if (!img || !img.width || !img.height) continue;
+      if (img.width < 50 || img.height < 50) continue; // 아이콘 노이즈 제거
+
+      const dataUrl = await renderPdfImageToDataUrl(img);
+      if (dataUrl) out.push(dataUrl);
+
+      if (out.length >= 10) break; // 페이지당 상한
+    }
+  } catch (error) {
+    console.warn('[pdf] 페이지 이미지 추출 실패:', error);
+  }
+  return out;
+}
+
+/** pdf.js 이미지 오브젝트를 Canvas로 그려 PNG data URL 반환 */
+async function renderPdfImageToDataUrl(img: {
+  width: number;
+  height: number;
+  data?: Uint8ClampedArray | Uint8Array;
+  kind?: number; // 1=Grayscale, 2=RGB, 3=RGBA
+  bitmap?: ImageBitmap;
+}): Promise<string | null> {
+  try {
+    const useOffscreen = typeof OffscreenCanvas !== 'undefined';
+    const canvas: any = useOffscreen
+      ? new OffscreenCanvas(img.width, img.height)
+      : Object.assign(document.createElement('canvas'), {
+          width: img.width,
+          height: img.height,
+        });
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    if (img.bitmap) {
+      ctx.drawImage(img.bitmap, 0, 0);
+    } else if (img.data) {
+      const rgba = toRgbaBuffer(img.data, img.kind ?? 2, img.width, img.height);
+      const imageData = new ImageData(rgba, img.width, img.height);
+      ctx.putImageData(imageData, 0, 0);
+    } else {
+      return null;
+    }
+
+    if (useOffscreen && canvas instanceof OffscreenCanvas) {
+      const blob = await canvas.convertToBlob({ type: 'image/png' });
+      return await blobToDataUrl(blob);
+    }
+    return (canvas as HTMLCanvasElement).toDataURL('image/png');
+  } catch (error) {
+    console.warn('[pdf] 이미지 변환 실패:', error);
+    return null;
+  }
+}
+
+/** pdf.js 이미지 data 버퍼를 RGBA로 정규화 */
+function toRgbaBuffer(
+  src: Uint8ClampedArray | Uint8Array,
+  kind: number,
+  width: number,
+  height: number
+): Uint8ClampedArray {
+  const total = width * height;
+  const out = new Uint8ClampedArray(total * 4);
+  if (kind === 1) {
+    // Grayscale
+    for (let i = 0; i < total; i++) {
+      const v = src[i];
+      out[i * 4] = v;
+      out[i * 4 + 1] = v;
+      out[i * 4 + 2] = v;
+      out[i * 4 + 3] = 255;
+    }
+  } else if (kind === 3) {
+    // RGBA (이미 4채널)
+    out.set(src);
+  } else {
+    // RGB (기본)
+    for (let i = 0; i < total; i++) {
+      out[i * 4] = src[i * 3];
+      out[i * 4 + 1] = src[i * 3 + 1];
+      out[i * 4 + 2] = src[i * 3 + 2];
+      out[i * 4 + 3] = 255;
+    }
+  }
+  return out;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 /**
@@ -38,23 +165,29 @@ export async function parsePDF(filePath: string, fileName: string): Promise<Pars
     const pdf = await loadingTask.promise;
 
     let text = '';
+    const extractedImages: string[] = [];
+    const MAX_TOTAL_IMAGES = 20; // 문서 전체 상한 (메모리 보호)
 
-    // 모든 페이지 텍스트 추출
+    // 모든 페이지 텍스트 및 이미지 추출
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
 
       // 텍스트 아이템들을 문자열로 변환
       const pageText = textContent.items
-        .map((item: any) => {
-          if ('str' in item) {
-            return item.str;
-          }
-          return '';
-        })
+        .map((item: any) => ('str' in item ? item.str : ''))
         .join(' ');
 
       text += pageText + '\n\n';
+
+      // 이미지 추출 (전체 상한 미달 시)
+      if (extractedImages.length < MAX_TOTAL_IMAGES) {
+        const pageImages = await extractImagesFromPdfPage(page);
+        for (const img of pageImages) {
+          if (extractedImages.length >= MAX_TOTAL_IMAGES) break;
+          extractedImages.push(img);
+        }
+      }
     }
 
     return {
@@ -63,7 +196,9 @@ export async function parsePDF(filePath: string, fileName: string): Promise<Pars
         fileName,
         fileType: 'pdf',
         pageCount: pdf.numPages,
+        extractedImageCount: extractedImages.length,
       },
+      extractedImages: extractedImages.length > 0 ? extractedImages : undefined,
     };
   } catch (error) {
     throw new Error(`PDF 파싱 실패: ${error instanceof Error ? error.message : String(error)}`);
