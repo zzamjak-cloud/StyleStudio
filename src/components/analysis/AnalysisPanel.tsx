@@ -160,10 +160,10 @@ export function AnalysisPanel({
       </div>
 
       {/* 오른쪽: 분석 패널 */}
-      <div className="w-[500px] bg-white border-l border-gray-200 p-6 flex flex-col overflow-y-auto">
+      <div className="w-[500px] bg-white border-l border-gray-200 flex flex-col overflow-hidden">
         {/* 분석 전 상태 */}
         {!analysisResult && !isAnalyzing && (
-          <>
+          <div className="p-6">
             <p className="text-gray-600 mb-6">
               AI가 이미지의 스타일, 캐릭터, 구도를 분석합니다.
             </p>
@@ -175,12 +175,12 @@ export function AnalysisPanel({
               <Sparkles size={20} />
               <span>이미지 분석 시작</span>
             </button>
-          </>
+          </div>
         )}
 
         {/* 분석 중 상태 */}
         {isAnalyzing && (
-          <div className="flex-1 flex flex-col items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center p-6">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-500 border-t-transparent mb-4"></div>
             <p className="text-gray-600 font-semibold">Gemini가 분석 중...</p>
             <p className="text-sm text-gray-500 mt-2">스타일, 캐릭터, 구도 정보 추출 중</p>
@@ -189,26 +189,26 @@ export function AnalysisPanel({
 
         {/* 분석 완료 상태 */}
         {analysisResult && !isAnalyzing && (
-          <div className="space-y-4">
-            {/* 액션 버튼 (상단) - 아이콘만 한 라인에 3개 */}
-            <div className="flex gap-2 pb-4 border-b border-gray-200">
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* 상단 고정 액션 버튼 */}
+            <div className="sticky top-0 z-10 flex gap-2 px-6 py-2 bg-white border-b border-gray-200">
               {/* 분석 강화 버튼 */}
               <button
                 onClick={onAnalyze}
-                className="flex-1 flex items-center justify-center p-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all shadow-lg hover:shadow-xl"
+                className="flex-1 flex items-center justify-center p-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg"
                 title={currentSession ? '분석 강화' : '다시 분석'}
               >
-                <Sparkles size={20} />
+                <Sparkles size={18} />
               </button>
 
               {/* 세션 저장 버튼 */}
               {onSaveSession && (
                 <button
                   onClick={onSaveSession}
-                  className="flex-1 flex items-center justify-center p-3 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white rounded-lg transition-all shadow-lg hover:shadow-xl"
+                  className="flex-1 flex items-center justify-center p-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg"
                   title="세션 저장"
                 >
-                  <Save size={20} />
+                  <Save size={18} />
                 </button>
               )}
 
@@ -216,60 +216,63 @@ export function AnalysisPanel({
               {onGenerateImage && (
                 <button
                   onClick={onGenerateImage}
-                  className="flex-1 flex items-center justify-center p-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all shadow-lg hover:shadow-xl"
+                  className="flex-1 flex items-center justify-center p-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg"
                   title="이미지 생성하기"
                 >
-                  <Wand2 size={20} />
+                  <Wand2 size={18} />
                 </button>
               )}
             </div>
 
-            {/* 1. 스타일 카드 */}
-            <StyleCard
-              style={analysisResult.style}
-              onUpdate={onStyleUpdate}
-            />
-
-            {/* 2. UI 디자인 카드 (UI 타입에서만) */}
-            {isUIType && analysisResult.ui_specific && (
-              <UICard
-                uiAnalysis={analysisResult.ui_specific}
-                onUpdate={onUIAnalysisUpdate}
+            {/* 스크롤 영역: 분석 결과 카드들 */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              {/* 1. 스타일 카드 */}
+              <StyleCard
+                style={analysisResult.style}
+                onUpdate={onStyleUpdate}
               />
-            )}
 
-            {/* 3. 로고 특화 카드 (LOGO 타입에서만) */}
-            {isLogoType && analysisResult.logo_specific && (
-              <LogoCard
-                logoAnalysis={analysisResult.logo_specific}
-                onUpdate={onLogoAnalysisUpdate}
+              {/* 2. UI 디자인 카드 (UI 타입에서만) */}
+              {isUIType && analysisResult.ui_specific && (
+                <UICard
+                  uiAnalysis={analysisResult.ui_specific}
+                  onUpdate={onUIAnalysisUpdate}
+                />
+              )}
+
+              {/* 3. 로고 특화 카드 (LOGO 타입에서만) */}
+              {isLogoType && analysisResult.logo_specific && (
+                <LogoCard
+                  logoAnalysis={analysisResult.logo_specific}
+                  onUpdate={onLogoAnalysisUpdate}
+                />
+              )}
+
+              {/* 4. 캐릭터 카드 (배경, UI, LOGO 타입에서는 숨김) */}
+              {!isBackgroundType && !isUIType && !isLogoType && (
+                <CharacterCard
+                  character={analysisResult.character}
+                  onUpdate={onCharacterUpdate}
+                />
+              )}
+
+              {/* 5. 구도 카드 */}
+              <CompositionCard
+                composition={analysisResult.composition}
+                onUpdate={onCompositionUpdate}
               />
-            )}
 
-            {/* 4. 캐릭터 카드 (배경, UI, LOGO 타입에서는 숨김) */}
-            {!isBackgroundType && !isUIType && !isLogoType && (
-              <CharacterCard
-                character={analysisResult.character}
-                onUpdate={onCharacterUpdate}
+              {/* 6. 부정 프롬프트 카드 */}
+              <NegativePromptCard
+                negativePrompt={analysisResult.negative_prompt}
+                onUpdate={onNegativePromptUpdate}
               />
-            )}
 
-            {/* 5. 구도 카드 */}
-            <CompositionCard
-              composition={analysisResult.composition}
-              onUpdate={onCompositionUpdate}
-            />
-
-            {/* 6. 부정 프롬프트 카드 */}
-            <NegativePromptCard
-              negativePrompt={analysisResult.negative_prompt}
-              onUpdate={onNegativePromptUpdate}
-            />
-
-            {/* 7. 통합 프롬프트 카드 (최하단) */}
-            <UnifiedPromptCard
-              analysis={analysisResult}
-            />
+              {/* 7. 통합 프롬프트 카드 (최하단) */}
+              <UnifiedPromptCard
+                analysis={analysisResult}
+              />
+            </div>
           </div>
         )}
       </div>
