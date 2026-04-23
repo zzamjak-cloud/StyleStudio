@@ -8,6 +8,9 @@ import * as pdfjsLib from 'pdfjs-dist';
 // PDF.js Worker 설정 (로컬 파일 사용)
 pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
 
+// pdfjs-dist OPS 상수 참조 (5.x named export 불확실하므로 fallback 유지)
+const PDF_OPS: any = (pdfjsLib as any).OPS ?? {};
+
 export interface ParsedFileContent {
   text: string;
   metadata?: {
@@ -37,11 +40,10 @@ async function extractImagesFromPdfPage(page: any): Promise<string[]> {
   const out: string[] = [];
   try {
     const ops = await page.getOperatorList();
-    const OPS = (pdfjsLib as any).OPS;
     const targetOps = [
-      OPS.paintImageXObject,
-      OPS.paintInlineImageXObject,
-      OPS.paintJpegXObject,
+      PDF_OPS.paintImageXObject,
+      PDF_OPS.paintInlineImageXObject,
+      PDF_OPS.paintJpegXObject,
     ].filter((v: any) => v !== undefined);
 
     for (let i = 0; i < ops.fnArray.length; i++) {
@@ -49,14 +51,17 @@ async function extractImagesFromPdfPage(page: any): Promise<string[]> {
       const name = ops.argsArray[i]?.[0];
       if (!name) continue;
 
-      // pdf.js 이미지 오브젝트는 resolve 콜백으로 획득
-      const img: any = await new Promise((resolve) => {
-        try {
-          page.objs.get(name, resolve);
-        } catch {
-          resolve(null);
-        }
-      });
+      // pdf.js 이미지 오브젝트는 resolve 콜백으로 획득 (3초 타임아웃)
+      const img: any = await Promise.race([
+        new Promise((resolve) => {
+          try {
+            page.objs.get(name, resolve);
+          } catch {
+            resolve(null);
+          }
+        }),
+        new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
       if (!img || !img.width || !img.height) continue;
       if (img.width < 50 || img.height < 50) continue; // 아이콘 노이즈 제거
 
@@ -120,6 +125,13 @@ function toRgbaBuffer(
 ): Uint8ClampedArray {
   const total = width * height;
   const out = new Uint8ClampedArray(total * 4);
+
+  // 버퍼 길이 방어: 예상 크기보다 작으면 투명 검정 반환 (안전하게 건너뜀 유도)
+  const expected = kind === 1 ? total : kind === 3 ? total * 4 : total * 3;
+  if (src.length < expected) {
+    return out;
+  }
+
   if (kind === 1) {
     // Grayscale
     for (let i = 0; i < total; i++) {
@@ -182,10 +194,15 @@ export async function parsePDF(filePath: string, fileName: string): Promise<Pars
 
       // 이미지 추출 (전체 상한 미달 시)
       if (extractedImages.length < MAX_TOTAL_IMAGES) {
-        const pageImages = await extractImagesFromPdfPage(page);
-        for (const img of pageImages) {
-          if (extractedImages.length >= MAX_TOTAL_IMAGES) break;
-          extractedImages.push(img);
+        try {
+          const pageImages = await extractImagesFromPdfPage(page);
+          for (const img of pageImages) {
+            if (extractedImages.length >= MAX_TOTAL_IMAGES) break;
+            extractedImages.push(img);
+          }
+        } catch (imgError) {
+          // 이미지 추출 실패는 텍스트 수집에 영향 주지 않음
+          console.warn(`[pdf] 페이지 ${i} 이미지 추출 예외, 건너뜀:`, imgError);
         }
       }
     }
