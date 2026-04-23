@@ -1,6 +1,7 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { Session } from '../types/session';
 import { ChatMessage, ChatGenerationSettings, ChatSessionData, estimateTokenCount } from '../types/chat';
+import { ReferenceDocument } from '../types/referenceDocument';
 import { updateSession } from '../utils/sessionHelpers';
 import { logger } from '../lib/logger';
 
@@ -16,7 +17,7 @@ interface UseChatSessionReturn {
   summarizedUpTo: number | undefined;
   totalTokenCount: number;
   needsSummarization: boolean;
-  addMessage: (role: 'user' | 'assistant', content: string, images?: string[], isGeneratedImage?: boolean, imageSignatures?: string[]) => void;
+  addMessage: (role: 'user' | 'assistant', content: string, images?: string[], isGeneratedImage?: boolean, imageSignatures?: string[], documents?: ReferenceDocument[]) => void;
   deleteMessage: (messageId: string) => void;
   updateSettings: (settings: Partial<ChatGenerationSettings>) => void;
   clearMessages: () => void;
@@ -79,7 +80,8 @@ export function useChatSession(
     content: string,
     images?: string[],
     isGeneratedImage?: boolean,
-    imageSignatures?: string[]
+    imageSignatures?: string[],
+    documents?: ReferenceDocument[]
   ) => {
     const newMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -89,6 +91,7 @@ export function useChatSession(
       timestamp: new Date().toISOString(),
       isGeneratedImage,
       imageSignatures,
+      documents,
     };
     newMessage.tokenCount = estimateTokenCount(newMessage);
 

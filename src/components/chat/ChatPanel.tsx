@@ -5,11 +5,13 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
 import { getSessionImageFolder } from '../../lib/config/paths';
 import type { Session } from '../../types/session';
+import { ReferenceDocument } from '../../types/referenceDocument';
 import { useChatSession, RECENT_MESSAGES_TO_KEEP } from '../../hooks/useChatSession';
 import { useChatImageGeneration } from '../../hooks/useChatImageGeneration';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatAISettings } from './ChatAISettings';
+import { DocumentManager } from '../generator/DocumentManager';
 import { logger } from '../../lib/logger';
 
 interface ChatPanelProps {
@@ -36,6 +38,9 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
   // 이미지 미리보기 모달 상태
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
+  // 첨부 문서 상태 (전송 시 초기화)
+  const [chatDocuments, setChatDocuments] = useState<ReferenceDocument[]>([]);
+
   // 메시지 스크롤 영역 ref
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -49,12 +54,18 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
 
   // 메시지 전송 핸들러
   const handleSend = useCallback(async (text: string, images: string[]) => {
-    // 1. 사용자 메시지 즉시 추가
-    addMessage('user', text, images.length > 0 ? images : undefined);
+    // 전송 시점의 문서 스냅샷 (이후 state 초기화와 무관하게 보존)
+    const sentDocuments = chatDocuments.length > 0 ? [...chatDocuments] : undefined;
+
+    // 1. 사용자 메시지 즉시 추가 (documents 포함)
+    addMessage('user', text, images.length > 0 ? images : undefined, undefined, undefined, sentDocuments);
+
+    // 문서는 전송 후 초기화 (재사용 방지)
+    if (sentDocuments) setChatDocuments([]);
 
     try {
-      // 2. AI 응답 생성
-      const result = await generateFromChat(text, images.length > 0 ? images : undefined);
+      // 2. AI 응답 생성 (문서 전달)
+      const result = await generateFromChat(text, images.length > 0 ? images : undefined, sentDocuments);
 
       console.log('🔍 ChatPanel - AI 응답 결과:', {
         hasContent: !!result.content,
@@ -114,7 +125,7 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류';
       addMessage('assistant', `오류가 발생했습니다: ${errorMessage}`);
     }
-  }, [addMessage, generateFromChat, needsSummarization, messages, summary, summarizeMessages, markSummarized]); // autoSaveImage 제거
+  }, [addMessage, generateFromChat, needsSummarization, messages, summary, summarizeMessages, markSummarized, chatDocuments]); // autoSaveImage 제거
 
   // 자동 저장 함수 (세션별 폴더에 저장, v0.4.4)
   const autoSaveImage = useCallback(async (imageBase64: string) => {
@@ -237,12 +248,23 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
           )}
         </div>
 
-        {/* 하단 입력 영역 */}
-        <ChatInput
-          onSend={handleSend}
-          isGenerating={isGenerating}
-          disabled={!apiKey}
-        />
+        {/* 하단 입력 영역: 문서 첨부 + 채팅 입력 */}
+        <div className="border-t border-gray-200 bg-white">
+          {/* 문서 추가 버튼 영역 */}
+          <div className="px-4 pt-2">
+            <DocumentManager
+              documents={chatDocuments}
+              apiKey={apiKey}
+              onAdd={(doc) => setChatDocuments((prev) => [...prev, doc])}
+              onDelete={(id) => setChatDocuments((prev) => prev.filter((d) => d.id !== id))}
+            />
+          </div>
+          <ChatInput
+            onSend={handleSend}
+            isGenerating={isGenerating}
+            disabled={!apiKey}
+          />
+        </div>
       </div>
 
       {/* 우측 AI 설정 패널 */}

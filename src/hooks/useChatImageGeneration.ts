@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { Session } from '../types/session';
 import { ChatMessage, ChatGenerationSettings } from '../types/chat';
 import { getPixelArtGridInfo } from '../types/pixelart';
+import { ReferenceDocument } from '../types/referenceDocument';
 import { logger } from '../lib/logger';
 
 // 사용자 메시지 앞에 스타일·그리드 힌트를 prefix로 결합해 Gemini가 해당 속성을 반영하도록 유도
@@ -40,7 +41,7 @@ interface GenerationResult {
 interface UseChatImageGenerationReturn {
   isGenerating: boolean;
   generationStatus: string;
-  generateFromChat: (userMessage: string, userImages?: string[]) => Promise<GenerationResult>;
+  generateFromChat: (userMessage: string, userImages?: string[], userDocuments?: ReferenceDocument[]) => Promise<GenerationResult>;
   summarizeMessages: (messages: ChatMessage[], existingSummary?: string) => Promise<string>;
 }
 
@@ -137,7 +138,8 @@ export function useChatImageGeneration(
   // 채팅 기반 이미지/텍스트 생성
   const generateFromChat = useCallback(async (
     userMessage: string,
-    userImages?: string[]
+    userImages?: string[],
+    userDocuments?: ReferenceDocument[]
   ): Promise<GenerationResult> => {
     console.log('🎨 generateFromChat 호출됨');
     if (!apiKey) throw new Error('API 키가 설정되지 않았습니다.');
@@ -152,8 +154,30 @@ export function useChatImageGeneration(
 
     // 스타일 프리셋·그리드는 API 파라미터가 아니라 프롬프트 prefix로 결합하여 전달
     const prefix = buildSettingsPrefix(settings);
-    const effectiveUserMessage = prefix ? prefix + userMessage : userMessage;
-    const contents = buildContents(effectiveUserMessage, userImages);
+
+    // v0.4.4: 문서 텍스트 컨텍스트와 추출 이미지를 프롬프트에 주입
+    const documentContext = (userDocuments ?? [])
+      .map((d) => `[첨부 문서: ${d.fileName}]\n${d.content}`)
+      .join('\n\n');
+
+    const documentImages = (userDocuments ?? []).flatMap((d) => d.extractedImages ?? []);
+
+    // 문서만 첨부하고 빈 프롬프트로 전송한 경우 자동 템플릿 사용
+    const trimmed = userMessage.trim();
+    const isDocumentOnly = trimmed.length === 0 && (userDocuments?.length ?? 0) > 0;
+    const basePrompt = isDocumentOnly
+      ? '첨부된 기획 문서를 바탕으로 완성도 높은 모바일 캐주얼 게임의 인게임 이미지를 생성해주세요.'
+      : userMessage;
+
+    const withDocContext = documentContext
+      ? `${documentContext}\n\n---\n\n${basePrompt}`
+      : basePrompt;
+
+    const effectiveUserMessage = prefix ? prefix + withDocContext : withDocContext;
+
+    // 사용자 이미지 + 문서 추출 이미지 합산하여 Gemini에 참조로 전달
+    const allImages = [...(userImages ?? []), ...documentImages];
+    const contents = buildContents(effectiveUserMessage, allImages.length > 0 ? allImages : undefined);
 
     const requestBody = {
       contents,
