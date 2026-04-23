@@ -39,7 +39,6 @@ interface UseSessionManagementReturn {
   handleHistoryDelete: (entryId: string) => void;
   handleDocumentAdd: (document: ReferenceDocument) => void;
   handleDocumentDelete: (documentId: string) => void;
-  handleAutoSavePathChange: (path: string) => Promise<void>;
   saveSessionWithoutTranslation: (updatedAnalysis: ImageAnalysisResult) => Promise<void>;
 }
 
@@ -330,24 +329,6 @@ export function useSessionManagement(): UseSessionManagementReturn {
     logger.debug('문서 삭제됨:', documentId);
   };
 
-  const handleAutoSavePathChange = async (path: string) => {
-    if (!currentSession) return;
-
-    const updatedSession = updateSession(currentSession, {
-      autoSavePath: path,
-    });
-    const updatedSessions = updateSessionInList(sessions, currentSession.id, updatedSession);
-
-    // 배치 업데이트: 2회 리렌더링 → 1회로 최적화
-    startTransition(() => {
-      setSessions(updatedSessions);
-      setCurrentSession(updatedSession);
-    });
-
-    await persistSessions(updatedSessions);
-    logger.debug('✅ 자동 저장 폴더 변경됨:', path);
-  };
-
   return {
     apiKey,
     setApiKey,
@@ -369,7 +350,6 @@ export function useSessionManagement(): UseSessionManagementReturn {
     handleHistoryDelete,
     handleDocumentAdd,
     handleDocumentDelete,
-    handleAutoSavePathChange,
     saveSessionWithoutTranslation,
   };
 }

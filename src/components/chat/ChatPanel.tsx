@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Download, MessageCircle, Loader2 } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
-import { writeFile, exists, mkdir } from '@tauri-apps/plugin-fs';
-import { join, downloadDir } from '@tauri-apps/api/path';
+import { writeFile } from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
+import { getSessionImageFolder } from '../../lib/config/paths';
 import type { Session } from '../../types/session';
 import { useChatSession, RECENT_MESSAGES_TO_KEEP } from '../../hooks/useChatSession';
 import { useChatImageGeneration } from '../../hooks/useChatImageGeneration';
@@ -115,43 +116,14 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
     }
   }, [addMessage, generateFromChat, needsSummarization, messages, summary, summarizeMessages, markSummarized]); // autoSaveImage 제거
 
-  // 자동 저장 함수 (배경에서 자동으로 저장)
+  // 자동 저장 함수 (세션별 폴더에 저장, v0.4.4)
   const autoSaveImage = useCallback(async (imageBase64: string) => {
-    console.log('🔄 autoSaveImage 함수 호출됨');
-    console.log('   - 입력 데이터 prefix:', imageBase64.substring(0, 50));
-
     try {
-      // 다운로드 디렉터리의 AI_Gen 폴더 경로 계산
-      const downloadPath = await downloadDir();
-      console.log('📁 다운로드 디렉터리:', downloadPath);
-
-      const savePath = await join(downloadPath, 'AI_Gen');
-      console.log('📁 저장 경로:', savePath);
-
-      // 폴더가 없으면 생성
-      try {
-        const folderExists = await exists(savePath);
-        console.log('📁 폴더 존재 여부:', folderExists);
-        if (!folderExists) {
-          await mkdir(savePath, { recursive: true });
-          console.log('✅ AI_Gen 폴더 생성 완료');
-          logger.debug('📁 AI_Gen 폴더 생성됨');
-        }
-      } catch (error) {
-        // 폴더가 없으면 생성 시도
-        console.log('⚠️ exists 실패, 폴더 생성 시도:', error);
-        await mkdir(savePath, { recursive: true });
-        console.log('✅ AI_Gen 폴더 생성 완료 (재시도)');
-        logger.debug('📁 AI_Gen 폴더 생성됨 (exists 실패 후)');
-      }
-
-      // 파일명 생성 (JPEG로 저장)
+      // 세션명 기반 저장 폴더 결정 (~/Downloads/AI_Gen/{세션명}/)
+      const savePath = await getSessionImageFolder(session.name);
       const timestamp = Date.now();
       const fileName = `chat-image-${timestamp}.jpg`;
       const fullPath = await join(savePath, fileName);
-
-      console.log('💾 저장할 파일 경로:', fullPath);
-      logger.debug('💾 자동 저장 시작:', fullPath);
 
       // base64 데이터에서 순수 데이터 추출
       const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
@@ -161,20 +133,14 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      console.log('📊 바이너리 데이터 크기:', bytes.length, 'bytes');
-
-      // 파일 저장
       await writeFile(fullPath, bytes);
-      console.log('✅ 파일 저장 성공:', fullPath);
-      logger.debug('✅ 이미지 자동 저장 완료:', fullPath);
-
+      logger.debug('💾 채팅 이미지 저장 완료:', fullPath);
       return fullPath;
     } catch (error) {
-      console.error('❌ autoSaveImage 오류 상세:', error);
-      logger.error('❌ 자동 저장 오류:', error);
+      logger.error('❌ 채팅 이미지 저장 실패:', error);
       throw error;
     }
-  }, []);
+  }, [session.name]);
 
   // 이미지 저장 (Tauri 다이얼로그 + 파일 쓰기)
   const handleSaveImage = useCallback(async (imageBase64: string) => {

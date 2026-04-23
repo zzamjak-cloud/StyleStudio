@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Wand2, ArrowLeft, ChevronDown, HelpCircle, X, Folder, FolderOpen, ZoomIn } from 'lucide-react';
-import { open, save } from '@tauri-apps/plugin-dialog';
-import { writeFile, exists, mkdir } from '@tauri-apps/plugin-fs';
-import { join, downloadDir } from '@tauri-apps/api/path';
+import { Wand2, ArrowLeft, ChevronDown, HelpCircle, X, FolderOpen, ZoomIn } from 'lucide-react';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeFile } from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
+import { getSessionImageFolder } from '../../lib/config/paths';
 import { ImageAnalysisResult } from '../../types/analysis';
 import { SessionType, GenerationHistoryEntry } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
@@ -312,13 +313,12 @@ interface ImageGeneratorPanelProps {
   analysis: ImageAnalysisResult;
   referenceImages: string[];
   sessionType: SessionType;
+  sessionName: string; // v0.4.4: 세션 이름 (저장 폴더 경로 생성용)
   generationHistory?: GenerationHistoryEntry[];
   onHistoryAdd?: (entry: GenerationHistoryEntry) => void;
   onHistoryUpdate?: (entryId: string, updates: Partial<GenerationHistoryEntry>) => void;
   onHistoryDelete?: (entryId: string) => void;
   onBack?: () => void;
-  autoSavePath?: string; // 자동 저장 폴더 경로
-  onAutoSavePathChange?: (path: string) => void; // 폴더 경로 변경 콜백
   referenceDocuments?: ReferenceDocument[]; // 참조 문서 (UI 세션 전용)
   onDocumentAdd?: (document: ReferenceDocument) => void;
   onDocumentDelete?: (documentId: string) => void;
@@ -357,13 +357,12 @@ export function ImageGeneratorPanel({
   analysis,
   referenceImages,
   sessionType,
+  sessionName,
   generationHistory = [],
   onHistoryAdd,
   onHistoryUpdate,
   onHistoryDelete,
   onBack,
-  autoSavePath,
-  onAutoSavePathChange,
   referenceDocuments = [],
   onDocumentAdd,
   onDocumentDelete,
@@ -687,28 +686,7 @@ export function ImageGeneratorPanel({
     }
   };
 
-  // 폴더 선택 함수
-  const handleSelectFolder = async () => {
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: '이미지 저장 폴더 선택',
-      });
-
-      if (selected && typeof selected === 'string') {
-        logger.debug('📁 폴더 선택됨:', selected);
-        if (onAutoSavePathChange) {
-          onAutoSavePathChange(selected);
-        }
-      }
-    } catch (error) {
-      logger.error('❌ 폴더 선택 오류:', error);
-      alert('폴더 선택에 실패했습니다: ' + (error as Error).message);
-    }
-  };
-
-  // 자동 저장 함수 (세션 타입에 따라 PNG 또는 JPG로 저장)
+  // 자동 저장 함수 (세션별 폴더 고정, v0.4.4)
   const autoSaveImage = async (imageDataUrl: string, saveAsPng: boolean = false) => {
     try {
       // Data URL 형식 검증
@@ -716,99 +694,17 @@ export function ImageGeneratorPanel({
         throw new Error('유효하지 않은 이미지 데이터 형식입니다');
       }
 
-      // 폴백 경로 (기본 경로) 미리 계산
-      const downloadPath = await downloadDir();
-      const fallbackPath = await join(downloadPath, 'AI_Gen');
+      // 저장 경로 결정 (v0.4.4: 세션별 폴더 고정)
+      const savePath = await getSessionImageFolder(sessionName);
+      logger.debug('🔍 저장 경로:', savePath);
 
-      logger.debug('🔍 [경로 검증 시작]');
-      logger.debug('   - autoSavePath:', autoSavePath || 'undefined');
-      logger.debug('   - fallbackPath:', fallbackPath);
-      logger.debug('   - onAutoSavePathChange 존재:', !!onAutoSavePathChange);
-
-      // 저장 경로 결정
-      let savePath = autoSavePath;
-      let isUserSpecifiedPath = false;
-
-      // autoSavePath가 기본 경로인지 확인
-      if (savePath && savePath !== fallbackPath) {
-        isUserSpecifiedPath = true;
-        logger.debug('   - 사용자 지정 경로 감지:', savePath);
-      } else {
-        logger.debug('   - 기본 경로 사용 중');
-      }
-
-      // 경로 검증
-      if (savePath) {
-        let pathExists = false;
-        try {
-          pathExists = await exists(savePath);
-          logger.debug('   - 경로 존재 확인:', pathExists);
-        } catch (error) {
-          logger.warn('⚠️ 경로 확인 실패 (권한 문제 가능):', error);
-          pathExists = false;
-        }
-
-        // 사용자 지정 경로가 존재하지 않으면 폴백으로 변경
-        if (!pathExists && isUserSpecifiedPath) {
-          logger.warn(`⚠️ 지정된 폴더를 찾을 수 없습니다: ${savePath}`);
-          logger.info(`   폴백 경로로 변경: ${fallbackPath}`);
-          savePath = fallbackPath;
-
-          // 폴백 경로로 변경 알림 (await로 세션 저장 완료 대기)
-          if (onAutoSavePathChange) {
-            logger.debug('📞 onAutoSavePathChange 호출 시작...');
-            await onAutoSavePathChange(fallbackPath);
-            logger.debug('✅ 세션의 저장 폴더가 폴백 경로로 변경되었습니다');
-          } else {
-            logger.error('❌ onAutoSavePathChange가 전달되지 않았습니다!');
-          }
-
-          alert(`지정된 저장 폴더를 찾을 수 없습니다.\n\n기본 폴더로 변경됩니다:\n${fallbackPath}`);
-        } else if (!pathExists && !isUserSpecifiedPath) {
-          // 기본 경로가 없으면 생성
-          logger.debug('   - 기본 경로가 없어서 폴백으로 변경');
-          savePath = fallbackPath;
-        }
-      } else {
-        // autoSavePath가 없으면 기본 경로 사용
-        logger.debug('   - autoSavePath가 없어서 기본 경로 사용');
-        savePath = fallbackPath;
-      }
-
-      // 기본 폴더가 없으면 생성 (폴백 경로만)
-      if (savePath === fallbackPath) {
-        try {
-          const folderExists = await exists(savePath);
-          if (!folderExists) {
-            await mkdir(savePath, { recursive: true });
-            logger.debug('📁 기본 폴더 생성됨:', savePath);
-          }
-        } catch (error) {
-          // 폴더가 없으면 생성 시도
-          try {
-            await mkdir(savePath, { recursive: true });
-            logger.debug('📁 기본 폴더 생성됨 (exists 실패 후):', savePath);
-          } catch (mkdirError) {
-            logger.error('❌ 폴더 생성 실패:', mkdirError);
-            throw mkdirError;
-          }
-        }
-      }
-
-      // 기본 경로로 변경 알림 (초기 상태일 때만 - 조건문 바깥으로 이동)
-      if (onAutoSavePathChange && !autoSavePath) {
-        await onAutoSavePathChange(savePath);
-        logger.debug('✅ 세션의 저장 폴더가 설정되었습니다:', savePath);
-      }
-
-      // 파일명 생성 (투명 배경 이미지는 PNG, 그 외는 JPG)
+      // 파일명 생성
       const timestamp = Date.now();
       const fileExtension = saveAsPng ? 'png' : 'jpg';
       const fileName = `style-studio-${timestamp}.${fileExtension}`;
       const fullPath = await join(savePath, fileName);
 
       logger.debug('💾 자동 저장 시작:', fullPath);
-      logger.debug('   이미지 데이터 형식:', imageDataUrl.substring(0, 50) + '...');
 
       // Base64를 Uint8Array로 변환 (원본 그대로 저장)
       const base64Data = imageDataUrl.split(',')[1];
@@ -816,7 +712,6 @@ export function ImageGeneratorPanel({
         throw new Error('Base64 데이터를 추출할 수 없습니다. Data URL 형식이 잘못되었습니다.');
       }
 
-      // atob() 함수로 디코딩 시도
       let binaryString: string;
       try {
         binaryString = atob(base64Data);
@@ -830,18 +725,12 @@ export function ImageGeneratorPanel({
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // 파일 저장
       await writeFile(fullPath, bytes);
       logger.debug('✅ 이미지 자동 저장 완료:', fullPath);
 
       return fullPath;
     } catch (error) {
-      logger.error('❌ 자동 저장 오류 (상세):', {
-        error,
-        errorType: typeof error,
-        errorConstructor: error?.constructor?.name,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
+      logger.error('❌ 자동 저장 오류:', error);
       throw error;
     }
   };
@@ -863,80 +752,8 @@ export function ImageGeneratorPanel({
     const shouldSaveAsPng = TRANSPARENT_BACKGROUND_SESSION_TYPES.includes(sessionType);
 
     try {
-      // 폴백 경로 (기본 경로) 미리 계산
-      const downloadPath = await downloadDir();
-      const fallbackPath = await join(downloadPath, 'AI_Gen');
-
-      // 기본 저장 경로 결정
-      let defaultPath = autoSavePath;
-      let isUserSpecifiedPath = false;
-
-      // autoSavePath가 기본 경로인지 확인
-      if (defaultPath && defaultPath !== fallbackPath) {
-        isUserSpecifiedPath = true;
-      }
-
-      // 경로 검증
-      if (defaultPath) {
-        let pathExists = false;
-        try {
-          pathExists = await exists(defaultPath);
-        } catch (error) {
-          logger.warn('⚠️ 경로 확인 실패 (권한 문제 가능):', error);
-          pathExists = false;
-        }
-
-        // 사용자 지정 경로가 존재하지 않으면 폴백으로 변경
-        if (!pathExists && isUserSpecifiedPath) {
-          logger.warn(`⚠️ 지정된 폴더를 찾을 수 없습니다: ${defaultPath}`);
-          logger.info(`   폴백 경로로 변경: ${fallbackPath}`);
-          defaultPath = fallbackPath;
-
-          // 폴백 경로로 변경 알림 (await로 세션 저장 완료 대기)
-          if (onAutoSavePathChange) {
-            logger.debug('📞 [handleManualSave] onAutoSavePathChange 호출 시작...');
-            await onAutoSavePathChange(fallbackPath);
-            logger.debug('✅ [handleManualSave] 세션의 저장 폴더가 폴백 경로로 변경되었습니다');
-          } else {
-            logger.error('❌ [handleManualSave] onAutoSavePathChange가 전달되지 않았습니다!');
-          }
-
-          alert(`지정된 저장 폴더를 찾을 수 없습니다.\n\n기본 폴더로 변경됩니다:\n${fallbackPath}`);
-        } else if (!pathExists && !isUserSpecifiedPath) {
-          // 기본 경로가 없으면 생성
-          defaultPath = fallbackPath;
-        }
-      } else {
-        // autoSavePath가 없으면 기본 경로 사용
-        defaultPath = fallbackPath;
-      }
-
-      // 기본 폴더가 없으면 생성 (폴백 경로만)
-      if (defaultPath === fallbackPath) {
-        try {
-          const folderExists = await exists(defaultPath);
-          if (!folderExists) {
-            await mkdir(defaultPath, { recursive: true });
-            logger.debug('📁 기본 폴더 생성됨:', defaultPath);
-          }
-        } catch (error) {
-          // 폴더가 없으면 생성 시도
-          try {
-            await mkdir(defaultPath, { recursive: true });
-            logger.debug('📁 기본 폴더 생성됨 (exists 실패 후):', defaultPath);
-          } catch (mkdirError) {
-            logger.error('❌ 폴더 생성 실패:', mkdirError);
-            throw mkdirError;
-          }
-        }
-
-        // 기본 경로로 변경 알림 (초기 상태일 때만)
-        if (onAutoSavePathChange && !autoSavePath) {
-          logger.debug('📞 [handleManualSave] 초기 상태 - onAutoSavePathChange 호출 시작...');
-          await onAutoSavePathChange(fallbackPath);
-          logger.debug('✅ [handleManualSave] 세션의 저장 폴더가 기본 경로로 설정되었습니다');
-        }
-      }
+      // 저장 경로 결정 (v0.4.4: 세션별 폴더 고정)
+      const defaultPath = await getSessionImageFolder(sessionName);
 
       // 기본 파일명 생성 (투명 배경 이미지는 PNG, 그 외는 JPG)
       const timestamp = Date.now();
@@ -1118,9 +935,9 @@ export function ImageGeneratorPanel({
               </p>
             </div>
           </div>
-          {/* 자동 저장 폴더 정보 및 설정 버튼 */}
+          {/* 자동 저장 폴더 정보 (v0.4.4: 세션별 고정 경로 표시) */}
           <div className="flex items-center gap-3">
-            {/* 폴더 경로 표시 (항상 표시) + 커스텀 툴팁 */}
+            {/* 폴더 경로 표시 + 커스텀 툴팁 */}
             <div className="relative">
               <div
                 className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg cursor-help hover:bg-green-100 transition-colors"
@@ -1129,31 +946,22 @@ export function ImageGeneratorPanel({
               >
                 <FolderOpen size={16} className="text-green-600" />
                 <span className="text-sm text-green-700 font-medium max-w-xs truncate">
-                  {autoSavePath ? autoSavePath.split(/[/\\]/).filter(Boolean).pop() : 'AI_Gen'}
+                  AI_Gen/{sessionName}
                 </span>
               </div>
 
-              {/* 커스텀 툴팁 (왼쪽으로 표시) */}
+              {/* 커스텀 툴팁 */}
               {showPathTooltip && (
                 <div className="absolute top-full right-0 mt-2 z-50 pointer-events-none">
                   <div className="bg-gray-900 text-white text-xs rounded-lg shadow-xl px-3 py-2 whitespace-nowrap">
                     <div className="font-semibold mb-1">저장 위치:</div>
                     <div className="text-gray-300">
-                      {autoSavePath || '~/Downloads/AI_Gen (기본)'}
+                      ~/Downloads/AI_Gen/{sessionName}
                     </div>
                   </div>
                 </div>
               )}
             </div>
-            {/* 폴더 선택 버튼 */}
-            <button
-              onClick={handleSelectFolder}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-all shadow-lg"
-              title="자동 저장 폴더 선택"
-            >
-              <Folder size={20} />
-              <span>저장 폴더</span>
-            </button>
 
             {/* 줌 컨트롤 */}
             {generatedImage && (

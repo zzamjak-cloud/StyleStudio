@@ -17,7 +17,8 @@ export interface Session {
   analysis: ImageAnalysisResult;
   imageCount: number; // 참조 이미지 개수
   generationHistory?: GenerationHistoryEntry[]; // 생성 히스토리 (선택)
-  autoSavePath?: string; // 자동 저장 폴더 경로 (선택)
+  /** @deprecated v0.4.4 이후 사용 안 함. 저장 경로는 자동으로 ~/Downloads/AI_Gen/{세션명}/ */
+  autoSavePath?: string;
   referenceDocuments?: ReferenceDocument[]; // 참조 문서 (UI 세션 전용)
   folderId?: string | null; // 소속 폴더 ID (null/undefined면 루트)
   illustrationData?: IllustrationSessionData; // 일러스트 세션 전용 데이터

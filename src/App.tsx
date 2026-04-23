@@ -84,7 +84,6 @@ function App() {
     handleHistoryDelete,
     handleDocumentAdd,
     handleDocumentDelete,
-    handleAutoSavePathChange,
     saveSessionWithoutTranslation,
   } = useSessionManagement();
   const { analyzeImages } = useGeminiAnalyzer();
@@ -1187,13 +1186,12 @@ function App() {
                 analysis={analysisResult}
                 referenceImages={currentSession.illustrationData?.characters.flatMap(c => c.images) || []}
                 sessionType="ILLUSTRATION"
-                                generationHistory={currentSession?.generationHistory}
+                sessionName={currentSession?.name || 'untitled'}
+                generationHistory={currentSession?.generationHistory}
                 onHistoryAdd={handleHistoryAdd}
                 onHistoryUpdate={handleHistoryUpdate}
                 onHistoryDelete={handleHistoryDelete}
                 onBack={handleBackToAnalysis}
-                autoSavePath={currentSession?.autoSavePath}
-                onAutoSavePathChange={handleAutoSavePathChange}
                 illustrationData={currentSession.illustrationData}
               />
             )
@@ -1260,16 +1258,15 @@ function App() {
                 analysis={analysisResult}
                 referenceImages={uploadedImages}
                 sessionType={currentSession?.type || 'STYLE'}
-                                generationHistory={currentSession?.generationHistory}
+                sessionName={currentSession?.name || 'untitled'}
+                generationHistory={currentSession?.generationHistory}
                 onHistoryAdd={handleHistoryAdd}
                 onHistoryUpdate={handleHistoryUpdate}
                 onHistoryDelete={handleHistoryDelete}
                 onBack={handleBackToAnalysis}
-                autoSavePath={currentSession?.autoSavePath}
                 referenceDocuments={currentSession?.referenceDocuments}
                 onDocumentAdd={handleDocumentAdd}
                 onDocumentDelete={handleDocumentDelete}
-                onAutoSavePathChange={handleAutoSavePathChange}
               />
             )
           )

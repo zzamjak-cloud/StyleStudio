@@ -5,8 +5,9 @@ import { ConceptLeftPanel } from './ConceptLeftPanel';
 import { ConceptRightPanel } from './ConceptRightPanel';
 import { ConceptHistory } from './ConceptHistory';
 import { useConceptGeneration } from '../../hooks/useConceptGeneration';
-import { exists, mkdir, writeFile } from '@tauri-apps/plugin-fs';
-import { downloadDir, join } from '@tauri-apps/api/path';
+import { writeFile } from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
+import { getSessionImageFolder } from '../../lib/config/paths';
 import { logger } from '../../lib/logger';
 
 interface ConceptPanelProps {
@@ -45,19 +46,9 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
   // 생성 훅
   const { isGenerating, generateConcept } = useConceptGeneration(apiKey);
 
+  // 컨셉 이미지 자동 저장 (세션별 폴더, v0.4.4)
   const autoSaveConceptImage = useCallback(async (imageDataUrl: string) => {
-    const downloadPath = await downloadDir();
-    const savePath = await join(downloadPath, 'AI_Gen');
-
-    try {
-      const folderExists = await exists(savePath);
-      if (!folderExists) {
-        await mkdir(savePath, { recursive: true });
-      }
-    } catch {
-      await mkdir(savePath, { recursive: true });
-    }
-
+    const savePath = await getSessionImageFolder(session.name);
     const timestamp = Date.now();
     const fullPath = await join(savePath, `concept-${timestamp}.jpg`);
 
@@ -70,7 +61,7 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
 
     await writeFile(fullPath, bytes);
     return fullPath;
-  }, []);
+  }, [session.name]);
 
   // 세션 저장용 ref (이미지 생성, 히스토리 삭제, 언마운트 시에만 저장)
   const sessionRef = useRef(session);
