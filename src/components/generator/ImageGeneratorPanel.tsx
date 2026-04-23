@@ -4,7 +4,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { join } from '@tauri-apps/api/path';
-import { getSessionImageFolder } from '../../lib/config/paths';
+import { getAiGenRoot, getSessionImageFolder } from '../../lib/config/paths';
 import { ImageAnalysisResult } from '../../types/analysis';
 import { SessionType, GenerationHistoryEntry } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
@@ -941,8 +941,8 @@ export function ImageGeneratorPanel({
             <button
               onClick={async () => {
                 try {
-                  const folder = await getSessionImageFolder(sessionName);
-                  await openPath(folder);
+                  const root = await getAiGenRoot();
+                  await openPath(root);
                 } catch (error) {
                   logger.error('❌ 저장 폴더 열기 실패:', error);
                   alert('저장 폴더를 열지 못했습니다.');
@@ -955,7 +955,7 @@ export function ImageGeneratorPanel({
             >
               <FolderOpen size={16} className="text-green-600" />
               <span className="text-sm text-green-700 font-medium max-w-xs truncate">
-                AI_Gen/{sessionName}
+                AI_Gen
               </span>
 
               {/* 커스텀 툴팁 */}
@@ -964,7 +964,7 @@ export function ImageGeneratorPanel({
                   <div className="bg-gray-900 text-white text-xs rounded-lg shadow-xl px-3 py-2 whitespace-nowrap">
                     <div className="font-semibold mb-1">저장 위치 (클릭하여 열기):</div>
                     <div className="text-gray-300">
-                      ~/Downloads/AI_Gen/{sessionName}
+                      ~/Downloads/AI_Gen/
                     </div>
                   </div>
                 </div>

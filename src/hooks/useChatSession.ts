@@ -12,6 +12,7 @@ export const RECENT_MESSAGES_TO_KEEP = 5;
 
 interface UseChatSessionReturn {
   messages: ChatMessage[];
+  attachedDocuments: ReferenceDocument[];
   settings: ChatGenerationSettings;
   summary: string | undefined;
   summarizedUpTo: number | undefined;
@@ -19,6 +20,7 @@ interface UseChatSessionReturn {
   needsSummarization: boolean;
   addMessage: (role: 'user' | 'assistant', content: string, images?: string[], isGeneratedImage?: boolean, imageSignatures?: string[], documents?: ReferenceDocument[]) => void;
   deleteMessage: (messageId: string) => void;
+  setAttachedDocuments: (documents: ReferenceDocument[]) => void;
   updateSettings: (settings: Partial<ChatGenerationSettings>) => void;
   clearMessages: () => void;
   markSummarized: (summary: string, upToIndex: number) => void;
@@ -30,6 +32,7 @@ export function useChatSession(
 ): UseChatSessionReturn {
   const chatData = session.chatData;
   const messages = chatData?.messages ?? [];
+  const attachedDocuments = chatData?.attachedDocuments ?? [];
   const settings: ChatGenerationSettings = {
     aspectRatio: '1:1',
     imageModel: 'gemini-3-pro-image-preview',
@@ -120,6 +123,11 @@ export function useChatSession(
     logger.debug(`🗑️ 채팅 메시지 삭제: ${messageId}`);
   }, [updateChatData]);
 
+  // 현재 채팅 입력창에 첨부된 문서 목록 저장
+  const setAttachedDocuments = useCallback((documents: ReferenceDocument[]) => {
+    updateChatData({ attachedDocuments: documents });
+  }, [updateChatData]);
+
   // 이미지 생성 설정(화면비, 크기, 그리드, 프리셋 등)을 부분 업데이트
   const updateSettings = useCallback((newSettings: Partial<ChatGenerationSettings>) => {
     const latestSettings: ChatGenerationSettings = {
@@ -153,7 +161,7 @@ export function useChatSession(
   }, [updateChatData]);
 
   return {
-    messages, settings, summary, summarizedUpTo, totalTokenCount,
-    needsSummarization, addMessage, deleteMessage, updateSettings, clearMessages, markSummarized,
+    messages, attachedDocuments, settings, summary, summarizedUpTo, totalTokenCount,
+    needsSummarization, addMessage, deleteMessage, setAttachedDocuments, updateSettings, clearMessages, markSummarized,
   };
 }

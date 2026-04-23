@@ -66,13 +66,27 @@ export function useImageHandling(): UseImageHandlingReturn {
 
   // 전역 드래그 앤 드롭 리스너
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlisten: (() => void | Promise<void>) | undefined;
+    let isDisposed = false;
+    let isUnlistenCalled = false;
+
+    const safeUnlisten = (dispose?: () => void | Promise<void>) => {
+      if (!dispose || isUnlistenCalled) return;
+      isUnlistenCalled = true;
+      try {
+        Promise.resolve(dispose()).catch((error) => {
+          logger.warn('드래그 리스너 비동기 해제 중 경고:', error);
+        });
+      } catch (error) {
+        logger.warn('드래그 리스너 해제 중 경고:', error);
+      }
+    };
 
     const setupGlobalDropListener = async () => {
       try {
         const appWindow = getCurrentWindow();
 
-        unlisten = await appWindow.onDragDropEvent(async (event) => {
+        const dispose = await appWindow.onDragDropEvent(async (event) => {
           if (event.payload.type === 'drop') {
             // 중복 이벤트 방지: 500ms 이내 재호출 무시
             const now = Date.now();
@@ -103,6 +117,12 @@ export function useImageHandling(): UseImageHandlingReturn {
             }
           }
         });
+
+        if (isDisposed) {
+          safeUnlisten(dispose);
+          return;
+        }
+        unlisten = dispose;
       } catch (error) {
         logger.error('❌ [App] 전역 드롭 리스너 등록 실패:', error);
       }
@@ -111,9 +131,8 @@ export function useImageHandling(): UseImageHandlingReturn {
     setupGlobalDropListener();
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      isDisposed = true;
+      safeUnlisten(unlisten);
     };
   }, []);
 

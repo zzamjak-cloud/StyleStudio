@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, X, Image } from 'lucide-react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { readFile } from '@tauri-apps/plugin-fs';
+import { subscribeWindowDragDrop } from '../../lib/windowDragDropBus';
 
 // 최대 첨부 이미지 수
 const MAX_IMAGES = 5;
@@ -44,40 +44,33 @@ export function ChatInput({ onSend, isGenerating, disabled }: ChatInputProps) {
 
   // Tauri 드래그 앤 드롭으로 이미지 파일 첨부
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    const unsubscribe = subscribeWindowDragDrop(async (event) => {
+      if (event.payload.type !== 'drop') return;
+      const paths = event.payload.paths || [];
+      for (const filePath of paths) {
+        // 이미지 파일만 허용
+        const ext = filePath.split('.').pop()?.toLowerCase();
+        if (!ext || !['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) continue;
 
-    const setup = async () => {
-      const appWindow = getCurrentWindow();
-      unlisten = await appWindow.onDragDropEvent(async (event) => {
-        if (event.payload.type === 'drop') {
-          const paths = event.payload.paths || [];
-          for (const filePath of paths) {
-            // 이미지 파일만 허용
-            const ext = filePath.split('.').pop()?.toLowerCase();
-            if (!ext || !['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) continue;
+        try {
+          const fileData = await readFile(filePath);
+          const base64 = btoa(
+            Array.from(new Uint8Array(fileData)).map(b => String.fromCharCode(b)).join('')
+          );
+          const mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
+          const dataUrl = `data:${mimeType};base64,${base64}`;
 
-            try {
-              const fileData = await readFile(filePath);
-              const base64 = btoa(
-                Array.from(new Uint8Array(fileData)).map(b => String.fromCharCode(b)).join('')
-              );
-              const mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
-              const dataUrl = `data:${mimeType};base64,${base64}`;
-
-              setAttachedImages(prev => {
-                if (prev.length >= MAX_IMAGES) return prev;
-                return [...prev, dataUrl];
-              });
-            } catch (err) {
-              console.error('파일 읽기 실패:', err);
-            }
-          }
+          setAttachedImages(prev => {
+            if (prev.length >= MAX_IMAGES) return prev;
+            return [...prev, dataUrl];
+          });
+        } catch (err) {
+          console.error('파일 읽기 실패:', err);
         }
-      });
-    };
+      }
+    });
 
-    setup();
-    return () => { if (unlisten) unlisten(); };
+    return () => unsubscribe();
   }, []);
 
   // 클립보드 붙여넣기로 이미지 첨부

@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Download, MessageCircle, Loader2 } from 'lucide-react';
+import { X, Download, MessageCircle, Loader2, FolderOpen } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { join } from '@tauri-apps/api/path';
-import { getSessionImageFolder } from '../../lib/config/paths';
+import { getAiGenRoot } from '../../lib/config/paths';
 import type { Session } from '../../types/session';
-import { ReferenceDocument } from '../../types/referenceDocument';
 import { useChatSession, RECENT_MESSAGES_TO_KEEP } from '../../hooks/useChatSession';
 import { useChatImageGeneration } from '../../hooks/useChatImageGeneration';
 import { ChatMessage } from './ChatMessage';
@@ -24,11 +24,13 @@ interface ChatPanelProps {
 export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) {
   const {
     messages,
+    attachedDocuments,
     summary,
     needsSummarization,
     settings,
     addMessage,
     deleteMessage,
+    setAttachedDocuments,
     updateSettings,
     markSummarized,
   } = useChatSession(session, onSessionUpdate);
@@ -37,9 +39,6 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
 
   // 이미지 미리보기 모달 상태
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-
-  // 첨부 문서 상태 (전송 시 초기화)
-  const [chatDocuments, setChatDocuments] = useState<ReferenceDocument[]>([]);
 
   // 메시지 스크롤 영역 ref
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -54,14 +53,11 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
 
   // 메시지 전송 핸들러
   const handleSend = useCallback(async (text: string, images: string[]) => {
-    // 전송 시점의 문서 스냅샷 (이후 state 초기화와 무관하게 보존)
-    const sentDocuments = chatDocuments.length > 0 ? [...chatDocuments] : undefined;
+    // 전송 시점의 문서 스냅샷
+    const sentDocuments = attachedDocuments.length > 0 ? [...attachedDocuments] : undefined;
 
     // 1. 사용자 메시지 즉시 추가 (documents 포함)
     addMessage('user', text, images.length > 0 ? images : undefined, undefined, undefined, sentDocuments);
-
-    // 문서는 전송 후 초기화 (재사용 방지)
-    if (sentDocuments) setChatDocuments([]);
 
     try {
       // 2. AI 응답 생성 (문서 전달)
@@ -83,8 +79,8 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
         result.imageSignatures.length > 0 ? result.imageSignatures : undefined,
       );
 
-      // 3-1. 생성된 이미지가 있으면 자동 저장
-      if (result.isGeneratedImage && result.images.length > 0) {
+      // 3-1. 응답에 이미지가 있으면 자동 저장
+      if (result.images.length > 0) {
         console.log('🎯 ChatPanel - 자동 저장 시작, 이미지 개수:', result.images.length);
         for (const imageBase64 of result.images) {
           try {
@@ -125,19 +121,23 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류';
       addMessage('assistant', `오류가 발생했습니다: ${errorMessage}`);
     }
-  }, [addMessage, generateFromChat, needsSummarization, messages, summary, summarizeMessages, markSummarized, chatDocuments]); // autoSaveImage 제거
+  }, [addMessage, generateFromChat, needsSummarization, messages, summary, summarizeMessages, markSummarized, attachedDocuments]); // autoSaveImage 제거
 
   // 자동 저장 함수 (세션별 폴더에 저장, v0.4.4)
   const autoSaveImage = useCallback(async (imageBase64: string) => {
     try {
-      // 세션명 기반 저장 폴더 결정 (~/Downloads/AI_Gen/{세션명}/)
-      const savePath = await getSessionImageFolder(session.name);
+      // 채팅 자동 저장 경로 고정 (~/Downloads/AI_Gen/)
+      const savePath = await getAiGenRoot();
       const timestamp = Date.now();
-      const fileName = `chat-image-${timestamp}.jpg`;
+      const randomSuffix = Math.random().toString(36).slice(2, 8);
+      const fileName = `chat-image-${timestamp}-${randomSuffix}.jpg`;
       const fullPath = await join(savePath, fileName);
 
       // base64 데이터에서 순수 데이터 추출
       const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+      if (!base64Data) {
+        throw new Error('채팅 이미지 Base64 데이터가 비어 있습니다.');
+      }
       const binaryString = atob(base64Data);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -151,7 +151,7 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
       logger.error('❌ 채팅 이미지 저장 실패:', error);
       throw error;
     }
-  }, [session.name]);
+  }, []);
 
   // 이미지 저장 (Tauri 다이얼로그 + 파일 쓰기)
   const handleSaveImage = useCallback(async (imageBase64: string) => {
@@ -194,6 +194,26 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
     <div className="flex h-full">
       {/* 좌측 채팅 영역 */}
       <div className="flex-1 flex flex-col">
+        {/* 채팅 상단 바 */}
+        <div className="px-4 py-2 border-b border-gray-200 bg-white flex items-center justify-end">
+          <button
+            onClick={async () => {
+              try {
+                const root = await getAiGenRoot();
+                await openPath(root);
+              } catch (error) {
+                logger.error('❌ 채팅 저장 폴더 열기 실패:', error);
+                alert('저장 폴더를 열지 못했습니다.');
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+            title="탐색기에서 저장 폴더 열기"
+          >
+            <FolderOpen size={16} className="text-green-600" />
+            <span className="text-sm text-green-700 font-medium">~/Downloads/AI_Gen/</span>
+          </button>
+        </div>
+
         {/* 메시지 영역 */}
         <div
           ref={scrollContainerRef}
@@ -253,10 +273,16 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
           {/* 문서 추가 버튼 영역 */}
           <div className="px-4 pt-2">
             <DocumentManager
-              documents={chatDocuments}
+              documents={attachedDocuments}
               apiKey={apiKey}
-              onAdd={(doc) => setChatDocuments((prev) => [...prev, doc])}
-              onDelete={(id) => setChatDocuments((prev) => prev.filter((d) => d.id !== id))}
+              onAdd={(doc) => {
+                const exists = attachedDocuments.some((d) => d.filePath === doc.filePath);
+                if (exists) return;
+                setAttachedDocuments([...attachedDocuments, doc]);
+              }}
+              onDelete={(id) => setAttachedDocuments(attachedDocuments.filter((d) => d.id !== id))}
+              showPersistentBadge={true}
+              persistentBadgeText="대화 참조중"
             />
           </div>
           <ChatInput

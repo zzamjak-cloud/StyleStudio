@@ -155,9 +155,16 @@ export function useChatImageGeneration(
     // 스타일 프리셋·그리드는 API 파라미터가 아니라 프롬프트 prefix로 결합하여 전달
     const prefix = buildSettingsPrefix(settings);
 
-    // v0.4.4: 문서 텍스트 컨텍스트와 추출 이미지를 프롬프트에 주입
+    // v0.4.4: 문서 컨텍스트는 요약 중심으로 주입 (토큰 절약 + 핵심 정보 유지)
     const documentContext = (userDocuments ?? [])
-      .map((d) => `[첨부 문서: ${d.fileName}]\n${d.content}`)
+      .map((d) => {
+        const summarized = d.summary?.trim();
+        const fallback = d.content?.slice(0, 1500).trim();
+        const coreContent = summarized && summarized.length > 0 ? summarized : fallback;
+        if (!coreContent) return '';
+        return `[첨부 문서 핵심 요약: ${d.fileName}]\n${coreContent}`;
+      })
+      .filter(Boolean)
       .join('\n\n');
 
     const documentImages = (userDocuments ?? []).flatMap((d) => d.extractedImages ?? []);

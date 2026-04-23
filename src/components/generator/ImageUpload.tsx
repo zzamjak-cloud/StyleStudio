@@ -22,19 +22,39 @@ export function ImageUpload({ onImageSelect }: ImageUploadProps) {
 
   // 호버 상태만 관리 (실제 드롭 처리는 App.tsx에서 전역으로 처리)
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlisten: (() => void | Promise<void>) | undefined;
+    let isDisposed = false;
+    let isUnlistenCalled = false;
+
+    const safeUnlisten = (dispose?: () => void | Promise<void>) => {
+      if (!dispose || isUnlistenCalled) return;
+      isUnlistenCalled = true;
+      try {
+        Promise.resolve(dispose()).catch((error) => {
+          logger.warn('ImageUpload 호버 리스너 비동기 해제 중 경고:', error);
+        });
+      } catch (error) {
+        logger.warn('ImageUpload 호버 리스너 해제 중 경고:', error);
+      }
+    };
 
     const setupHoverListener = async () => {
       try {
         const appWindow = getCurrentWindow();
 
-        unlisten = await appWindow.onDragDropEvent((event) => {
+        const dispose = await appWindow.onDragDropEvent((event) => {
           if (event.payload.type === 'enter' || event.payload.type === 'over') {
             setIsDragging(true);
           } else if (event.payload.type === 'drop' || event.payload.type === 'leave') {
             setIsDragging(false);
           }
         });
+
+        if (isDisposed) {
+          safeUnlisten(dispose);
+          return;
+        }
+        unlisten = dispose;
 
         logger.debug('✅ [ImageUpload] 호버 리스너 등록 완료');
       } catch (error) {
@@ -45,9 +65,8 @@ export function ImageUpload({ onImageSelect }: ImageUploadProps) {
     setupHoverListener();
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      isDisposed = true;
+      safeUnlisten(unlisten);
     };
   }, []);
 

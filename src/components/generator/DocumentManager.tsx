@@ -1,88 +1,94 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FileText, Plus, FileSearch, Trash2, X, Link } from 'lucide-react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { parseFile, SUPPORTED_FILE_TYPES } from '../../lib/utils/fileParser';
 import { generateFileSummary, validateFileSize } from '../../lib/utils/fileOptimization';
+import { subscribeWindowDragDrop } from '../../lib/windowDragDropBus';
 
 interface DocumentManagerProps {
   documents: ReferenceDocument[];
   apiKey: string;
   onAdd: (document: ReferenceDocument) => void;
   onDelete: (documentId: string) => void;
+  showPersistentBadge?: boolean;
+  persistentBadgeText?: string;
 }
 
-export function DocumentManager({ documents, apiKey, onAdd, onDelete }: DocumentManagerProps) {
+export function DocumentManager({
+  documents,
+  apiKey,
+  onAdd,
+  onDelete,
+  showPersistentBadge = false,
+  persistentBadgeText = '대화 참조중',
+}: DocumentManagerProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [viewingDocument, setViewingDocument] = useState<ReferenceDocument | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlInput, setUrlInput] = useState('');
+  const documentsRef = useRef(documents);
+  const processingPathsRef = useRef(new Set<string>());
+  const lastDropAtRef = useRef(0);
+
+  documentsRef.current = documents;
 
   // 드래그 앤 드롭 설정
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    const unsubscribe = subscribeWindowDragDrop(async (event) => {
+      if (event.payload.type === 'enter' || event.payload.type === 'over') {
+        setIsDragging(true);
+      } else if (event.payload.type === 'leave') {
+        setIsDragging(false);
+      } else if (event.payload.type === 'drop') {
+        const now = Date.now();
+        // 동일 drop 이벤트가 중복 전달되는 경우 방지
+        if (now - lastDropAtRef.current < 500) {
+          return;
+        }
+        lastDropAtRef.current = now;
+        setIsDragging(false);
 
-    const setupDragDropListener = async () => {
-      try {
-        const appWindow = getCurrentWindow();
+        const paths = event.payload.paths || [];
 
-        unlisten = await appWindow.onDragDropEvent(async (event) => {
-          if (event.payload.type === 'enter' || event.payload.type === 'over') {
-            setIsDragging(true);
-          } else if (event.payload.type === 'leave') {
-            setIsDragging(false);
-          } else if (event.payload.type === 'drop') {
-            setIsDragging(false);
+        // 이미지 파일 확장자 목록
+        const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 
-            const paths = event.payload.paths || [];
+        // 확장자 검증 (지원하는 모든 형식 허용)
+        const validFiles: string[] = [];
+        const invalidFiles: string[] = [];
 
-            // 이미지 파일 확장자 목록
-            const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+        for (const path of paths) {
+          const ext = path.split('.').pop()?.toLowerCase();
 
-            // 확장자 검증 (지원하는 모든 형식 허용)
-            const validFiles: string[] = [];
-            const invalidFiles: string[] = [];
-
-            for (const path of paths) {
-              const ext = path.split('.').pop()?.toLowerCase();
-
-              // 이미지 파일은 무시 (useImageHandling에서 처리)
-              if (ext && imageExtensions.includes(ext)) {
-                continue;
-              }
-
-              if (ext && SUPPORTED_FILE_TYPES.includes(ext as any)) {
-                validFiles.push(path);
-              } else {
-                invalidFiles.push(path);
-              }
-            }
-
-            if (invalidFiles.length > 0) {
-              alert(
-                `지원하지 않는 파일 형식입니다:\n${invalidFiles.join('\n')}\n\nPDF, Excel, CSV, Markdown, Text 파일만 첨부 가능합니다.`
-              );
-            }
-
-            if (validFiles.length > 0) {
-              await processFiles(validFiles);
-            }
+          // 이미지 파일은 무시 (useImageHandling에서 처리)
+          if (ext && imageExtensions.includes(ext)) {
+            continue;
           }
-        });
-      } catch (error) {
-        console.error('드래그 앤 드롭 리스너 등록 실패:', error);
-      }
-    };
 
-    setupDragDropListener();
+          if (ext && SUPPORTED_FILE_TYPES.includes(ext as any)) {
+            validFiles.push(path);
+          } else {
+            invalidFiles.push(path);
+          }
+        }
+
+        if (invalidFiles.length > 0) {
+          alert(
+            `지원하지 않는 파일 형식입니다:\n${invalidFiles.join('\n')}\n\nPDF, Excel, CSV, Markdown, Text 파일만 첨부 가능합니다.`
+          );
+        }
+
+        if (validFiles.length > 0) {
+          await processFiles(validFiles);
+        }
+      }
+    });
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      unsubscribe();
     };
   }, []);
 
@@ -90,8 +96,18 @@ export function DocumentManager({ documents, apiKey, onAdd, onDelete }: Document
   const processFiles = async (filePaths: string[]) => {
     setIsProcessing(true);
 
-    for (const filePath of filePaths) {
+    const uniquePaths = [...new Set(filePaths)];
+
+    for (const filePath of uniquePaths) {
+      if (
+        documentsRef.current.some((doc) => doc.filePath === filePath) ||
+        processingPathsRef.current.has(filePath)
+      ) {
+        continue;
+      }
+
       try {
+        processingPathsRef.current.add(filePath);
         const fileName = filePath.split('/').pop() || 'unknown';
 
         // 파일 파싱
@@ -136,6 +152,8 @@ export function DocumentManager({ documents, apiKey, onAdd, onDelete }: Document
       } catch (error) {
         console.error(`파일 처리 실패 (${filePath}):`, error);
         alert(`파일 처리 실패: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        processingPathsRef.current.delete(filePath);
       }
     }
 
@@ -152,6 +170,11 @@ export function DocumentManager({ documents, apiKey, onAdd, onDelete }: Document
     // URL 형식 검증
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       alert('올바른 URL 형식이 아닙니다. http:// 또는 https://로 시작해야 합니다.');
+      return;
+    }
+
+    if (documentsRef.current.some((doc) => doc.filePath === url)) {
+      alert('이미 추가된 URL입니다.');
       return;
     }
 
@@ -291,7 +314,14 @@ export function DocumentManager({ documents, apiKey, onAdd, onDelete }: Document
             <div key={doc.id} className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200">
               <FileText size={16} className="text-gray-500 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{doc.fileName}</p>
+                <div className="flex items-center gap-2 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{doc.fileName}</p>
+                  {showPersistentBadge && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 rounded border border-blue-200 shrink-0">
+                      {persistentBadgeText}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500 truncate">
                   {doc.summary ? doc.summary.substring(0, 50) + (doc.summary.length > 50 ? '...' : '') : '요약 없음'}
                 </p>

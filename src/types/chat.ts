@@ -18,6 +18,7 @@ export interface ChatMessage {
 // 채팅 세션 데이터
 export interface ChatSessionData {
   messages: ChatMessage[];
+  attachedDocuments?: ReferenceDocument[]; // 채팅 입력창에 현재 첨부된 문서 목록
   summary?: string;
   summarizedUpTo?: number;
   totalTokenCount: number;

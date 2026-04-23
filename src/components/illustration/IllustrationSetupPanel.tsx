@@ -104,13 +104,27 @@ export function IllustrationSetupPanel({
 
   // 전역 드래그앤드롭 리스너 (단일)
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlisten: (() => void | Promise<void>) | undefined;
+    let isDisposed = false;
+    let isUnlistenCalled = false;
+
+    const safeUnlisten = (dispose?: () => void | Promise<void>) => {
+      if (!dispose || isUnlistenCalled) return;
+      isUnlistenCalled = true;
+      try {
+        Promise.resolve(dispose()).catch((error) => {
+          logger.warn('Illustration 드래그 리스너 비동기 해제 중 경고:', error);
+        });
+      } catch (error) {
+        logger.warn('Illustration 드래그 리스너 해제 중 경고:', error);
+      }
+    };
 
     const setup = async () => {
       try {
         const appWindow = getCurrentWindow();
 
-        unlisten = await appWindow.onDragDropEvent(async (event) => {
+        const dispose = await appWindow.onDragDropEvent(async (event) => {
           if (event.payload.type === 'enter') {
             setIsDragging(true);
             setActiveDropTarget(null);
@@ -228,6 +242,12 @@ export function IllustrationSetupPanel({
           }
         });
 
+        if (isDisposed) {
+          safeUnlisten(dispose);
+          return;
+        }
+        unlisten = dispose;
+
         logger.debug('✅ [IllustrationSetupPanel] 전역 드래그 리스너 등록');
       } catch (error) {
         logger.error('전역 드래그 리스너 등록 실패:', error);
@@ -235,7 +255,10 @@ export function IllustrationSetupPanel({
     };
 
     setup();
-    return () => { if (unlisten) unlisten(); };
+    return () => {
+      isDisposed = true;
+      safeUnlisten(unlisten);
+    };
   }, [isImageFile, convertTransparentToWhite, findDropTargetAtPosition]);
 
   // 캐릭터 추가

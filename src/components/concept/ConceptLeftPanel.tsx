@@ -159,11 +159,25 @@ export const ConceptLeftPanel = memo(({
 
   // 드래그 앤 드롭으로 이미지 업로드
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlisten: (() => void | Promise<void>) | undefined;
+    let isDisposed = false;
+    let isUnlistenCalled = false;
+
+    const safeUnlisten = (dispose?: () => void | Promise<void>) => {
+      if (!dispose || isUnlistenCalled) return;
+      isUnlistenCalled = true;
+      try {
+        Promise.resolve(dispose()).catch((error) => {
+          console.warn('ConceptLeftPanel 드래그 리스너 비동기 해제 중 경고:', error);
+        });
+      } catch (error) {
+        console.warn('ConceptLeftPanel 드래그 리스너 해제 중 경고:', error);
+      }
+    };
 
     const setup = async () => {
       const appWindow = getCurrentWindow();
-      unlisten = await appWindow.onDragDropEvent(async (event) => {
+      const dispose = await appWindow.onDragDropEvent(async (event) => {
         if (event.payload.type === 'drop') {
           const paths = event.payload.paths || [];
           if (paths.length > 0) {
@@ -187,10 +201,19 @@ export const ConceptLeftPanel = memo(({
           }
         }
       });
+
+      if (isDisposed) {
+        safeUnlisten(dispose);
+        return;
+      }
+      unlisten = dispose;
     };
 
     setup();
-    return () => { if (unlisten) unlisten(); };
+    return () => {
+      isDisposed = true;
+      safeUnlisten(unlisten);
+    };
   }, []);
 
   // 클립보드(Ctrl+V) 붙여넣기 지원 — 드래그 드롭과 동일 경로로 이미지 전달
