@@ -897,7 +897,7 @@ export function ImageGeneratorPanel({
   return (
     <div className="h-full flex flex-col bg-gray-50">
       {/* 헤더 */}
-      <div className="bg-white border-b border-gray-200 p-4">
+      <div className="bg-white border-b border-gray-200 px-4 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             {onBack && (

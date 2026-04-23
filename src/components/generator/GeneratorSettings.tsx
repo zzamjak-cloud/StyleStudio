@@ -209,46 +209,46 @@ export function GeneratorSettings({
               <label className="block text-sm font-semibold text-gray-700 mb-3">
                 {getGridLabel(sessionType)}
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-4 gap-2">
                 <button
                   onClick={() => onPixelArtGridChange('1x1')}
-                  className={`p-3 rounded-lg text-sm font-medium border-2 transition-all ${getGridButtonStyle(
+                  className={`p-2 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(
                     sessionType,
                     pixelArtGrid === '1x1'
                   )}`}
                 >
-                  <div className="font-bold mb-1">1x1</div>
-                  <div className="text-xs opacity-75">단일</div>
+                  <div className="font-bold">1x1</div>
+                  <div className="text-[10px] opacity-75">단일</div>
                 </button>
                 <button
                   onClick={() => onPixelArtGridChange('2x2')}
-                  className={`p-3 rounded-lg text-sm font-medium border-2 transition-all ${getGridButtonStyle(
+                  className={`p-2 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(
                     sessionType,
                     pixelArtGrid === '2x2'
                   )}`}
                 >
-                  <div className="font-bold mb-1">2x2</div>
-                  <div className="text-xs opacity-75">4개</div>
+                  <div className="font-bold">2x2</div>
+                  <div className="text-[10px] opacity-75">4개</div>
                 </button>
                 <button
                   onClick={() => onPixelArtGridChange('3x3')}
-                  className={`p-3 rounded-lg text-sm font-medium border-2 transition-all ${getGridButtonStyle(
+                  className={`p-2 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(
                     sessionType,
                     pixelArtGrid === '3x3'
                   )}`}
                 >
-                  <div className="font-bold mb-1">3x3</div>
-                  <div className="text-xs opacity-75">9개</div>
+                  <div className="font-bold">3x3</div>
+                  <div className="text-[10px] opacity-75">9개</div>
                 </button>
                 <button
                   onClick={() => onPixelArtGridChange('4x4')}
-                  className={`p-3 rounded-lg text-sm font-medium border-2 transition-all ${getGridButtonStyle(
+                  className={`p-2 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(
                     sessionType,
                     pixelArtGrid === '4x4'
                   )}`}
                 >
-                  <div className="font-bold mb-1">4x4</div>
-                  <div className="text-xs opacity-75">16개</div>
+                  <div className="font-bold">4x4</div>
+                  <div className="text-[10px] opacity-75">16개</div>
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-2">{getGridDescription(sessionType, pixelArtGrid)}</p>
