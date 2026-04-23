@@ -1295,6 +1295,7 @@ function App() {
         isOpen={showNewSession}
         onClose={() => setShowNewSession(false)}
         onCreate={handleNewSession}
+        existingSessions={sessions}
       />
 
       <ProgressIndicator {...progress} />

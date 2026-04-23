@@ -1,40 +1,46 @@
 import { useState, useEffect } from 'react';
 import { X, Palette, User, Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award, Images, MessageCircle, Lightbulb } from 'lucide-react';
-import { SessionType } from '../../types/session';
+import { Session, SessionType } from '../../types/session';
+import { SESSION_CONFIG } from '../../lib/config/sessionConfig';
 
 interface NewSessionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (name: string, type: SessionType) => void;
+  existingSessions: Session[];
 }
 
-export function NewSessionModal({ isOpen, onClose, onCreate }: NewSessionModalProps) {
-  const [sessionName, setSessionName] = useState('');
+/**
+ * 세션 타입별 자동 이름 생성.
+ * 동일 타입 내 최대 인덱스 기준으로 증가 — 삭제된 번호 재사용 없음.
+ */
+function generateSessionName(type: SessionType, existingSessions: Session[]): string {
+  const label = SESSION_CONFIG[type].label;
+  const sameType = existingSessions.filter((s) => s.type === type);
+  const pattern = new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d+)$`);
+  let maxIndex = 0;
+  for (const s of sameType) {
+    const m = s.name.match(pattern);
+    if (m) maxIndex = Math.max(maxIndex, parseInt(m[1], 10));
+  }
+  return `${label}_${Math.max(maxIndex, sameType.length) + 1}`;
+}
+
+export function NewSessionModal({ isOpen, onClose, onCreate, existingSessions }: NewSessionModalProps) {
   const [sessionType, setSessionType] = useState<SessionType>('BASIC');
 
   // 모달이 열릴 때마다 초기화
   useEffect(() => {
     if (isOpen) {
-      setSessionName('');
       setSessionType('BASIC');
     }
   }, [isOpen]);
 
   const handleCreate = () => {
-    if (sessionName.trim()) {
-      onCreate(sessionName.trim(), sessionType);
-      setSessionName('');
-      setSessionType('BASIC');
-      onClose();
-    } else {
-      alert('세션 이름을 입력해주세요');
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleCreate();
-    }
+    const name = generateSessionName(sessionType, existingSessions);
+    onCreate(name, sessionType);
+    setSessionType('BASIC');
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -55,22 +61,6 @@ export function NewSessionModal({ isOpen, onClose, onCreate }: NewSessionModalPr
 
         {/* 본문 */}
         <div className="p-6 space-y-6">
-          {/* 세션 이름 */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              세션 이름
-            </label>
-            <input
-              type="text"
-              value={sessionName}
-              onChange={(e) => setSessionName(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="예: 애니메이션 스타일, 주인공 캐릭터, 판타지 배경, 마법 아이템"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              autoFocus
-            />
-          </div>
-
           {/* 세션 타입 */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-3">

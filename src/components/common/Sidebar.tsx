@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Palette, User, Trash2, ImagePlus, Download, FolderOpen, Settings,
   Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award, Images,
-  Folder, FolderPlus, ChevronLeft, MoreVertical, Pencil, FolderDown
+  Folder, FolderPlus, ChevronLeft, MoreVertical, Pencil, FolderDown,
+  MessageCircle, Lightbulb,
 } from 'lucide-react';
 import { Session, SessionType } from '../../types/session';
 import { Folder as FolderType, FolderPath } from '../../types/folder';
@@ -11,6 +12,8 @@ import { logger } from '../../lib/logger';
 // 세션 타입별 아이콘 및 색상 가져오기
 function getSessionTypeInfo(type: SessionType) {
   switch (type) {
+    case 'BASIC':
+      return { icon: MessageCircle, bgColor: 'bg-slate-600/20', textColor: 'text-slate-300' };
     case 'STYLE':
       return { icon: Palette, bgColor: 'bg-purple-600/20', textColor: 'text-purple-400' };
     case 'CHARACTER':
@@ -31,6 +34,8 @@ function getSessionTypeInfo(type: SessionType) {
       return { icon: Award, bgColor: 'bg-red-600/20', textColor: 'text-red-400' };
     case 'ILLUSTRATION':
       return { icon: Images, bgColor: 'bg-violet-600/20', textColor: 'text-violet-400' };
+    case 'CONCEPT':
+      return { icon: Lightbulb, bgColor: 'bg-orange-600/20', textColor: 'text-orange-400' };
     default:
       return { icon: Palette, bgColor: 'bg-purple-600/20', textColor: 'text-purple-400' };
   }
