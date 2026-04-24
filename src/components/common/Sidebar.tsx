@@ -167,6 +167,107 @@ const SessionListItem = memo(function SessionListItem({
   );
 });
 
+/**
+ * 폴더 리스트 아이템 — React.memo. 다른 폴더 선택/드래그 상태 변화 시
+ * 영향 받지 않는 폴더는 props 동일성으로 리렌더 차단.
+ */
+interface FolderListItemProps {
+  folder: FolderType;
+  index: number;
+  isDropTarget: boolean;
+  isFolderSelected: boolean;
+  isBeingDragged: boolean;
+  isDragOver: boolean;
+  isInlineEditing: boolean;
+  inlineEditValue: string;
+  inlineInputRef: React.RefObject<HTMLInputElement | null>;
+  isDragging: boolean;
+  disabled: boolean;
+  onMouseDown: (e: React.MouseEvent, index: number, type: DragItemType) => void;
+  onClickFolder: (folderId: string) => void;
+  onDoubleClickFolder: (folderId: string) => void;
+  onInlineRename: () => void;
+  onInlineCancel: () => void;
+  onInlineEditValueChange: (value: string) => void;
+  onSetFolderContextMenu: (state: { folderId: string; x: number; y: number } | null) => void;
+}
+
+const FolderListItem = memo(function FolderListItem({
+  folder,
+  index,
+  isDropTarget,
+  isFolderSelected,
+  isBeingDragged,
+  isDragOver,
+  isInlineEditing,
+  inlineEditValue,
+  inlineInputRef,
+  isDragging,
+  disabled,
+  onMouseDown,
+  onClickFolder,
+  onDoubleClickFolder,
+  onInlineRename,
+  onInlineCancel,
+  onInlineEditValueChange,
+  onSetFolderContextMenu,
+}: FolderListItemProps) {
+  return (
+    <div
+      data-item-index={index}
+      data-item-type="folder"
+      data-item-id={folder.id}
+      onMouseDown={(e) => !isInlineEditing && onMouseDown(e, index, 'folder')}
+      onClick={() => !isDragging && !disabled && !isInlineEditing && onClickFolder(folder.id)}
+      onDoubleClick={() => !isInlineEditing && onDoubleClickFolder(folder.id)}
+      className={`group rounded-lg p-2 transition-all relative select-none cursor-pointer ${
+        isDropTarget
+          ? 'ring-2 ring-purple-500 bg-purple-500/20'
+          : isFolderSelected
+          ? 'bg-gray-800 border border-yellow-500'
+          : disabled
+          ? 'opacity-50 cursor-not-allowed'
+          : 'hover:bg-gray-800 border border-transparent'
+      } ${isBeingDragged ? 'opacity-50' : ''} ${
+        isDragOver ? 'border-t-2 border-t-blue-500 pt-3' : ''
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <Folder size={16} className="text-yellow-400 flex-shrink-0" />
+        {isInlineEditing ? (
+          <input
+            ref={inlineInputRef}
+            type="text"
+            value={inlineEditValue}
+            onChange={(e) => onInlineEditValueChange(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter') onInlineRename();
+              if (e.key === 'Escape') onInlineCancel();
+            }}
+            onBlur={onInlineCancel}
+            className="flex-1 min-w-0 px-1 py-0.5 text-xs bg-gray-700 border border-purple-500 rounded text-white focus:outline-none"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <div className="flex-1 min-w-0">
+            <span className="text-xs font-medium text-white truncate block">{folder.name}</span>
+          </div>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetFolderContextMenu({ folderId: folder.id, x: e.clientX, y: e.clientY });
+          }}
+          className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-700 rounded transition-all"
+        >
+          <MoreVertical size={14} className="text-gray-400" />
+        </button>
+      </div>
+    </div>
+  );
+});
+
 interface SidebarProps {
   // 세션 관련
   sessions: Session[];
@@ -741,61 +842,27 @@ export function Sidebar({
               const isFolderSelected = selectedFolderId === folder.id;
 
               return (
-                <div
+                <FolderListItem
                   key={folder.id}
-                  data-item-index={index}
-                  data-item-type="folder"
-                  data-item-id={folder.id}
-                  onMouseDown={(e) => !isInlineEditing && handleMouseDown(e, index, 'folder')}
-                  onClick={() => !isDragging && !disabled && !isInlineEditing && handleFolderClick(folder.id)}
-                  onDoubleClick={() => !isInlineEditing && handleFolderDoubleClick(folder.id)}
-                  className={`group rounded-lg p-2 transition-all relative select-none cursor-pointer ${
-                    isDropTarget
-                      ? 'ring-2 ring-purple-500 bg-purple-500/20'
-                      : isFolderSelected
-                      ? 'bg-gray-800 border border-yellow-500'
-                      : disabled
-                      ? 'opacity-50 cursor-not-allowed'
-                      : 'hover:bg-gray-800 border border-transparent'
-                  } ${isBeingDragged ? 'opacity-50' : ''} ${
-                    isDragOver ? 'border-t-2 border-t-blue-500 pt-3' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Folder size={16} className="text-yellow-400 flex-shrink-0" />
-                    {isInlineEditing ? (
-                      // 인라인 이름 변경 모드
-                      <input
-                        ref={inlineInputRef}
-                        type="text"
-                        value={inlineEditValue}
-                        onChange={(e) => setInlineEditValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                          if (e.key === 'Enter') handleInlineFolderRename();
-                          if (e.key === 'Escape') cancelInlineFolderEdit();
-                        }}
-                        onBlur={cancelInlineFolderEdit}
-                        className="flex-1 min-w-0 px-1 py-0.5 text-xs bg-gray-700 border border-purple-500 rounded text-white focus:outline-none"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <div className="flex-1 min-w-0">
-                        <span className="text-xs font-medium text-white truncate block">{folder.name}</span>
-                      </div>
-                    )}
-                    {/* 폴더 액션 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFolderContextMenu({ folderId: folder.id, x: e.clientX, y: e.clientY });
-                      }}
-                      className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-700 rounded transition-all"
-                    >
-                      <MoreVertical size={14} className="text-gray-400" />
-                    </button>
-                  </div>
-                </div>
+                  folder={folder}
+                  index={index}
+                  isDropTarget={isDropTarget}
+                  isFolderSelected={isFolderSelected}
+                  isBeingDragged={isBeingDragged}
+                  isDragOver={isDragOver}
+                  isInlineEditing={isInlineEditing}
+                  inlineEditValue={inlineEditValue}
+                  inlineInputRef={inlineInputRef}
+                  isDragging={isDragging}
+                  disabled={disabled}
+                  onMouseDown={handleMouseDown}
+                  onClickFolder={handleFolderClick}
+                  onDoubleClickFolder={handleFolderDoubleClick}
+                  onInlineRename={handleInlineFolderRename}
+                  onInlineCancel={cancelInlineFolderEdit}
+                  onInlineEditValueChange={setInlineEditValue}
+                  onSetFolderContextMenu={setFolderContextMenu}
+                />
               );
             }
 

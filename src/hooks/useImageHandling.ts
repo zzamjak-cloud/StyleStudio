@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { readFile } from '@tauri-apps/plugin-fs';
+import { downscaleImage } from '../lib/utils/imageDownscale';
 import { logger } from '../lib/logger';
 
 /**
@@ -136,13 +137,15 @@ export function useImageHandling(): UseImageHandlingReturn {
     };
   }, []);
 
-  const handleImageSelect = (imageData: string) => {
+  const handleImageSelect = async (imageData: string) => {
+    // 업로드 시점에 다운스케일하여 IndexedDB·메모리·디코딩 비용을 일괄 절감
+    const optimized = await downscaleImage(imageData, 1280, 0.85).catch(() => imageData);
     setUploadedImages((prev) => {
       if (prev.length >= MAX_IMAGES) {
         setShowLimitWarning(true);
         return prev;
       }
-      return [...prev, imageData];
+      return [...prev, optimized];
     });
   };
 

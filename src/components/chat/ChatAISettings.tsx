@@ -76,12 +76,12 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
           <label className="block text-sm font-medium text-gray-700 mb-2">
             이미지 비율
           </label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-5 gap-1">
             {aspectRatios.map((ratio) => (
               <button
                 key={ratio}
                 onClick={() => onSettingsChange({ aspectRatio: ratio })}
-                className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                className={`px-1 py-1.5 text-xs rounded-md border transition-colors ${
                   settings.aspectRatio === ratio
                     ? 'bg-purple-500 text-white border-purple-500'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'

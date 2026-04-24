@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from 'react';
 import { History, Pin, RotateCcw, Trash2 } from 'lucide-react';
 import { GenerationHistoryEntry } from '../../types/session';
 import { Resizer } from '../common/Resizer';
+import { LazyImage } from '../common/LazyImage';
 import { formatDateTime } from '../../utils/dateUtils';
 
 interface GeneratorHistoryProps {
@@ -112,7 +113,7 @@ function GeneratorHistoryComponent({
                         : 'border-transparent group-hover:border-purple-500'
                     }`}
                   >
-                    <img
+                    <LazyImage
                       src={entry.imageBase64}
                       alt={`Generated ${formatDateTime(entry.timestamp)}`}
                       loading="lazy"

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Camera } from 'lucide-react';
 import { CompositionAnalysis } from '../../types/analysis';
 import { AnalysisCard } from './AnalysisCard';
@@ -7,7 +8,7 @@ interface CompositionCardProps {
   onUpdate?: (composition: CompositionAnalysis) => void;
 }
 
-export function CompositionCard({ composition, onUpdate }: CompositionCardProps) {
+export const CompositionCard = memo(function CompositionCard({ composition, onUpdate }: CompositionCardProps) {
   const fields: Array<{ key: keyof CompositionAnalysis; label: string; icon?: string }> = [
     { key: 'pose', label: '포즈', icon: '🧍' },
     { key: 'angle', label: '앵글', icon: '📐' },
@@ -29,4 +30,4 @@ export function CompositionCard({ composition, onUpdate }: CompositionCardProps)
       onUpdate={onUpdate}
     />
   );
-}
+});

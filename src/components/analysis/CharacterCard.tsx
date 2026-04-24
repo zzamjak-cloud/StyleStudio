@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { User } from 'lucide-react';
 import { CharacterAnalysis } from '../../types/analysis';
 import { AnalysisCard } from './AnalysisCard';
@@ -7,7 +8,7 @@ interface CharacterCardProps {
   onUpdate?: (character: CharacterAnalysis) => void;
 }
 
-export function CharacterCard({ character, onUpdate }: CharacterCardProps) {
+export const CharacterCard = memo(function CharacterCard({ character, onUpdate }: CharacterCardProps) {
   const fields: Array<{ key: keyof CharacterAnalysis; label: string; icon?: string }> = [
     { key: 'gender', label: '성별', icon: '👤' },
     { key: 'age_group', label: '연령대', icon: '📅' },
@@ -37,4 +38,4 @@ export function CharacterCard({ character, onUpdate }: CharacterCardProps) {
       onUpdate={onUpdate}
     />
   );
-}
+});

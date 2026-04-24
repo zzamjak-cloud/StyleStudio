@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { downscaleImage } from '../lib/utils/imageDownscale';
 
 interface UseImagePasteOptions {
   /** 붙여넣기 활성화 여부 (해당 화면이 표시 중일 때만 true로) */
@@ -39,10 +40,12 @@ export function useImagePaste({ enabled = true, onPaste }: UseImagePasteOptions)
         if (!file) continue;
 
         const reader = new FileReader();
-        reader.onload = () => {
+        reader.onload = async () => {
           const result = reader.result;
           if (typeof result === 'string') {
-            onPasteRef.current(result);
+            // 클립보드 이미지도 업로드 시점에 다운스케일하여 비용 누적 방지
+            const optimized = await downscaleImage(result, 1280, 0.85).catch(() => result);
+            onPasteRef.current(optimized);
           }
         };
         reader.readAsDataURL(file);

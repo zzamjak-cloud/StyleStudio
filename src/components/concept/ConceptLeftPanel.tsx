@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useImagePaste } from '../../hooks/useImagePaste';
+import { LazyImage } from '../common/LazyImage';
 
 // localStorage 키
 const CUSTOM_GENRES_KEY = 'stylestudio-custom-genres';
@@ -415,7 +416,7 @@ export const ConceptLeftPanel = memo(({
                     className="w-full rounded-md overflow-hidden bg-white"
                     title="클릭하여 크게 보기"
                   >
-                    <img
+                    <LazyImage
                       src={referenceImage}
                       alt="참조 이미지"
                       className="w-full h-auto max-h-64 object-contain"
@@ -435,7 +436,7 @@ export const ConceptLeftPanel = memo(({
                     className="w-full rounded-md overflow-hidden bg-white"
                     title="클릭하여 크게 보기"
                   >
-                    <img
+                    <LazyImage
                       src={generatedImage}
                       alt="생성 이미지"
                       className="w-full h-auto max-h-64 object-contain"
@@ -665,7 +666,7 @@ export const ConceptLeftPanel = memo(({
               <X className="w-4 h-4" />
             </button>
             <div className="mb-2 text-sm font-semibold text-gray-700 pr-8">{previewImage.title}</div>
-            <img
+            <LazyImage
               src={previewImage.src}
               alt={previewImage.title}
               className="max-w-[90vw] max-h-[85vh] w-auto h-auto object-contain"

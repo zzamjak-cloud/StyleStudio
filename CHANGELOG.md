@@ -5,6 +5,27 @@
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-04-25
+
+### Added
+- 컨셉 세션에 우측 상단 저장 폴더 열기 버튼 추가 (채팅 세션과 동일 위치/스타일)
+- `LazyImage` 공용 컴포넌트 — IndexedDB 키를 받으면 마운트 시 비동기로 base64 디코딩
+- `imageDownscale` 유틸 — 사용자 업로드 이미지를 maxDim 1280·JPEG 0.85로 자동 축소
+
+### Changed (Performance)
+- 채팅 세션 이미지 비율 버튼을 1라인 5개 컴팩트 레이아웃으로 통일 (컨셉 세션과 일관)
+- 사용자 업로드/붙여넣기/채팅 첨부 이미지를 입력 즉시 다운스케일 — IndexedDB·메모리·디코딩 비용 일괄 절감
+- 세션 부가 영역(generationHistory/chatData.messages.images/conceptData.history/conceptData.referenceImage) 로드를 lazy화 — 앱 시작 시 모든 이미지를 동기 디코딩하던 구조 제거. 실제 보이는 시점에만 LazyImage가 IndexedDB에서 비동기 디코딩
+- pdfjs-dist를 동적 import으로 전환 — PDF 첨부 전까지 번들 로드 미룸 (앱 시작 번들 크기 ↓)
+- 사이드바 폴더 아이템을 별도 `FolderListItem` 메모 컴포넌트로 분리. 다른 폴더 선택 시 비활성 항목 리렌더 차단
+- 분석 카드 6종(StyleCard/CharacterCard/CompositionCard/UICard/LogoCard/NegativePromptCard) `React.memo` 래핑
+- 모달 4종(SettingsModal/SaveSessionModal/NewSessionModal/UpdateModal) `React.memo` 래핑
+- `useChatSession`의 `messages`/`attachedDocuments`/`settings` 파생값을 `useMemo`로 안정화
+
+### Fixed (Storage Hygiene)
+- 이미지 생성 히스토리·컨셉 히스토리·채팅 메시지 삭제 시 IndexedDB의 해당 이미지 키도 함께 제거 — orphan 누적 차단
+- export(`exportSessionToFile`/`exportFolderToFile`) 시 부가 영역의 IndexedDB 키를 base64로 복원해 직렬화 — 다른 PC에서 import 호환성 유지
+
 ## [0.4.8] - 2026-04-25
 
 ### Changed (Performance)

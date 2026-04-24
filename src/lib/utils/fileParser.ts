@@ -3,13 +3,21 @@
 import * as XLSX from 'xlsx';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { fetch } from '@tauri-apps/plugin-http';
-import * as pdfjsLib from 'pdfjs-dist';
 
-// PDF.js Worker 설정 (로컬 파일 사용)
-pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
+// pdfjs-dist는 PDF 처리 시점에만 동적으로 로드한다. 앱 시작 번들 크기 축소.
+let pdfjsLibPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+let pdfOpsRef: any = {};
 
-// pdfjs-dist OPS 상수 참조 (5.x named export 불확실하므로 fallback 유지)
-const PDF_OPS: any = (pdfjsLib as any).OPS ?? {};
+async function getPdfJs(): Promise<typeof import('pdfjs-dist')> {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = import('pdfjs-dist').then((mod) => {
+      mod.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
+      pdfOpsRef = (mod as any).OPS ?? {};
+      return mod;
+    });
+  }
+  return pdfjsLibPromise;
+}
 
 export interface ParsedFileContent {
   text: string;
@@ -39,11 +47,13 @@ export function getFileType(fileName: string): string {
 async function extractImagesFromPdfPage(page: any): Promise<string[]> {
   const out: string[] = [];
   try {
+    // pdfjs-dist의 OPS 상수가 채워져 있도록 보장 (호출 시점에 lazy 로드 완료)
+    await getPdfJs();
     const ops = await page.getOperatorList();
     const targetOps = [
-      PDF_OPS.paintImageXObject,
-      PDF_OPS.paintInlineImageXObject,
-      PDF_OPS.paintJpegXObject,
+      pdfOpsRef.paintImageXObject,
+      pdfOpsRef.paintInlineImageXObject,
+      pdfOpsRef.paintJpegXObject,
     ].filter((v: any) => v !== undefined);
 
     for (let i = 0; i < ops.fnArray.length; i++) {
@@ -173,6 +183,7 @@ export async function parsePDF(filePath: string, fileName: string): Promise<Pars
     const fileData = await readFile(filePath);
 
     // PDF 문서 로드
+    const pdfjsLib = await getPdfJs();
     const loadingTask = pdfjsLib.getDocument({ data: fileData });
     const pdf = await loadingTask.promise;
 

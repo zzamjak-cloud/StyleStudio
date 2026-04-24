@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Palette } from 'lucide-react';
 import { StyleAnalysis } from '../../types/analysis';
 import { AnalysisCard } from './AnalysisCard';
@@ -7,7 +8,7 @@ interface StyleCardProps {
   onUpdate?: (style: StyleAnalysis) => void;
 }
 
-export function StyleCard({ style, onUpdate }: StyleCardProps) {
+export const StyleCard = memo(function StyleCard({ style, onUpdate }: StyleCardProps) {
   const fields: Array<{ key: keyof StyleAnalysis; label: string; icon?: string }> = [
     { key: 'art_style', label: '화풍', icon: '🎨' },
     { key: 'technique', label: '기법', icon: '🖌️' },
@@ -30,4 +31,4 @@ export function StyleCard({ style, onUpdate }: StyleCardProps) {
       onUpdate={onUpdate}
     />
   );
-}
+});

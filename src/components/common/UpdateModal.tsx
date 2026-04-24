@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Download, RefreshCw, X, AlertCircle, CheckCircle } from 'lucide-react'
 import { UpdateStatus } from '../../hooks/useAutoUpdate'
 import { Update } from '@tauri-apps/plugin-updater'
@@ -11,7 +12,7 @@ interface UpdateModalProps {
   onDismiss: () => void
 }
 
-export function UpdateModal({
+export const UpdateModal = memo(function UpdateModal({
   status,
   update,
   progress,
@@ -142,4 +143,4 @@ export function UpdateModal({
       </div>
     </div>
   )
-}
+})

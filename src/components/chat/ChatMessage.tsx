@@ -1,6 +1,8 @@
 import { memo, useState } from 'react';
 import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import type { ChatMessage as ChatMessageType } from '../../types/chat';
+import { LazyImage } from '../common/LazyImage';
+import { loadImage } from '../../lib/imageStorage';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -70,14 +72,21 @@ function ChatMessageComponent({ message, onDelete, onImageClick }: ChatMessagePr
           {message.images && message.images.length > 0 && (
             <div className={`flex flex-wrap gap-2 ${message.content ? 'mt-2' : ''}`}>
               {message.images.map((img, idx) => (
-                <img
+                <LazyImage
                   key={idx}
                   src={img}
                   alt={`${isUser ? '첨부' : '생성'} 이미지 ${idx + 1}`}
                   loading="lazy"
                   decoding="async"
                   className="max-h-48 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                  onClick={() => onImageClick?.(img)}
+                  onClick={async () => {
+                    if (!onImageClick) return;
+                    // 키일 경우 IndexedDB에서 base64로 복원해 미리보기에 전달
+                    const resolved = img.startsWith('data:')
+                      ? img
+                      : (await loadImage(img)) ?? img;
+                    onImageClick(resolved);
+                  }}
                 />
               ))}
             </div>

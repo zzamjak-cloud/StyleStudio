@@ -52,6 +52,19 @@ export async function saveImage(
 }
 
 /**
+ * 임의의 키로 이미지를 저장 (히스토리/채팅 등 namespace 제어가 필요한 경우 사용)
+ */
+export async function saveImageWithKey(key: string, dataUrl: string): Promise<void> {
+  try {
+    const db = await getImageDB();
+    await db.put(STORE_NAME, dataUrl, key);
+  } catch (error) {
+    logger.error('❌ 이미지 키 저장 실패:', error);
+    throw error;
+  }
+}
+
+/**
  * IndexedDB에서 이미지를 로드
  * @param key IndexedDB 키
  * @returns Base64 data URL (없으면 null)

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, X, Image } from 'lucide-react';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { subscribeWindowDragDrop } from '../../lib/windowDragDropBus';
+import { downscaleImage } from '../../lib/utils/imageDownscale';
 
 // 최대 첨부 이미지 수
 const MAX_IMAGES = 5;
@@ -84,11 +85,13 @@ export function ChatInput({ onSend, isGenerating, disabled }: ChatInputProps) {
       if (!file) continue;
 
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         const result = reader.result as string;
+        // 첨부 시점에 다운스케일하여 채팅 누적 시 디스크/메모리 비용 절감
+        const optimized = await downscaleImage(result, 1280, 0.85).catch(() => result);
         setAttachedImages(prev => {
           if (prev.length >= MAX_IMAGES) return prev;
-          return [...prev, result];
+          return [...prev, optimized];
         });
       };
       reader.readAsDataURL(file);

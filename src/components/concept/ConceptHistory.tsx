@@ -3,6 +3,8 @@ import { ChevronUp, Download, Trash2, Clock, Grid, Loader2 } from 'lucide-react'
 import { ConceptGenerationEntry } from '../../types/concept';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { LazyImage } from '../common/LazyImage';
+import { loadImage } from '../../lib/imageStorage';
 
 interface ConceptHistoryProps {
   history: ConceptGenerationEntry[];
@@ -63,6 +65,11 @@ function ConceptHistoryComponent({
   // 이미지 저장
   const handleSaveImage = useCallback(async (imageBase64: string) => {
     try {
+      // 키일 경우 IndexedDB에서 base64로 복원
+      const resolved = imageBase64.startsWith('data:')
+        ? imageBase64
+        : (await loadImage(imageBase64)) ?? imageBase64;
+
       const timestamp = Date.now();
       const fileName = `concept-${timestamp}.jpg`;
 
@@ -74,9 +81,9 @@ function ConceptHistoryComponent({
       if (!filePath) return;
 
       // base64에서 바이너리 데이터로 변환
-      const base64Data = imageBase64.includes(',')
-        ? imageBase64.split(',')[1]
-        : imageBase64;
+      const base64Data = resolved.includes(',')
+        ? resolved.split(',')[1]
+        : resolved;
       const binaryString = atob(base64Data);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -147,7 +154,7 @@ function ConceptHistoryComponent({
                 onClick={() => onSelect(entry)}
               >
                 <div className="relative h-full bg-gray-100">
-                  <img
+                  <LazyImage
                     src={entry.imageBase64}
                     alt={entry.prompt || '생성 이미지'}
                     loading="lazy"

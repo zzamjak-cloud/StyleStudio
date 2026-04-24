@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Monitor } from 'lucide-react';
 import { UISpecificAnalysis } from '../../types/analysis';
 import { AnalysisCard } from './AnalysisCard';
@@ -7,7 +8,7 @@ interface UICardProps {
   onUpdate?: (uiAnalysis: UISpecificAnalysis) => void;
 }
 
-export function UICard({ uiAnalysis, onUpdate }: UICardProps) {
+export const UICard = memo(function UICard({ uiAnalysis, onUpdate }: UICardProps) {
   const fields: Array<{ key: keyof UISpecificAnalysis; label: string; icon?: string }> = [
     { key: 'platform_type', label: '플랫폼 및 유형', icon: '📱' },
     { key: 'visual_style', label: '비주얼 스타일', icon: '🎨' },
@@ -29,4 +30,4 @@ export function UICard({ uiAnalysis, onUpdate }: UICardProps) {
       onUpdate={onUpdate}
     />
   );
-}
+});

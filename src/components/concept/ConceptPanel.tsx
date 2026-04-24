@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, useRef, memo } from 'react';
+import { FolderOpen } from 'lucide-react';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { Session } from '../../types/session';
 import { ConceptSessionData, ConceptGenerationEntry } from '../../types/concept';
 import { ConceptLeftPanel } from './ConceptLeftPanel';
@@ -7,7 +9,8 @@ import { ConceptHistory } from './ConceptHistory';
 import { useConceptGeneration } from '../../hooks/useConceptGeneration';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
-import { getSessionImageFolder } from '../../lib/config/paths';
+import { getAiGenRoot, getSessionImageFolder } from '../../lib/config/paths';
+import { deleteImage } from '../../lib/imageStorage';
 import { logger } from '../../lib/logger';
 
 interface ConceptPanelProps {
@@ -192,6 +195,8 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
 
   // 히스토리 아이템 삭제 및 세션 저장
   const handleHistoryDelete = useCallback((id: string) => {
+    // IndexedDB orphan 정리
+    void deleteImage(`${session.id}-concept-${id}`).catch(() => {});
     const updatedData: ConceptSessionData = {
       ...conceptDataRef.current,
       history: conceptDataRef.current.history.filter(item => item.id !== id),
@@ -202,7 +207,7 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
       setSelectedHistoryId(null);
       setSelectedGeneratedImage(null);
     }
-  }, [selectedHistoryId, saveToSession]);
+  }, [selectedHistoryId, saveToSession, session.id]);
 
   // 히스토리 선택 시 설정/정보 복원
   const handleHistorySelect = useCallback((entry: ConceptGenerationEntry) => {
@@ -249,6 +254,26 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
+      {/* 상단 바: 저장 폴더 열기 (채팅 세션과 동일 위치/스타일) */}
+      <div className="px-4 py-2 border-b border-gray-200 bg-white flex items-center justify-end">
+        <button
+          onClick={async () => {
+            try {
+              const root = await getAiGenRoot();
+              await openPath(root);
+            } catch (error) {
+              logger.error('❌ 컨셉 저장 폴더 열기 실패:', error);
+              alert('저장 폴더를 열지 못했습니다.');
+            }
+          }}
+          className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+          title="탐색기에서 저장 폴더 열기"
+        >
+          <FolderOpen size={16} className="text-green-600" />
+          <span className="text-sm text-green-700 font-medium">~/Downloads/AI_Gen/</span>
+        </button>
+      </div>
+
       {/* 상단 영역 - 좌우 분할 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 좌측 패널 - 입력 */}

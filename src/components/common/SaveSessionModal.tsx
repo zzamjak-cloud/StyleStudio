@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { X, Save, Palette, User, Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award } from 'lucide-react';
 import { Session, SessionType } from '../../types/session';
 import { logger } from '../../lib/logger';
@@ -10,7 +10,7 @@ interface SaveSessionModalProps {
   currentSession?: Session | null; // 기존 세션 (업데이트 모드용)
 }
 
-export function SaveSessionModal({ isOpen, onClose, onSave, currentSession }: SaveSessionModalProps) {
+export const SaveSessionModal = memo(function SaveSessionModal({ isOpen, onClose, onSave, currentSession }: SaveSessionModalProps) {
   const [sessionName, setSessionName] = useState('');
   const [sessionType, setSessionType] = useState<SessionType>('STYLE');
 
@@ -208,4 +208,4 @@ export function SaveSessionModal({ isOpen, onClose, onSave, currentSession }: Sa
       </div>
     </div>
   );
-}
+});

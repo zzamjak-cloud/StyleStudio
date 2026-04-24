@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Award } from 'lucide-react';
 import { LogoSpecificAnalysis } from '../../types/analysis';
 import { AnalysisCard } from './AnalysisCard';
@@ -7,7 +8,7 @@ interface LogoCardProps {
   onUpdate?: (logoAnalysis: LogoSpecificAnalysis) => void;
 }
 
-export function LogoCard({ logoAnalysis, onUpdate }: LogoCardProps) {
+export const LogoCard = memo(function LogoCard({ logoAnalysis, onUpdate }: LogoCardProps) {
   const fields: Array<{ key: keyof LogoSpecificAnalysis; label: string; icon?: string }> = [
     { key: 'typography_style', label: '타이포그래피 스타일', icon: '✍️' },
     { key: 'text_warping', label: '텍스트 변형', icon: '🌊' },
@@ -40,4 +41,4 @@ export function LogoCard({ logoAnalysis, onUpdate }: LogoCardProps) {
       onUpdate={onUpdate}
     />
   );
-}
+});

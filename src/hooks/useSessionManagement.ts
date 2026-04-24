@@ -9,6 +9,7 @@ import {
   exportSessionToFile,
   importSessionFromFile,
 } from '../lib/storage';
+import { deleteImage } from '../lib/imageStorage';
 import {
   updateSession,
   updateSessionInList,
@@ -251,6 +252,8 @@ export function useSessionManagement(): UseSessionManagementReturn {
 
   const handleHistoryDelete = (entryId: string) => {
     if (currentSession) {
+      // IndexedDB orphan 정리 (실패해도 메모리/디스크 일관성에는 영향 없음)
+      void deleteImage(`${currentSession.id}-gen-${entryId}`).catch(() => {});
       const updatedSession = updateSession(currentSession, {
         generationHistory: (currentSession.generationHistory || []).filter(
           (entry) => entry.id !== entryId

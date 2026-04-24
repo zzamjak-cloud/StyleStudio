@@ -1,5 +1,6 @@
 import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { X, Download, MessageCircle, Loader2, FolderOpen } from 'lucide-react';
+import { LazyImage } from '../common/LazyImage';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { openPath } from '@tauri-apps/plugin-opener';
@@ -324,8 +325,8 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
             <Download className="w-6 h-6" />
           </button>
 
-          {/* 이미지 */}
-          <img
+          {/* 이미지 (키일 경우 IndexedDB에서 lazy 디코딩) */}
+          <LazyImage
             src={previewImage}
             alt="미리보기"
             decoding="async"

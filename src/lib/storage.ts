@@ -4,7 +4,7 @@ import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs';
 import { Session } from '../types/session';
 import { Folder, FolderData } from '../types/folder';
 import { logger } from './logger';
-import { saveImage, loadImages } from './imageStorage';
+import { saveImage, loadImages, saveImageWithKey, loadImage } from './imageStorage';
 
 // 창 상태 타입
 export interface WindowState {
@@ -65,6 +65,213 @@ function isImageKey(str: string): boolean {
 }
 
 /**
+ * 단일 base64 → IndexedDB 키 변환 (이미 키이면 그대로 반환)
+ * 키 네임스페이스를 명시적으로 받아 generationHistory/concept/chat 등에서 충돌 방지.
+ */
+async function persistImageField(
+  rawValue: string | undefined,
+  key: string
+): Promise<string | undefined> {
+  if (!rawValue) return rawValue;
+  if (!rawValue.startsWith('data:')) return rawValue; // 이미 키
+  await saveImageWithKey(key, rawValue);
+  return key;
+}
+
+/**
+ * 단일 IndexedDB 키 → base64 복원 (이미 base64이거나 비어 있으면 그대로 반환)
+ */
+async function restoreImageField(
+  rawValue: string | undefined
+): Promise<string | undefined> {
+  if (!rawValue) return rawValue;
+  if (rawValue.startsWith('data:')) return rawValue; // 이미 base64
+  const restored = await loadImage(rawValue);
+  return restored ?? rawValue;
+}
+
+/**
+ * 세션 객체의 부가 영역(generationHistory, chatData.messages.images,
+ * conceptData.history, conceptData.referenceImage)에 들어 있는 base64 이미지를
+ * IndexedDB로 옮기고, 객체에는 키만 남긴다. settings.json 직렬화 비용을 크게 줄인다.
+ */
+async function migrateSessionExtras(session: Session): Promise<Session> {
+  const sessionId = session.id;
+
+  // 1) generationHistory[].imageBase64
+  let nextGenerationHistory = session.generationHistory;
+  if (nextGenerationHistory && nextGenerationHistory.length > 0) {
+    nextGenerationHistory = await Promise.all(
+      nextGenerationHistory.map(async (entry) => {
+        const next = await persistImageField(
+          entry.imageBase64,
+          `${sessionId}-gen-${entry.id}`
+        );
+        return next === entry.imageBase64 ? entry : { ...entry, imageBase64: next ?? '' };
+      })
+    );
+  }
+
+  // 2) chatData.messages[].images[]
+  let nextChatData = session.chatData;
+  if (nextChatData && nextChatData.messages.length > 0) {
+    const newMessages = await Promise.all(
+      nextChatData.messages.map(async (msg) => {
+        if (!msg.images || msg.images.length === 0) return msg;
+        const newImages = await Promise.all(
+          msg.images.map(async (img, idx) => {
+            const key = `${sessionId}-chat-${msg.id}-${idx}`;
+            return (await persistImageField(img, key)) ?? img;
+          })
+        );
+        // 모두 동일하면 원본 유지
+        const changed = newImages.some((v, i) => v !== msg.images![i]);
+        return changed ? { ...msg, images: newImages } : msg;
+      })
+    );
+    const messagesChanged = newMessages.some((m, i) => m !== nextChatData!.messages[i]);
+    if (messagesChanged) {
+      nextChatData = { ...nextChatData, messages: newMessages };
+    }
+  }
+
+  // 3) conceptData.history[].imageBase64 + conceptData.referenceImage
+  let nextConceptData = session.conceptData;
+  if (nextConceptData) {
+    let conceptChanged = false;
+    let history = nextConceptData.history;
+    let referenceImage = nextConceptData.referenceImage;
+
+    if (history && history.length > 0) {
+      const newHistory = await Promise.all(
+        history.map(async (entry) => {
+          const next = await persistImageField(
+            entry.imageBase64,
+            `${sessionId}-concept-${entry.id}`
+          );
+          return next === entry.imageBase64 ? entry : { ...entry, imageBase64: next ?? '' };
+        })
+      );
+      if (newHistory.some((e, i) => e !== history[i])) {
+        history = newHistory;
+        conceptChanged = true;
+      }
+    }
+
+    if (referenceImage) {
+      const next = await persistImageField(referenceImage, `${sessionId}-conceptref`);
+      if (next !== referenceImage) {
+        referenceImage = next;
+        conceptChanged = true;
+      }
+    }
+
+    if (conceptChanged) {
+      nextConceptData = { ...nextConceptData, history, referenceImage };
+    }
+  }
+
+  if (
+    nextGenerationHistory === session.generationHistory &&
+    nextChatData === session.chatData &&
+    nextConceptData === session.conceptData
+  ) {
+    return session;
+  }
+
+  return {
+    ...session,
+    generationHistory: nextGenerationHistory,
+    chatData: nextChatData,
+    conceptData: nextConceptData,
+  };
+}
+
+/**
+ * 세션 객체의 부가 영역에 저장된 IndexedDB 키를 base64로 복원한다.
+ * 디스크에서 메모리로 끌어올릴 때 사용.
+ */
+async function restoreSessionExtras(session: Session): Promise<Session> {
+  // generationHistory
+  let nextGenerationHistory = session.generationHistory;
+  if (nextGenerationHistory && nextGenerationHistory.length > 0) {
+    nextGenerationHistory = await Promise.all(
+      nextGenerationHistory.map(async (entry) => {
+        const restored = await restoreImageField(entry.imageBase64);
+        return restored === entry.imageBase64 ? entry : { ...entry, imageBase64: restored ?? '' };
+      })
+    );
+  }
+
+  // chatData
+  let nextChatData = session.chatData;
+  if (nextChatData && nextChatData.messages.length > 0) {
+    const newMessages = await Promise.all(
+      nextChatData.messages.map(async (msg) => {
+        if (!msg.images || msg.images.length === 0) return msg;
+        const newImages = await Promise.all(
+          msg.images.map((img) => restoreImageField(img))
+        );
+        const finalImages = newImages.map((v, i) => v ?? msg.images![i]);
+        const changed = finalImages.some((v, i) => v !== msg.images![i]);
+        return changed ? { ...msg, images: finalImages } : msg;
+      })
+    );
+    if (newMessages.some((m, i) => m !== nextChatData!.messages[i])) {
+      nextChatData = { ...nextChatData, messages: newMessages };
+    }
+  }
+
+  // conceptData
+  let nextConceptData = session.conceptData;
+  if (nextConceptData) {
+    let conceptChanged = false;
+    let history = nextConceptData.history;
+    let referenceImage = nextConceptData.referenceImage;
+
+    if (history && history.length > 0) {
+      const newHistory = await Promise.all(
+        history.map(async (entry) => {
+          const restored = await restoreImageField(entry.imageBase64);
+          return restored === entry.imageBase64 ? entry : { ...entry, imageBase64: restored ?? '' };
+        })
+      );
+      if (newHistory.some((e, i) => e !== history[i])) {
+        history = newHistory;
+        conceptChanged = true;
+      }
+    }
+
+    if (referenceImage) {
+      const restored = await restoreImageField(referenceImage);
+      if (restored !== referenceImage) {
+        referenceImage = restored;
+        conceptChanged = true;
+      }
+    }
+
+    if (conceptChanged) {
+      nextConceptData = { ...nextConceptData, history, referenceImage };
+    }
+  }
+
+  if (
+    nextGenerationHistory === session.generationHistory &&
+    nextChatData === session.chatData &&
+    nextConceptData === session.conceptData
+  ) {
+    return session;
+  }
+
+  return {
+    ...session,
+    generationHistory: nextGenerationHistory,
+    chatData: nextChatData,
+    conceptData: nextConceptData,
+  };
+}
+
+/**
  * 세션 저장 (Base64 이미지를 IndexedDB로 마이그레이션)
  */
 export async function saveSessions(sessions: Session[]): Promise<void> {
@@ -76,25 +283,27 @@ export async function saveSessions(sessions: Session[]): Promise<void> {
         const hasImageKeys = session.imageKeys && session.imageKeys.length > 0;
         const allAreKeys = session.referenceImages.every(isImageKey);
 
+        let baseSession: Session;
         if (hasImageKeys || allAreKeys) {
-          logger.debug(`  - 세션 "${session.name}": 이미 마이그레이션됨`);
-          return session;
+          baseSession = session;
+        } else {
+          // Base64 이미지를 IndexedDB로 저장
+          logger.debug(`  - 세션 "${session.name}": ${session.referenceImages.length}개 참조 이미지 마이그레이션 중...`);
+          const imageKeys = await Promise.all(
+            session.referenceImages.map((dataUrl, index) =>
+              saveImage(session.id, index, dataUrl)
+            )
+          );
+          baseSession = {
+            ...session,
+            imageKeys,
+            referenceImages: imageKeys,
+          };
         }
 
-        // Base64 이미지를 IndexedDB로 저장
-        logger.debug(`  - 세션 "${session.name}": ${session.referenceImages.length}개 이미지 마이그레이션 중...`);
-        const imageKeys = await Promise.all(
-          session.referenceImages.map((dataUrl, index) =>
-            saveImage(session.id, index, dataUrl)
-          )
-        );
-
-        // 마이그레이션된 세션 반환
-        return {
-          ...session,
-          imageKeys, // 새로운 imageKeys 추가
-          referenceImages: imageKeys, // referenceImages도 키로 업데이트
-        };
+        // 부가 영역(generationHistory/chatData/conceptData)의 base64 이미지도
+        // IndexedDB로 옮겨 settings.json 본체 크기를 압축한다.
+        return migrateSessionExtras(baseSession);
       })
     );
 
@@ -123,7 +332,7 @@ export async function loadSessions(): Promise<Session[]> {
     }
 
     // 각 세션의 이미지를 IndexedDB에서 복원
-    const restoredSessions = await Promise.all(
+    const referenceRestored = await Promise.all(
       sessions.map(async (session) => {
         // imageKeys가 있으면 IndexedDB에서 로드
         if (session.imageKeys && session.imageKeys.length > 0) {
@@ -171,7 +380,12 @@ export async function loadSessions(): Promise<Session[]> {
       })
     );
 
-    logger.debug('✅ 세션 로드 완료:', restoredSessions.length, '개 (IndexedDB 복원 포함)');
+    // 부가 영역(generationHistory/chatData/conceptData)은 lazy 디코딩 — 키 그대로 메모리에 남겨두고
+    // 실제 보이는 시점에 LazyImage 컴포넌트가 IndexedDB에서 비동기로 base64로 변환한다.
+    // 이로써 시작 시 모든 세션의 모든 이미지를 한 번에 디코딩하지 않아 앱 시작이 빨라진다.
+    const restoredSessions = referenceRestored;
+
+    logger.debug('✅ 세션 로드 완료:', restoredSessions.length, '개 (참조 이미지만 즉시 복원, 나머지는 lazy)');
     return restoredSessions;
   } catch (error) {
     logger.error('❌ 세션 로드 오류:', error);
@@ -203,7 +417,7 @@ export async function exportSessionToFile(session: Session): Promise<void> {
     // IndexedDB 키를 실제 Base64 이미지로 복원
     let exportSession = session;
     if (session.imageKeys && session.imageKeys.length > 0) {
-      logger.debug(`  - IndexedDB에서 ${session.imageKeys.length}개 이미지 복원 중...`);
+      logger.debug(`  - IndexedDB에서 ${session.imageKeys.length}개 참조 이미지 복원 중...`);
       const images = await loadImages(session.imageKeys);
 
       if (images.length > 0) {
@@ -217,6 +431,10 @@ export async function exportSessionToFile(session: Session): Promise<void> {
         logger.warn('  - ⚠️ IndexedDB에서 이미지를 찾을 수 없습니다. 키만 export됩니다.');
       }
     }
+
+    // 부가 영역(generationHistory/chatData/conceptData)도 base64로 복원해서 export
+    // (런타임은 lazy 키 상태일 수 있으므로 명시적으로 복원)
+    exportSession = await restoreSessionExtras(exportSession);
 
     // 세션을 JSON 문자열로 변환
     const jsonContent = JSON.stringify(exportSession, null, 2);
@@ -385,7 +603,7 @@ export async function exportFolderToFile(
       return folderId && allRelatedFolderIds.includes(folderId);
     });
 
-    // IndexedDB에서 이미지 복원
+    // IndexedDB에서 참조 이미지 + 부가 영역(히스토리/채팅/컨셉) 모두 복원
     const sessionsWithImages: Session[] = [];
     for (const session of sessionsInFolder) {
       let exportSession = session;
@@ -398,6 +616,7 @@ export async function exportFolderToFile(
           };
         }
       }
+      exportSession = await restoreSessionExtras(exportSession);
       sessionsWithImages.push(exportSession);
     }
 

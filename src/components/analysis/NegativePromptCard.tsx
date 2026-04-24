@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { AlertTriangle, Edit2, Save, X } from 'lucide-react';
 
 interface NegativePromptCardProps {
@@ -6,7 +6,7 @@ interface NegativePromptCardProps {
   onUpdate?: (negativePrompt: string) => void;
 }
 
-export function NegativePromptCard({
+export const NegativePromptCard = memo(function NegativePromptCard({
   negativePrompt,
   onUpdate,
 }: NegativePromptCardProps) {
@@ -107,4 +107,4 @@ export function NegativePromptCard({
       </div>
     </div>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { X, Palette, User, Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award, Images, MessageCircle, Lightbulb } from 'lucide-react';
 import { Session, SessionType } from '../../types/session';
 import { SESSION_CONFIG } from '../../lib/config/sessionConfig';
@@ -26,7 +26,7 @@ function generateSessionName(type: SessionType, existingSessions: Session[]): st
   return `${label}_${Math.max(maxIndex, sameType.length) + 1}`;
 }
 
-export function NewSessionModal({ isOpen, onClose, onCreate, existingSessions }: NewSessionModalProps) {
+export const NewSessionModal = memo(function NewSessionModal({ isOpen, onClose, onCreate, existingSessions }: NewSessionModalProps) {
   const [sessionType, setSessionType] = useState<SessionType>('BASIC');
 
   // 모달이 열릴 때마다 초기화
@@ -304,4 +304,4 @@ export function NewSessionModal({ isOpen, onClose, onCreate, existingSessions }:
       </div>
     </div>
   );
-}
+});

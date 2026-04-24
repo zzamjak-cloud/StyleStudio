@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { X, Key, FolderOpen, LogOut, User } from 'lucide-react';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
@@ -12,7 +12,7 @@ interface SettingsModalProps {
   onSave: (apiKey: string) => void;
 }
 
-export function SettingsModal({ isOpen, onClose, currentApiKey, onSave }: SettingsModalProps) {
+export const SettingsModal = memo(function SettingsModal({ isOpen, onClose, currentApiKey, onSave }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState(currentApiKey);
   const [saveNotification, setSaveNotification] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -201,4 +201,4 @@ export function SettingsModal({ isOpen, onClose, currentApiKey, onSave }: Settin
       </div>
     </div>
   );
-}
+});

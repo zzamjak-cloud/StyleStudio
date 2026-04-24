@@ -1,8 +1,9 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { Session } from '../types/session';
 import { ChatMessage, ChatGenerationSettings, ChatSessionData, estimateTokenCount } from '../types/chat';
 import { ReferenceDocument } from '../types/referenceDocument';
 import { updateSession } from '../utils/sessionHelpers';
+import { deleteImage } from '../lib/imageStorage';
 import { logger } from '../lib/logger';
 
 // 요약 임계값: 총 토큰 수가 이 값을 초과하면 요약 필요
@@ -31,15 +32,25 @@ export function useChatSession(
   onSessionUpdate: (session: Session) => void
 ): UseChatSessionReturn {
   const chatData = session.chatData;
-  const messages = chatData?.messages ?? [];
-  const attachedDocuments = chatData?.attachedDocuments ?? [];
-  const settings: ChatGenerationSettings = {
-    aspectRatio: '1:1',
-    imageModel: 'gemini-3-pro-image-preview',
-    imageSize: '1K',
-    pixelArtGrid: '1x1',
-    ...chatData?.settings,
-  };
+  // 파생값을 useMemo로 안정화하여 자식(ChatPanel/ChatAISettings/ChatMessage)의 memo 효과를 보존
+  const messages = useMemo<ChatMessage[]>(
+    () => chatData?.messages ?? [],
+    [chatData?.messages]
+  );
+  const attachedDocuments = useMemo<ReferenceDocument[]>(
+    () => chatData?.attachedDocuments ?? [],
+    [chatData?.attachedDocuments]
+  );
+  const settings = useMemo<ChatGenerationSettings>(
+    () => ({
+      aspectRatio: '1:1',
+      imageModel: 'gemini-3-pro-image-preview',
+      imageSize: '1K',
+      pixelArtGrid: '1x1',
+      ...chatData?.settings,
+    }),
+    [chatData?.settings]
+  );
   const summary = chatData?.summary;
   const summarizedUpTo = chatData?.summarizedUpTo;
   const totalTokenCount = chatData?.totalTokenCount ?? 0;
@@ -115,6 +126,14 @@ export function useChatSession(
     const currentMessages = latestChatData?.messages ?? [];
     const targetMessage = currentMessages.find(m => m.id === messageId);
     if (!targetMessage) return;
+
+    // IndexedDB orphan 정리: 메시지에 첨부/생성된 이미지 키도 함께 제거
+    if (targetMessage.images && targetMessage.images.length > 0) {
+      const sessionId = sessionRef.current.id;
+      for (let i = 0; i < targetMessage.images.length; i++) {
+        void deleteImage(`${sessionId}-chat-${messageId}-${i}`).catch(() => {});
+      }
+    }
 
     const updatedMessages = currentMessages.filter(m => m.id !== messageId);
     const currentTokenCount = latestChatData?.totalTokenCount ?? 0;
