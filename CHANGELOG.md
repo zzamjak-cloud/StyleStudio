@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-04-25
+
+### Changed (Performance)
+- 세션 저장(`persistSessions`)을 500ms 디바운스 + 백그라운드 직렬 큐로 통합 — 짧은 시간에 다수 변경(히스토리 추가/문서 첨부/세션 순서 변경 등)이 몰릴 때 거대한 settings.json 직렬화가 매번 발생하던 문제 해소. 호출자는 즉시 resolve 반환받아 UI 반응성 보장
+- 페이지 종료/리프레시 시 보류 중인 세션 저장을 즉시 비우는 `flushPendingSessions` 추가 및 `App.tsx`에서 `beforeunload` 리스너 등록
+- 무거운 세션 패널 4개(`ImageGeneratorPanel`/`IllustrationSetupPanel`/`ChatPanel`/`ConceptPanel`)를 `React.lazy` 코드 분할 — 앱 시작 번들 크기 감소, 첫 진입 패널 외에는 사용 시점에만 로드
+- 사이드바 세션 아이템을 별도 `SessionListItem` 메모 컴포넌트로 분리. 다른 세션 선택 시 비활성 항목들은 리렌더 차단
+- `Sidebar`의 핸들러 8종(`handleMouseDown`/`handleFolderClick`/`handleSessionDoubleClick` 등)을 `useCallback`으로 안정화
+
 ## [0.4.7] - 2026-04-24
 
 ### Changed (Performance)

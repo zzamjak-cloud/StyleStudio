@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { memo, useCallback, useState, useRef, useEffect } from 'react';
 import {
   Palette, User, Trash2, ImagePlus, Download, FolderOpen, Settings,
   Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award, Images,
@@ -41,6 +41,132 @@ function getSessionTypeInfo(type: SessionType) {
   }
 }
 
+// 드래그 타입 (Item 컴포넌트에서도 사용하기 위해 미리 선언)
+type DragItemType = 'session' | 'folder';
+
+/**
+ * 세션 리스트 아이템 — React.memo 처리되어 부모 Sidebar 리렌더 시
+ * 자신의 props가 바뀌지 않은 경우 리렌더를 건너뛴다.
+ *
+ * 핵심 효과: 다른 세션을 선택하면 currentSessionId가 바뀌면서 부모는 리렌더되지만,
+ * isActive가 false → false로 그대로인 비활성 세션들은 props 동일성으로 리렌더 차단.
+ */
+interface SessionListItemProps {
+  session: Session;
+  index: number;
+  isActive: boolean;
+  isBeingDragged: boolean;
+  isDragOver: boolean;
+  isInlineEditing: boolean;
+  inlineEditValue: string;
+  inlineInputRef: React.RefObject<HTMLInputElement | null>;
+  isDragging: boolean;
+  disabled: boolean;
+  onMouseDown: (e: React.MouseEvent, index: number, type: DragItemType) => void;
+  onSelect?: (session: Session) => void;
+  onDoubleClick: (sessionId: string) => void;
+  onInlineRename: () => void;
+  onInlineCancel: () => void;
+  onInlineEditValueChange: (value: string) => void;
+  onExportSession?: (session: Session) => void;
+  onSetDeleteConfirm: (id: string) => void;
+}
+
+const SessionListItem = memo(function SessionListItem({
+  session,
+  index,
+  isActive,
+  isBeingDragged,
+  isDragOver,
+  isInlineEditing,
+  inlineEditValue,
+  inlineInputRef,
+  isDragging,
+  disabled,
+  onMouseDown,
+  onSelect,
+  onDoubleClick,
+  onInlineRename,
+  onInlineCancel,
+  onInlineEditValueChange,
+  onExportSession,
+  onSetDeleteConfirm,
+}: SessionListItemProps) {
+  const { icon: Icon, bgColor, textColor } = getSessionTypeInfo(session.type);
+
+  return (
+    <div
+      data-item-index={index}
+      data-item-type="session"
+      data-item-id={session.id}
+      onMouseDown={(e) => !isInlineEditing && onMouseDown(e, index, 'session')}
+      onDoubleClick={() => !isInlineEditing && onDoubleClick(session.id)}
+      className={`group rounded-lg p-2 transition-all relative select-none ml-3 ${
+        isActive
+          ? 'bg-gray-800 border border-purple-500'
+          : disabled
+          ? 'border border-transparent opacity-50 cursor-not-allowed'
+          : 'hover:bg-gray-800 border border-transparent cursor-pointer'
+      } ${isBeingDragged ? 'opacity-50' : ''} ${
+        isDragOver ? 'border-t-2 border-t-blue-500 pt-3' : ''
+      }`}
+      onClick={() => !isDragging && !disabled && !isInlineEditing && onSelect?.(session)}
+    >
+      <div className="flex items-center gap-2">
+        <div className={`p-1 rounded flex-shrink-0 ${bgColor} ${textColor}`}>
+          <Icon size={14} />
+        </div>
+        {isInlineEditing ? (
+          <input
+            ref={inlineInputRef}
+            type="text"
+            value={inlineEditValue}
+            onChange={(e) => onInlineEditValueChange(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter') onInlineRename();
+              if (e.key === 'Escape') onInlineCancel();
+            }}
+            onBlur={onInlineCancel}
+            className="flex-1 min-w-0 px-1 py-0.5 text-xs bg-gray-700 border border-purple-500 rounded text-white focus:outline-none"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <div className="flex-1 min-w-0">
+            <span className="text-xs font-medium text-white truncate block">{session.name}</span>
+          </div>
+        )}
+        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onExportSession && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!disabled) onExportSession(session);
+              }}
+              disabled={disabled}
+              className={`p-1 hover:bg-green-900/50 rounded transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title="세션을 파일로 저장"
+            >
+              <Download size={12} className="text-green-400" />
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!disabled) onSetDeleteConfirm(session.id);
+            }}
+            disabled={disabled}
+            className={`p-1 hover:bg-red-900/50 rounded transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title="세션 삭제"
+          >
+            <Trash2 size={12} className="text-red-400" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 interface SidebarProps {
   // 세션 관련
   sessions: Session[];
@@ -73,9 +199,6 @@ interface SidebarProps {
   onMoveFolderToFolder: (folderId: string, targetFolderId: string | null) => Promise<void>;
   onReorderFolders: (reorderedFolders: FolderType[]) => Promise<void>;
 }
-
-// 드래그 타입
-type DragItemType = 'session' | 'folder';
 
 export function Sidebar({
   sessions,
@@ -380,7 +503,7 @@ export function Sidebar({
     }
   }, [inlineEditFolderId, inlineEditSessionId]);
 
-  const handleMouseDown = (e: React.MouseEvent, index: number, type: DragItemType) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent, index: number, type: DragItemType) => {
     if ((e.target as HTMLElement).closest('button')) return;
     if (disabled) return;
 
@@ -390,34 +513,33 @@ export function Sidebar({
     dragStartX.current = e.clientX;
     dragStartY.current = e.clientY;
     e.preventDefault();
-  };
+  }, [disabled]);
 
   // 폴더 클릭 → 폴더 선택
-  const handleFolderClick = (folderId: string) => {
+  const handleFolderClick = useCallback((folderId: string) => {
     if (disabled) return;
     onSelectFolder?.(folderId);
-  };
+  }, [disabled, onSelectFolder]);
 
   // 폴더 더블클릭 → 폴더 내부 이동
-  const handleFolderDoubleClick = (folderId: string) => {
+  const handleFolderDoubleClick = useCallback((folderId: string) => {
     if (disabled) return;
-    // 폴더 진입 시 폴더 선택 해제 (첫 번째 세션이 자동 선택됨)
     onSelectFolder?.(null);
     onNavigateToFolder(folderId);
-  };
+  }, [disabled, onSelectFolder, onNavigateToFolder]);
 
   // 세션 더블클릭 → 인라인 이름 변경 모드
-  const handleSessionDoubleClick = (sessionId: string) => {
+  const handleSessionDoubleClick = useCallback((sessionId: string) => {
     if (disabled || !onRenameSession) return;
     const session = sessions.find(s => s.id === sessionId);
     if (session) {
       setInlineEditSessionId(sessionId);
       setInlineEditValue(session.name);
     }
-  };
+  }, [disabled, onRenameSession, sessions]);
 
   // 인라인 폴더 이름 변경 완료 (Enter 키)
-  const handleInlineFolderRename = async () => {
+  const handleInlineFolderRename = useCallback(async () => {
     if (!inlineEditFolderId || !inlineEditValue.trim()) {
       setInlineEditFolderId(null);
       setInlineEditValue('');
@@ -425,21 +547,19 @@ export function Sidebar({
     }
     const folderId = inlineEditFolderId;
     const newName = inlineEditValue.trim();
-    // 먼저 상태 초기화 (즉시 편집 모드 종료)
     setInlineEditFolderId(null);
     setInlineEditValue('');
-    // 그 다음 저장
     await onRenameFolder(folderId, newName);
-  };
+  }, [inlineEditFolderId, inlineEditValue, onRenameFolder]);
 
   // 인라인 폴더 이름 변경 취소 (Blur, ESC)
-  const cancelInlineFolderEdit = () => {
+  const cancelInlineFolderEdit = useCallback(() => {
     setInlineEditFolderId(null);
     setInlineEditValue('');
-  };
+  }, []);
 
   // 인라인 세션 이름 변경 완료 (Enter 키)
-  const handleInlineSessionRename = async () => {
+  const handleInlineSessionRename = useCallback(async () => {
     if (!inlineEditSessionId || !inlineEditValue.trim() || !onRenameSession) {
       setInlineEditSessionId(null);
       setInlineEditValue('');
@@ -447,18 +567,16 @@ export function Sidebar({
     }
     const sessionId = inlineEditSessionId;
     const newName = inlineEditValue.trim();
-    // 먼저 상태 초기화 (즉시 편집 모드 종료)
     setInlineEditSessionId(null);
     setInlineEditValue('');
-    // 그 다음 저장
     await onRenameSession(sessionId, newName);
-  };
+  }, [inlineEditSessionId, inlineEditValue, onRenameSession]);
 
   // 인라인 세션 이름 변경 취소 (Blur, ESC)
-  const cancelInlineSessionEdit = () => {
+  const cancelInlineSessionEdit = useCallback(() => {
     setInlineEditSessionId(null);
     setInlineEditValue('');
-  };
+  }, []);
 
   // 디폴트 이름으로 폴더 즉시 생성
   const handleCreateFolderWithDefaultName = async () => {
@@ -681,87 +799,33 @@ export function Sidebar({
               );
             }
 
-            // 세션 아이템
+            // 세션 아이템 — memo 분리된 SessionListItem으로 위임
             const session = item as Session;
             const isActive = currentSessionId === session.id;
-            const { icon: Icon, bgColor, textColor } = getSessionTypeInfo(session.type);
             const isSessionInlineEditing = inlineEditSessionId === session.id;
 
             return (
-              <div
+              <SessionListItem
                 key={session.id}
-                data-item-index={index}
-                data-item-type="session"
-                data-item-id={session.id}
-                onMouseDown={(e) => !isSessionInlineEditing && handleMouseDown(e, index, 'session')}
-                onDoubleClick={() => !isSessionInlineEditing && handleSessionDoubleClick(session.id)}
-                className={`group rounded-lg p-2 transition-all relative select-none ml-3 ${
-                  isActive
-                    ? 'bg-gray-800 border border-purple-500'
-                    : disabled
-                    ? 'border border-transparent opacity-50 cursor-not-allowed'
-                    : 'hover:bg-gray-800 border border-transparent cursor-pointer'
-                } ${isBeingDragged ? 'opacity-50' : ''} ${
-                  isDragOver ? 'border-t-2 border-t-blue-500 pt-3' : ''
-                }`}
-                onClick={() => !isDragging && !disabled && !isSessionInlineEditing && onSelectSession?.(session)}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`p-1 rounded flex-shrink-0 ${bgColor} ${textColor}`}>
-                    <Icon size={14} />
-                  </div>
-                  {isSessionInlineEditing ? (
-                    // 인라인 이름 변경 모드
-                    <input
-                      ref={inlineInputRef}
-                      type="text"
-                      value={inlineEditValue}
-                      onChange={(e) => setInlineEditValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                        if (e.key === 'Enter') handleInlineSessionRename();
-                        if (e.key === 'Escape') cancelInlineSessionEdit();
-                      }}
-                      onBlur={cancelInlineSessionEdit}
-                      className="flex-1 min-w-0 px-1 py-0.5 text-xs bg-gray-700 border border-purple-500 rounded text-white focus:outline-none"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  ) : (
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-medium text-white truncate block">{session.name}</span>
-                    </div>
-                  )}
-                  {/* 세션 액션 버튼 */}
-                  <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {onExportSession && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!disabled) onExportSession(session);
-                        }}
-                        disabled={disabled}
-                        className={`p-1 hover:bg-green-900/50 rounded transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        title="세션을 파일로 저장"
-                      >
-                        <Download size={12} className="text-green-400" />
-                      </button>
-                    )}
-                    {onDeleteSession && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!disabled) setDeleteConfirm(session.id);
-                        }}
-                        disabled={disabled}
-                        className={`p-1 hover:bg-red-900/50 rounded transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        title="세션 삭제"
-                      >
-                        <Trash2 size={12} className="text-red-400" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
+                session={session}
+                index={index}
+                isActive={isActive}
+                isBeingDragged={isBeingDragged}
+                isDragOver={isDragOver}
+                isInlineEditing={isSessionInlineEditing}
+                inlineEditValue={inlineEditValue}
+                inlineInputRef={inlineInputRef}
+                isDragging={isDragging}
+                disabled={disabled}
+                onMouseDown={handleMouseDown}
+                onSelect={onSelectSession}
+                onDoubleClick={handleSessionDoubleClick}
+                onInlineRename={handleInlineSessionRename}
+                onInlineCancel={cancelInlineSessionEdit}
+                onInlineEditValueChange={setInlineEditValue}
+                onExportSession={onExportSession}
+                onSetDeleteConfirm={setDeleteConfirm}
+              />
             );
           })
         )}

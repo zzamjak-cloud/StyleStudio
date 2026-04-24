@@ -1,17 +1,37 @@
-import { useState, useCallback, useEffect, useRef, startTransition } from 'react';
+import { useState, useCallback, useEffect, useRef, startTransition, lazy, Suspense } from 'react';
+import { Loader2 } from 'lucide-react';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Sidebar } from './components/common/Sidebar';
 import { EmptyState } from './components/common/EmptyState';
 import { ImageUpload } from './components/generator/ImageUpload';
 import { AnalysisPanel } from './components/analysis/AnalysisPanel';
-import { ImageGeneratorPanel } from './components/generator/ImageGeneratorPanel';
 import { SettingsModal } from './components/common/SettingsModal';
 import { SaveSessionModal } from './components/common/SaveSessionModal';
 import { NewSessionModal } from './components/common/NewSessionModal';
 import { UpdateModal } from './components/common/UpdateModal';
-import { IllustrationSetupPanel } from './components/illustration';
-import { ChatPanel } from './components/chat';
-import { ConceptPanel } from './components/concept/ConceptPanel';
+
+// 무거운 세션 패널들은 코드 분할 — 첫 진입 전까지 번들 로드를 미뤄 앱 시작과 다른 패널 진입의 비용을 줄인다
+const ImageGeneratorPanel = lazy(() =>
+  import('./components/generator/ImageGeneratorPanel').then((m) => ({ default: m.ImageGeneratorPanel }))
+);
+const IllustrationSetupPanel = lazy(() =>
+  import('./components/illustration').then((m) => ({ default: m.IllustrationSetupPanel }))
+);
+const ChatPanel = lazy(() =>
+  import('./components/chat').then((m) => ({ default: m.ChatPanel }))
+);
+const ConceptPanel = lazy(() =>
+  import('./components/concept/ConceptPanel').then((m) => ({ default: m.ConceptPanel }))
+);
+
+/** 세션 패널 lazy 로딩 중 표시되는 폴백 */
+function PanelFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center bg-gray-50">
+      <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+    </div>
+  );
+}
 import { useGeminiAnalyzer } from './hooks/api/useGeminiAnalyzer';
 import { useAutoSave } from './hooks/useAutoSave';
 import { useAutoUpdate } from './hooks/useAutoUpdate';
@@ -29,6 +49,7 @@ import {
   updateSessionInList,
   addSessionToList,
   persistSessions,
+  flushPendingSessions as flushPersistedSessions,
 } from './utils/sessionHelpers';
 import { logger } from './lib/logger';
 import { exportFolderToFile, importFromFile } from './lib/storage';
@@ -273,8 +294,21 @@ function App() {
         clearTimeout(persistTimerRef.current);
       }
       void flushPendingSessions();
+      // 디바운스 큐에 남아 있는 세션 저장도 즉시 비운다
+      void flushPersistedSessions();
     };
   }, [flushPendingSessions]);
+
+  // 페이지 종료/리프레시 시 보류 중인 세션 저장을 즉시 실행
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      void flushPersistedSessions();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
 
   const { progress } = useAutoSave({
     currentSession,
@@ -1078,6 +1112,7 @@ function App() {
       <main className={`flex flex-col overflow-hidden transition-all duration-500 ease-in-out ${
         currentView === 'generator' ? 'ml-0 w-full' : 'ml-72 flex-1'
       }`}>
+        <Suspense fallback={<PanelFallback />}>
         {selectedFolderId ? (
           // 폴더 선택 시 도움말 표시
           <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
@@ -1282,6 +1317,7 @@ function App() {
         ) : (
           <ImageUpload onImageSelect={handleImageSelect} />
         )}
+        </Suspense>
       </main>
 
       <SettingsModal
