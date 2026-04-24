@@ -206,6 +206,8 @@ export function BackgroundSection({
                 <img
                   src={img}
                   alt={`배경 ${idx + 1}`}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover"
                 />
                 <button

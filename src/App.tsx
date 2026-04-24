@@ -322,8 +322,15 @@ function App() {
   }, [sessions]); // sessions가 로드될 때만 실행 (currentSession 의존성 제거)
 
   // 2. currentSession 변경 시 uploadedImages와 analysisResult 복원
+  // 성능 최적화: 같은 세션의 내부 업데이트(autoSave로 인한 객체 참조 변경)에서는
+  // Base64 이미지 배열 재복사를 건너뛰어 리렌더 연쇄를 차단한다.
+  const lastRestoredSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (currentSession) {
+      if (currentSession.id === lastRestoredSessionIdRef.current) {
+        return;
+      }
+      lastRestoredSessionIdRef.current = currentSession.id;
       setUploadedImages(currentSession.referenceImages);
       setAnalysisResult(currentSession.analysis);
       logger.info('✅ 세션 데이터 복원:', currentSession.name);
@@ -335,7 +342,7 @@ function App() {
         logger.warn('⚠️ 참조 이미지가 손상되었습니다. ImageKeys:', currentSession.imageKeys);
       }
     } else {
-      // 세션이 없으면 초기화
+      lastRestoredSessionIdRef.current = null;
       setUploadedImages([]);
       setAnalysisResult(null);
       logger.info('✅ 세션 데이터 초기화');

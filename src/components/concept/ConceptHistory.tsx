@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { ChevronUp, Download, Trash2, Clock, Grid, Loader2 } from 'lucide-react';
 import { ConceptGenerationEntry } from '../../types/concept';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -15,7 +15,7 @@ interface ConceptHistoryProps {
 }
 
 /** 컨셉 세션 하단 히스토리 패널 */
-export function ConceptHistory({
+function ConceptHistoryComponent({
   history,
   height,
   onHeightChange,
@@ -150,6 +150,8 @@ export function ConceptHistory({
                   <img
                     src={entry.imageBase64}
                     alt={entry.prompt || '생성 이미지'}
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-auto object-contain block"
                   />
 
@@ -191,3 +193,5 @@ export function ConceptHistory({
     </div>
   );
 }
+
+export const ConceptHistory = memo(ConceptHistoryComponent);

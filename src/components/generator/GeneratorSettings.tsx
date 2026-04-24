@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { Languages, Wand2, Dices, HelpCircle, X, Award, AlertTriangle, Camera, ChevronDown } from 'lucide-react';
 import { SessionType } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
@@ -60,7 +60,7 @@ interface GeneratorSettingsProps {
   onDocumentDelete?: (documentId: string) => void;
 }
 
-export function GeneratorSettings({
+function GeneratorSettingsComponent({
   apiKey,
   sessionType,
   additionalPrompt,
@@ -640,3 +640,5 @@ export function GeneratorSettings({
     </div>
   );
 }
+
+export const GeneratorSettings = memo(GeneratorSettingsComponent);

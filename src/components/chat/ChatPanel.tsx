@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { X, Download, MessageCircle, Loader2, FolderOpen } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
@@ -21,7 +21,7 @@ interface ChatPanelProps {
 }
 
 /** 채팅 패널 메인 컴포넌트 */
-export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) {
+function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps) {
   const {
     messages,
     attachedDocuments,
@@ -328,6 +328,7 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
           <img
             src={previewImage}
             alt="미리보기"
+            decoding="async"
             className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
             onClick={(e) => e.stopPropagation()}
           />
@@ -336,3 +337,5 @@ export function ChatPanel({ session, apiKey, onSessionUpdate }: ChatPanelProps) 
     </div>
   );
 }
+
+export const ChatPanel = memo(ChatPanelComponent);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { History, Pin, RotateCcw, Trash2 } from 'lucide-react';
 import { GenerationHistoryEntry } from '../../types/session';
 import { Resizer } from '../common/Resizer';
@@ -13,7 +13,7 @@ interface GeneratorHistoryProps {
   onDeleteHistory?: (entryId: string) => void;
 }
 
-export function GeneratorHistory({
+function GeneratorHistoryComponent({
   generationHistory,
   historyHeight,
   onHistoryResize,
@@ -22,6 +22,15 @@ export function GeneratorHistory({
   onDeleteHistory,
 }: GeneratorHistoryProps) {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  // 정렬된 히스토리 (매 렌더 재정렬 방지)
+  const sortedHistory = useMemo(() => {
+    return generationHistory.slice().sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+  }, [generationHistory]);
 
   const handleDeleteHistory = (e: React.MouseEvent, entryId: string) => {
     e.stopPropagation();
@@ -59,16 +68,7 @@ export function GeneratorHistory({
           </h3>
         </div>
         <div className="grid grid-cols-8 gap-2">
-          {generationHistory
-            .slice()
-            .sort((a, b) => {
-              // 핀된 항목을 먼저 표시
-              if (a.isPinned && !b.isPinned) return -1;
-              if (!a.isPinned && b.isPinned) return 1;
-              // 시간순 역순 (최신 먼저)
-              return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-            })
-            .map((entry) => {
+          {sortedHistory.map((entry) => {
               // 툴팁 텍스트 생성
               const tooltipParts = [
                 `생성 시간: ${formatDateTime(entry.timestamp)}`,
@@ -115,6 +115,8 @@ export function GeneratorHistory({
                     <img
                       src={entry.imageBase64}
                       alt={`Generated ${formatDateTime(entry.timestamp)}`}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -171,3 +173,5 @@ export function GeneratorHistory({
     </>
   );
 }
+
+export const GeneratorHistory = memo(GeneratorHistoryComponent);

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Wand2, ArrowLeft, ChevronDown, HelpCircle, X, FolderOpen, ZoomIn } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
@@ -403,10 +403,10 @@ export function ImageGeneratorPanel({
     imageModel: DEFAULT_IMAGE_MODEL,
   });
 
-  // 상태 업데이트 헬퍼 함수
-  const updateState = (updates: Partial<GeneratorState>) => {
+  // 상태 업데이트 헬퍼 함수 (useCallback으로 안정화하여 자식 메모이제이션 유지)
+  const updateState = useCallback((updates: Partial<GeneratorState>) => {
     setState(prev => ({ ...prev, ...updates }));
-  };
+  }, []);
 
   // 상태에서 자주 사용되는 값들을 destructure
   const {
@@ -435,28 +435,27 @@ export function ImageGeneratorPanel({
     imageModel,
   } = state;
 
-  // 기존 코드 호환성을 위한 개별 setter 함수들
-  const setAdditionalPrompt = (value: string) => updateState({ additionalPrompt: value });
-  const setIsTranslating = (value: boolean) => updateState({ isTranslating: value });
-  const setAspectRatio = (value: '1:1' | '16:9' | '9:16' | '4:3' | '3:4') => updateState({ aspectRatio: value });
-  const setImageSize = (value: '1K' | '2K' | '4K') => updateState({ imageSize: value });
-  const setUseReferenceImages = (value: boolean) => updateState({ useReferenceImages: value });
-  const setIsGenerating = (value: boolean) => updateState({ isGenerating: value });
-  const setProgressMessage = (value: string) => updateState({ progressMessage: value });
-  const setGeneratedImage = (value: string | null) => updateState({ generatedImage: value });
-  const setPixelArtGrid = (value: PixelArtGridLayout) => updateState({ pixelArtGrid: value });
-  const setCameraAngle = (value: string) => updateState({ cameraAngle: value });
-  const setCameraLens = (value: string) => updateState({ cameraLens: value });
-  const setZoomLevel = (value: 'fit' | 'actual' | number) => updateState({ zoomLevel: value });
-  const setShowZoomMenu = (value: boolean) => updateState({ showZoomMenu: value });
-  const setShowPathTooltip = (value: boolean) => updateState({ showPathTooltip: value });
-  const setShowAdvanced = (value: boolean) => updateState({ showAdvanced: value });
-  const setShowHelp = (value: boolean) => updateState({ showHelp: value });
-  const setSeed = (value: number | undefined) => updateState({ seed: value });
-  const setTemperature = (value: number) => updateState({ temperature: value });
-  const setTopK = (value: number) => updateState({ topK: value });
-  const setTopP = (value: number) => updateState({ topP: value });
-  const setReferenceStrength = (value: number) => updateState({ referenceStrength: value });
+  // 기존 코드 호환성을 위한 개별 setter 함수들 (useCallback으로 안정화)
+  const setAdditionalPrompt = useCallback((value: string) => updateState({ additionalPrompt: value }), [updateState]);
+  const setIsTranslating = useCallback((value: boolean) => updateState({ isTranslating: value }), [updateState]);
+  const setAspectRatio = useCallback((value: '1:1' | '16:9' | '9:16' | '4:3' | '3:4') => updateState({ aspectRatio: value }), [updateState]);
+  const setImageSize = useCallback((value: '1K' | '2K' | '4K') => updateState({ imageSize: value }), [updateState]);
+  const setUseReferenceImages = useCallback((value: boolean) => updateState({ useReferenceImages: value }), [updateState]);
+  const setIsGenerating = useCallback((value: boolean) => updateState({ isGenerating: value }), [updateState]);
+  const setProgressMessage = useCallback((value: string) => updateState({ progressMessage: value }), [updateState]);
+  const setGeneratedImage = useCallback((value: string | null) => updateState({ generatedImage: value }), [updateState]);
+  const setPixelArtGrid = useCallback((value: PixelArtGridLayout) => updateState({ pixelArtGrid: value }), [updateState]);
+  const setCameraAngle = useCallback((value: string) => updateState({ cameraAngle: value }), [updateState]);
+  const setCameraLens = useCallback((value: string) => updateState({ cameraLens: value }), [updateState]);
+  const setZoomLevel = useCallback((value: 'fit' | 'actual' | number) => updateState({ zoomLevel: value }), [updateState]);
+  const setShowZoomMenu = useCallback((value: boolean) => updateState({ showZoomMenu: value }), [updateState]);
+  const setShowPathTooltip = useCallback((value: boolean) => updateState({ showPathTooltip: value }), [updateState]);
+  const setShowAdvanced = useCallback((value: boolean) => updateState({ showAdvanced: value }), [updateState]);
+  const setShowHelp = useCallback((value: boolean) => updateState({ showHelp: value }), [updateState]);
+  const setSeed = useCallback((value: number | undefined) => updateState({ seed: value }), [updateState]);
+  const setTemperature = useCallback((value: number) => updateState({ temperature: value }), [updateState]);
+  const setTopK = useCallback((value: number) => updateState({ topK: value }), [updateState]);
+  const setTopP = useCallback((value: number) => updateState({ topP: value }), [updateState]);
 
   // 줌 메뉴 외부 클릭 시 닫기
   useEffect(() => {
@@ -467,11 +466,13 @@ export function ImageGeneratorPanel({
     }
   }, [showZoomMenu]);
 
-  const handleHistoryResize = (delta: number) => {
-    const newHeight = historyHeight - delta; // delta는 아래로 드래그하면 양수, 위로 드래그하면 음수
-    // 최소 120px, 최대 600px
-    updateState({ historyHeight: Math.max(120, Math.min(600, newHeight)) });
-  };
+  // setState updater 패턴 + useCallback으로 자식 memo 무효화 방지
+  const handleHistoryResize = useCallback((delta: number) => {
+    setState(prev => ({
+      ...prev,
+      historyHeight: Math.max(120, Math.min(600, prev.historyHeight - delta)),
+    }));
+  }, []);
 
 
   const handleGenerate = async () => {
@@ -736,8 +737,8 @@ export function ImageGeneratorPanel({
     }
   };
 
-  // 수동 저장 함수 (사용자가 다운로드 버튼 클릭 시)
-  const handleManualSave = async () => {
+  // 수동 저장 함수 (사용자가 다운로드 버튼 클릭 시) — useCallback으로 자식 memo 유지
+  const handleManualSave = useCallback(async () => {
     if (!generatedImage) {
       return;
     }
@@ -840,59 +841,46 @@ export function ImageGeneratorPanel({
 
       alert('이미지 저장에 실패했습니다.\n\n' + errorMessage);
     }
-  };
+  }, [generatedImage, sessionType, sessionName]);
 
-  // 히스토리에서 설정 복원
-  const handleRestoreFromHistory = (e: React.MouseEvent, entry: GenerationHistoryEntry) => {
+  // 히스토리에서 설정 복원 (단일 setState + useCallback으로 자식 memo 유지)
+  const handleRestoreFromHistory = useCallback((e: React.MouseEvent, entry: GenerationHistoryEntry) => {
     e.stopPropagation();
     logger.debug('🔄 히스토리에서 설정 복원:', entry.id);
 
-    // 이미지 설정 복원
-    setAspectRatio(entry.settings.aspectRatio);
-    setImageSize(entry.settings.imageSize);
-    setUseReferenceImages(entry.settings.useReferenceImages);
-
-    // 고급 설정 복원
-    setSeed(entry.settings.seed);
-    setTemperature(entry.settings.temperature ?? 1.0);
-    setTopK(entry.settings.topK ?? 40);
-    setTopP(entry.settings.topP ?? 0.95);
-    setReferenceStrength(entry.settings.referenceStrength ?? 1.0);
-
-    // 스프라이트 그리드 레이아웃 복원
-    if (entry.settings.pixelArtGrid) {
-      setPixelArtGrid(entry.settings.pixelArtGrid);
-    }
-
-    // 카메라 앵글 및 렌즈 복원
-    setCameraAngle(entry.settings.cameraAngle ?? 'none');
-    setCameraLens(entry.settings.cameraLens ?? 'none');
-
-    // 추가 포즈/동작 프롬프트 복원
-    if (entry.additionalPrompt) {
-      setAdditionalPrompt(entry.additionalPrompt);
-    }
-
-    // 생성된 이미지 표시
-    setGeneratedImage(entry.imageBase64);
+    setState(prev => ({
+      ...prev,
+      aspectRatio: entry.settings.aspectRatio,
+      imageSize: entry.settings.imageSize,
+      useReferenceImages: entry.settings.useReferenceImages,
+      seed: entry.settings.seed,
+      temperature: entry.settings.temperature ?? 1.0,
+      topK: entry.settings.topK ?? 40,
+      topP: entry.settings.topP ?? 0.95,
+      referenceStrength: entry.settings.referenceStrength ?? 1.0,
+      pixelArtGrid: entry.settings.pixelArtGrid ?? prev.pixelArtGrid,
+      cameraAngle: entry.settings.cameraAngle ?? 'none',
+      cameraLens: entry.settings.cameraLens ?? 'none',
+      additionalPrompt: entry.additionalPrompt ?? prev.additionalPrompt,
+      generatedImage: entry.imageBase64,
+    }));
 
     alert('설정이 복원되었습니다. 프롬프트를 수정한 후 "이미지 생성"을 클릭하세요.');
-  };
+  }, []);
 
   // 히스토리 삭제 요청
 
-  // 히스토리 핀 토글
-  const handleTogglePin = (e: React.MouseEvent, entryId: string) => {
+  // 히스토리 핀 토글 (useCallback으로 안정화)
+  const handleTogglePin = useCallback((e: React.MouseEvent, entryId: string) => {
     e.stopPropagation();
     if (!onHistoryUpdate) return;
 
     const entry = generationHistory.find((h) => h.id === entryId);
     if (!entry) return;
 
-    // isPinned 상태를 토글
     onHistoryUpdate(entryId, { isPinned: !entry.isPinned });
     logger.debug(`📌 히스토리 핀 토글: ${entryId}, 새 상태: ${!entry.isPinned}`);
-  };
+  }, [onHistoryUpdate, generationHistory]);
 
   return (
     <div className="h-full flex flex-col bg-gray-50">

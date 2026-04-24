@@ -103,6 +103,8 @@ export function AnalysisPanel({
                 <img
                   src={image}
                   alt={`Reference ${index + 1}`}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-auto rounded-xl shadow-lg"
                 />
 

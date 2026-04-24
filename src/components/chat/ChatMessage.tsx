@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import type { ChatMessage as ChatMessageType } from '../../types/chat';
 
@@ -9,7 +9,7 @@ interface ChatMessageProps {
 }
 
 /** 개별 채팅 메시지 렌더링 컴포넌트 */
-export function ChatMessage({ message, onDelete, onImageClick }: ChatMessageProps) {
+function ChatMessageComponent({ message, onDelete, onImageClick }: ChatMessageProps) {
   // 요약 메시지의 펼침/접힘 상태
   const [expanded, setExpanded] = useState(false);
 
@@ -74,6 +74,8 @@ export function ChatMessage({ message, onDelete, onImageClick }: ChatMessageProp
                   key={idx}
                   src={img}
                   alt={`${isUser ? '첨부' : '생성'} 이미지 ${idx + 1}`}
+                  loading="lazy"
+                  decoding="async"
                   className="max-h-48 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
                   onClick={() => onImageClick?.(img)}
                 />
@@ -90,3 +92,5 @@ export function ChatMessage({ message, onDelete, onImageClick }: ChatMessageProp
     </div>
   );
 }
+
+export const ChatMessage = memo(ChatMessageComponent);

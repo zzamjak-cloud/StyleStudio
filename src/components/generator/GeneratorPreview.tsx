@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Image as ImageIcon, Download } from 'lucide-react';
 
 interface GeneratorPreviewProps {
@@ -8,7 +9,7 @@ interface GeneratorPreviewProps {
   onManualSave: () => void;
 }
 
-export function GeneratorPreview({
+function GeneratorPreviewComponent({
   isGenerating,
   progressMessage,
   generatedImage,
@@ -95,3 +96,5 @@ export function GeneratorPreview({
     </div>
   );
 }
+
+export const GeneratorPreview = memo(GeneratorPreviewComponent);

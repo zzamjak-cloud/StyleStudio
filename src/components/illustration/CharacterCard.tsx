@@ -226,6 +226,8 @@ export function CharacterCard({
             <img
               src={img}
               alt={`${character.name} ${idx + 1}`}
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover"
             />
             {/* 삭제 버튼 (호버 시) */}

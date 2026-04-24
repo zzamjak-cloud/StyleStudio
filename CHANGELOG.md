@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-04-24
+
+### Changed (Performance)
+- 이미지 생성 패널의 자식 컴포넌트(`GeneratorSettings`/`GeneratorPreview`/`GeneratorHistory`)를 `React.memo`로 래핑하고, 상위의 setter·핸들러를 `useCallback`으로 안정화 — 그리드·카메라·비율·크기 메뉴 클릭 시 체감 렉 감소
+- `GeneratorHistory`의 `.slice().sort()`를 `useMemo`로 이전해 매 렌더 재정렬 제거
+- `App.tsx`의 `currentSession` 복원 이펙트에 세션 id 가드 추가 — autoSave로 세션 객체 참조만 바뀌는 경우 Base64 이미지 배열 재복사를 건너뜀
+- 채팅(`ChatPanel`·`ChatMessage`)과 컨셉 히스토리(`ConceptHistory`)를 `React.memo`로 래핑
+- 분석·채팅·컨셉·이미지 생성 히스토리·일러스트 캐릭터/배경 썸네일의 `<img>` 태그에 `loading="lazy"` 및 `decoding="async"` 추가 — 세션 전환 시 Base64 이미지 디코딩을 메인 스레드 밖으로 이동시켜 분석 화면이 포함된 모든 세션 타입의 진입 지연 완화
+
 ## [0.4.6] - 2026-04-24
 
 ### Added
