@@ -3,10 +3,11 @@ import { Settings, Palette, AlertTriangle, ChevronDown } from 'lucide-react';
 import { ChatGenerationSettings } from '../../types/chat';
 import { ART_STYLE_PRESETS } from '../../types/concept';
 import { PixelArtGridLayout } from '../../types/pixelart';
-import { IMAGE_MODELS } from '../../hooks/api/useGeminiImageGenerator';
+import { getAvailableImageModels } from '../../hooks/api/imageModels';
 
 interface ChatAISettingsProps {
   settings: ChatGenerationSettings;
+  hasOpenAIApiKey: boolean;
   onSettingsChange: (settings: Partial<ChatGenerationSettings>) => void;
 }
 
@@ -14,7 +15,7 @@ type ImageSize = ChatGenerationSettings['imageSize'];
 type AspectRatio = ChatGenerationSettings['aspectRatio'];
 
 /** 채팅 세션 우측 AI 설정 패널 */
-export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsProps) {
+export function ChatAISettings({ settings, hasOpenAIApiKey, onSettingsChange }: ChatAISettingsProps) {
   // 비용 경고 팝업 상태 (2K 이상은 비용 증가 경고)
   const [costWarning, setCostWarning] = useState<{ size: '2K' | '4K' } | null>(null);
 
@@ -35,9 +36,12 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
     }
   };
 
-  const aspectRatios: AspectRatio[] = ['1:1', '16:9', '9:16', '4:3', '3:4'];
   const imageSizes: ImageSize[] = ['1K', '2K', '4K'];
   const gridLayouts: PixelArtGridLayout[] = ['1x1', '2x2', '3x3', '4x4'];
+  const availableModels = getAvailableImageModels(hasOpenAIApiKey);
+  const selectedModel = availableModels.find((model) => model.id === settings.imageModel) ?? availableModels[0];
+  const aspectRatios = selectedModel.supports.aspectRatios as AspectRatio[];
+  const supportedSizes = selectedModel.supports.imageSizes;
 
   return (
     <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
@@ -63,12 +67,15 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
             }
             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           >
-            {IMAGE_MODELS.map(({ id, label }) => (
+            {availableModels.map(({ id, label }) => (
               <option key={id} value={id}>
                 {label}
               </option>
             ))}
           </select>
+          {!hasOpenAIApiKey && (
+            <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
+          )}
         </div>
 
         {/* 비율 선택 */}
@@ -76,7 +83,7 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
           <label className="block text-sm font-medium text-gray-700 mb-2">
             이미지 비율
           </label>
-          <div className="grid grid-cols-5 gap-1">
+          <div className={`grid gap-1 ${aspectRatios.length <= 3 ? 'grid-cols-3' : 'grid-cols-5'}`}>
             {aspectRatios.map((ratio) => (
               <button
                 key={ratio}
@@ -103,11 +110,12 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
               <button
                 key={size}
                 onClick={() => handleSizeClick(size)}
+                disabled={!supportedSizes.includes(size)}
                 className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
                   settings.imageSize === size
                     ? 'bg-purple-500 text-white border-purple-500'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
-                }`}
+                } disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed`}
               >
                 {size}
               </button>
@@ -116,7 +124,37 @@ export function ChatAISettings({ settings, onSettingsChange }: ChatAISettingsPro
           <p className="text-xs text-gray-500 mt-1">
             <span className="text-green-600 font-medium">1K 권장</span> · 2K/4K는 비용이 크게 증가합니다
           </p>
+          {settings.imageModel === 'gpt-image-2' && (
+            <p className="text-xs text-gray-500 mt-1">
+              덕테이프는 내부적으로 1024x1024, 1792x1024, 1024x1792 규격으로 처리됩니다.
+            </p>
+          )}
         </div>
+
+        {/* 품질 선택 (덕테이프 전용) */}
+        {settings.imageModel === 'gpt-image-2' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">이미지 품질</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['low', 'medium', 'high'] as const).map((quality) => (
+                <button
+                  key={quality}
+                  onClick={() => onSettingsChange({ imageQuality: quality })}
+                  className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                    (settings.imageQuality ?? 'medium') === quality
+                      ? 'bg-purple-500 text-white border-purple-500'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+                  }`}
+                >
+                  {quality}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              품질이 높을수록 처리 시간과 생성 비용이 증가할 수 있습니다.
+            </p>
+          </div>
+        )}
 
         {/* 그리드 설정 */}
         <div>

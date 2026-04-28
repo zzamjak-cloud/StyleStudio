@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useRef, memo } from 'react';
 import { Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 import { ConceptSessionData } from '../../types/concept';
+import { getImageModelDefinition } from '../../hooks/api/imageModels';
 
 interface ConceptRightPanelProps {
   settings: ConceptSessionData['generationSettings'];
+  hasOpenAIApiKey: boolean;
   onSettingsChange: (settings: ConceptSessionData['generationSettings']) => void;
   onGenerate: (prompt: string) => void;
   isGenerating: boolean;
@@ -15,6 +17,7 @@ interface ConceptRightPanelProps {
 /** 컨셉 세션 우측 생성 패널 */
 export const ConceptRightPanel = memo(({
   settings,
+  hasOpenAIApiKey,
   onSettingsChange,
   onGenerate,
   isGenerating,
@@ -24,6 +27,12 @@ export const ConceptRightPanel = memo(({
 }: ConceptRightPanelProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [costWarning, setCostWarning] = useState<{ size: '2k' | '3k' } | null>(null);
+  const modelDef = getImageModelDefinition(settings.model);
+  const supportedRatios = modelDef.supports.aspectRatios as Array<'1:1' | '16:9' | '9:16' | '4:3' | '3:4'>;
+  const supportedSizes = modelDef.supports.imageSizes.map((size) => {
+    if (size === '4K') return '3k';
+    return size.toLowerCase();
+  }) as Array<'1k' | '2k' | '3k'>;
 
   // textarea 높이 자동 조절
   const adjustTextareaHeight = useCallback(() => {
@@ -149,9 +158,13 @@ export const ConceptRightPanel = memo(({
               disabled={disabled}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-50"
             >
-              <option value="nanobanana-pro">나노바나나 프로</option>
-              <option value="nanobanana-2">나노바나나 2</option>
+              <option value="gemini-3-pro-image-preview">나노바나나 프로</option>
+              <option value="gemini-3.1-flash-image-preview">나노바나나 2</option>
+              {hasOpenAIApiKey && <option value="gpt-image-2">덕테이프</option>}
             </select>
+            {!hasOpenAIApiKey && (
+              <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
+            )}
           </div>
 
           {/* 비율 선택 */}
@@ -159,8 +172,8 @@ export const ConceptRightPanel = memo(({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               이미지 비율
             </label>
-            <div className="grid grid-cols-5 gap-1">
-              {['1:1', '16:9', '9:16', '4:3', '3:4'].map((ratio) => (
+            <div className={`grid gap-1 ${supportedRatios.length <= 3 ? 'grid-cols-3' : 'grid-cols-5'}`}>
+              {supportedRatios.map((ratio) => (
                 <button
                   key={ratio}
                   onClick={() => onSettingsChange({ ...settings, ratio: ratio as any })}
@@ -187,7 +200,7 @@ export const ConceptRightPanel = memo(({
                 <button
                   key={size}
                   onClick={() => handleSizeClick(size as '1k' | '2k' | '3k')}
-                  disabled={disabled}
+                  disabled={disabled || !supportedSizes.includes(size as '1k' | '2k' | '3k')}
                   className={`px-1 py-1.5 text-xs rounded-md border transition-colors uppercase ${
                     settings.size === size
                       ? 'bg-purple-500 text-white border-purple-500'
@@ -201,7 +214,38 @@ export const ConceptRightPanel = memo(({
             <p className="text-xs text-gray-500 mt-1">
               <span className="text-green-600 font-medium">1K 권장</span> · 2K/3K는 비용이 크게 증가합니다
             </p>
+            {settings.model === 'gpt-image-2' && (
+              <p className="text-xs text-gray-500 mt-1">
+                덕테이프는 내부적으로 1024x1024, 1792x1024, 1024x1792 규격으로 처리됩니다.
+              </p>
+            )}
           </div>
+
+          {/* 품질 선택 (덕테이프 전용) */}
+          {settings.model === 'gpt-image-2' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">이미지 품질</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['low', 'medium', 'high'] as const).map((quality) => (
+                  <button
+                    key={quality}
+                    onClick={() => onSettingsChange({ ...settings, quality })}
+                    disabled={disabled}
+                    className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                      (settings.quality ?? 'medium') === quality
+                        ? 'bg-purple-500 text-white border-purple-500'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {quality}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                품질이 높을수록 처리 시간과 생성 비용이 증가할 수 있습니다.
+              </p>
+            </div>
+          )}
 
           {/* 그리드 설정 */}
           <div>

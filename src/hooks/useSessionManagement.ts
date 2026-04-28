@@ -3,8 +3,10 @@ import { Session, GenerationHistoryEntry } from '../types/session';
 import { ReferenceDocument } from '../types/referenceDocument';
 import { ImageAnalysisResult } from '../types/analysis';
 import {
-  loadApiKey,
-  saveApiKey,
+  loadGeminiApiKey,
+  loadOpenAIApiKey,
+  saveGeminiApiKey,
+  saveOpenAIApiKey,
   loadSessions,
   exportSessionToFile,
   importSessionFromFile,
@@ -20,8 +22,10 @@ import {
 import { logger } from '../lib/logger';
 
 interface UseSessionManagementReturn {
-  apiKey: string;
-  setApiKey: (key: string) => void;
+  geminiApiKey: string;
+  openaiApiKey: string;
+  setGeminiApiKey: (key: string) => void;
+  setOpenAIApiKey: (key: string) => void;
   sessions: Session[];
   setSessions: React.Dispatch<React.SetStateAction<Session[]>>;
   currentSession: Session | null;
@@ -29,7 +33,7 @@ interface UseSessionManagementReturn {
   showSettings: boolean;
   setShowSettings: (show: boolean) => void;
   initializeApp: () => Promise<void>;
-  handleSaveApiKey: (newApiKey: string) => Promise<void>;
+  handleSaveApiKeys: (newGeminiApiKey: string, newOpenAIApiKey: string) => Promise<void>;
   handleSelectSession: (session: Session) => void;
   handleDeleteSession: (sessionId: string) => Promise<void>;
   handleExportSession: (session: Session) => Promise<void>;
@@ -47,7 +51,8 @@ interface UseSessionManagementReturn {
  * 세션 관리 Hook
  */
 export function useSessionManagement(): UseSessionManagementReturn {
-  const [apiKey, setApiKeyState] = useState('');
+  const [geminiApiKey, setGeminiApiKeyState] = useState('');
+  const [openaiApiKey, setOpenAIApiKeyState] = useState('');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -55,11 +60,15 @@ export function useSessionManagement(): UseSessionManagementReturn {
   // 앱 시작 시 API 키 및 세션 로드
   const initializeApp = async () => {
     try {
-      const savedApiKey = await loadApiKey();
-      if (savedApiKey) {
-        setApiKeyState(savedApiKey);
+      const savedGeminiApiKey = await loadGeminiApiKey();
+      if (savedGeminiApiKey) {
+        setGeminiApiKeyState(savedGeminiApiKey);
       } else {
         setShowSettings(true);
+      }
+      const savedOpenAIApiKey = await loadOpenAIApiKey();
+      if (savedOpenAIApiKey) {
+        setOpenAIApiKeyState(savedOpenAIApiKey);
       }
 
       const savedSessions = await loadSessions();
@@ -74,15 +83,21 @@ export function useSessionManagement(): UseSessionManagementReturn {
     initializeApp();
   }, []);
 
-  const setApiKey = (key: string) => {
-    setApiKeyState(key);
+  const setGeminiApiKey = (key: string) => {
+    setGeminiApiKeyState(key);
   };
 
-  const handleSaveApiKey = async (newApiKey: string) => {
+  const setOpenAIApiKey = (key: string) => {
+    setOpenAIApiKeyState(key);
+  };
+
+  const handleSaveApiKeys = async (newGeminiApiKey: string, newOpenAIApiKey: string) => {
     try {
-      await saveApiKey(newApiKey);
-      setApiKeyState(newApiKey);
-      logger.info('✅ API 키 저장 성공');
+      await saveGeminiApiKey(newGeminiApiKey);
+      await saveOpenAIApiKey(newOpenAIApiKey);
+      setGeminiApiKeyState(newGeminiApiKey);
+      setOpenAIApiKeyState(newOpenAIApiKey);
+      logger.info('✅ Gemini/OpenAI API 키 저장 성공');
     } catch (error) {
       logger.error('❌ API 키 저장 오류:', error);
       throw error; // 상위 컴포넌트에서 처리하도록 에러 전파
@@ -272,7 +287,7 @@ export function useSessionManagement(): UseSessionManagementReturn {
   };
 
   const saveSessionWithoutTranslation = async (updatedAnalysis: ImageAnalysisResult) => {
-    if (!currentSession || !apiKey) return;
+    if (!currentSession || !geminiApiKey) return;
 
     try {
       const updatedSession = updateSession(currentSession, {
@@ -333,8 +348,10 @@ export function useSessionManagement(): UseSessionManagementReturn {
   };
 
   return {
-    apiKey,
-    setApiKey,
+    geminiApiKey,
+    openaiApiKey,
+    setGeminiApiKey,
+    setOpenAIApiKey,
     sessions,
     setSessions,
     currentSession,
@@ -342,7 +359,7 @@ export function useSessionManagement(): UseSessionManagementReturn {
     showSettings,
     setShowSettings,
     initializeApp,
-    handleSaveApiKey,
+    handleSaveApiKeys,
     handleSelectSession,
     handleDeleteSession,
     handleExportSession,

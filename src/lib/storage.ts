@@ -20,32 +20,69 @@ async function getStore(): Promise<Store> {
   return await Store.load('settings.json');
 }
 
-// API 키 저장
-export async function saveApiKey(apiKey: string): Promise<void> {
+// Gemini API 키 저장
+export async function saveGeminiApiKey(apiKey: string): Promise<void> {
   const store = await getStore();
   const cleanApiKey = apiKey.trim(); // 공백 제거
   await store.set('gemini_api_key', cleanApiKey);
   await store.save();
-  logger.debug('✅ API 키 저장 완료');
+  logger.debug('✅ Gemini API 키 저장 완료');
   logger.debug('   - 키 길이:', cleanApiKey.length);
   logger.debug('   - 키 시작:', cleanApiKey.substring(0, 10) + '...');
 }
 
-// API 키 불러오기
-export async function loadApiKey(): Promise<string | null> {
+// Gemini API 키 불러오기
+export async function loadGeminiApiKey(): Promise<string | null> {
   try {
     const store = await getStore();
     const apiKey = await store.get<string>('gemini_api_key');
-    logger.debug('📦 API 키 로드:', apiKey ? '존재함' : '없음');
+    logger.debug('📦 Gemini API 키 로드:', apiKey ? '존재함' : '없음');
     if (apiKey) {
       logger.debug('   - 키 길이:', apiKey.length);
       logger.debug('   - 키 시작:', apiKey.substring(0, 10) + '...');
     }
     return apiKey || null;
   } catch (error) {
-    logger.error('API 키 로드 오류:', error);
+    logger.error('Gemini API 키 로드 오류:', error);
     return null;
   }
+}
+
+// OpenAI API 키 저장
+export async function saveOpenAIApiKey(apiKey: string): Promise<void> {
+  const store = await getStore();
+  const cleanApiKey = apiKey.trim();
+  await store.set('openai_api_key', cleanApiKey);
+  await store.save();
+  logger.debug('✅ OpenAI API 키 저장 완료');
+  logger.debug('   - 키 길이:', cleanApiKey.length);
+  logger.debug('   - 키 시작:', cleanApiKey.substring(0, 10) + '...');
+}
+
+// OpenAI API 키 불러오기
+export async function loadOpenAIApiKey(): Promise<string | null> {
+  try {
+    const store = await getStore();
+    const apiKey = await store.get<string>('openai_api_key');
+    logger.debug('📦 OpenAI API 키 로드:', apiKey ? '존재함' : '없음');
+    if (apiKey) {
+      logger.debug('   - 키 길이:', apiKey.length);
+      logger.debug('   - 키 시작:', apiKey.substring(0, 10) + '...');
+    }
+    return apiKey || null;
+  } catch (error) {
+    logger.error('OpenAI API 키 로드 오류:', error);
+    return null;
+  }
+}
+
+// 하위 호환성 유지용 별칭
+export async function saveApiKey(apiKey: string): Promise<void> {
+  await saveGeminiApiKey(apiKey);
+}
+
+export async function loadApiKey(): Promise<string | null> {
+  return loadGeminiApiKey();
 }
 
 // 설정 초기화

@@ -14,15 +14,17 @@ import { ChatInput } from './ChatInput';
 import { ChatAISettings } from './ChatAISettings';
 import { DocumentManager } from '../generator/DocumentManager';
 import { logger } from '../../lib/logger';
+import { getImageModelDefinition } from '../../hooks/api/imageModels';
 
 interface ChatPanelProps {
   session: Session;
-  apiKey: string;
+  geminiApiKey: string;
+  openaiApiKey: string;
   onSessionUpdate: (session: Session) => void;
 }
 
 /** 채팅 패널 메인 컴포넌트 */
-function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps) {
+function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpdate }: ChatPanelProps) {
   const {
     messages,
     attachedDocuments,
@@ -36,7 +38,31 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
     markSummarized,
   } = useChatSession(session, onSessionUpdate);
 
-  const { isGenerating, generateFromChat, summarizeMessages } = useChatImageGeneration(session, apiKey);
+  const { isGenerating, generateFromChat, summarizeMessages } = useChatImageGeneration(
+    session,
+    geminiApiKey,
+    openaiApiKey
+  );
+
+  useEffect(() => {
+    if (!openaiApiKey.trim() && settings.imageModel === 'gpt-image-2') {
+      updateSettings({ imageModel: 'gemini-3-pro-image-preview' });
+    }
+  }, [openaiApiKey, settings.imageModel, updateSettings]);
+
+  useEffect(() => {
+    const modelDef = getImageModelDefinition(settings.imageModel);
+    const patch: Partial<typeof settings> = {};
+    if (!modelDef.supports.aspectRatios.includes(settings.aspectRatio)) {
+      patch.aspectRatio = modelDef.supports.aspectRatios[0];
+    }
+    if (!modelDef.supports.imageSizes.includes(settings.imageSize)) {
+      patch.imageSize = modelDef.supports.imageSizes[0];
+    }
+    if (Object.keys(patch).length > 0) {
+      updateSettings(patch);
+    }
+  }, [settings.imageModel, settings.aspectRatio, settings.imageSize, updateSettings]);
 
   // 이미지 미리보기 모달 상태
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -275,7 +301,7 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
           <div className="px-4 pt-2">
             <DocumentManager
               documents={attachedDocuments}
-              apiKey={apiKey}
+                apiKey={geminiApiKey}
               onAdd={(doc) => {
                 const exists = attachedDocuments.some((d) => d.filePath === doc.filePath);
                 if (exists) return;
@@ -289,7 +315,7 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
           <ChatInput
             onSend={handleSend}
             isGenerating={isGenerating}
-            disabled={!apiKey}
+            disabled={!geminiApiKey && !openaiApiKey}
           />
         </div>
       </div>
@@ -297,6 +323,7 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
       {/* 우측 AI 설정 패널 */}
       <ChatAISettings
         settings={settings}
+        hasOpenAIApiKey={openaiApiKey.trim().length > 0}
         onSettingsChange={updateSettings}
       />
 

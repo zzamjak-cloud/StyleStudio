@@ -12,25 +12,28 @@ import { join } from '@tauri-apps/api/path';
 import { getAiGenRoot, getSessionImageFolder } from '../../lib/config/paths';
 import { deleteImage } from '../../lib/imageStorage';
 import { logger } from '../../lib/logger';
+import { getImageModelDefinition } from '../../hooks/api/imageModels';
 
 interface ConceptPanelProps {
   session: Session;
-  apiKey: string;
+  geminiApiKey: string;
+  openaiApiKey: string;
   onSessionUpdate: (session: Session) => void;
   onSessionSaveOnly?: (session: Session) => void;
 }
 
 /** 컨셉 세션 메인 패널 */
-export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionSaveOnly }: ConceptPanelProps) => {
+export const ConceptPanel = memo(({ session, geminiApiKey, openaiApiKey, onSessionUpdate, onSessionSaveOnly }: ConceptPanelProps) => {
   // 컨셉 데이터 초기화
   const [conceptData, setConceptData] = useState<ConceptSessionData>(() => {
     return session.conceptData || {
       gameGenres: [],
       artStyles: [],
       generationSettings: {
-        model: 'nanobanana-pro',
+        model: 'gemini-3-pro-image-preview',
         ratio: '9:16',
         size: '1k',
+        quality: 'medium',
         grid: '1x1',
       },
       history: [],
@@ -47,7 +50,7 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
   const gamePlayStyleDraftRef = useRef(conceptData.gamePlayStyle || '');
 
   // 생성 훅
-  const { isGenerating, generateConcept } = useConceptGeneration(apiKey);
+  const { isGenerating, generateConcept } = useConceptGeneration(geminiApiKey, openaiApiKey);
 
   // 컨셉 이미지 자동 저장 (세션별 폴더, v0.4.4)
   const autoSaveConceptImage = useCallback(async (imageDataUrl: string) => {
@@ -101,6 +104,51 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
     gamePlayStyleDraftRef.current = conceptData.gamePlayStyle || '';
   }, [conceptData.gamePlayStyle]);
 
+  useEffect(() => {
+    if (!openaiApiKey.trim() && conceptData.generationSettings.model === 'gpt-image-2') {
+      setConceptData((prev) => ({
+        ...prev,
+        generationSettings: { ...prev.generationSettings, model: 'gemini-3-pro-image-preview', quality: undefined },
+      }));
+    }
+  }, [openaiApiKey, conceptData.generationSettings.model]);
+
+  useEffect(() => {
+    const modelDef = getImageModelDefinition(conceptData.generationSettings.model);
+    let changed = false;
+    let nextRatio = conceptData.generationSettings.ratio;
+    let nextSize = conceptData.generationSettings.size;
+
+    if (!modelDef.supports.aspectRatios.includes(conceptData.generationSettings.ratio)) {
+      nextRatio = modelDef.supports.aspectRatios[0];
+      changed = true;
+    }
+
+    const supportedConceptSizes = modelDef.supports.imageSizes.map((size) => {
+      if (size === '4K') return '3k';
+      return size.toLowerCase();
+    });
+    if (!supportedConceptSizes.includes(conceptData.generationSettings.size)) {
+      nextSize = supportedConceptSizes[0] as ConceptSessionData['generationSettings']['size'];
+      changed = true;
+    }
+
+    if (changed) {
+      setConceptData((prev) => ({
+        ...prev,
+        generationSettings: {
+          ...prev.generationSettings,
+          ratio: nextRatio,
+          size: nextSize,
+        },
+      }));
+    }
+  }, [
+    conceptData.generationSettings.model,
+    conceptData.generationSettings.ratio,
+    conceptData.generationSettings.size,
+  ]);
+
   // 참조 이미지 변경
   const handleReferenceImageChange = useCallback((imageBase64: string | undefined) => {
     setConceptData(prev => ({
@@ -137,7 +185,7 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
 
   // 이미지 생성
   const handleGenerate = useCallback(async (prompt: string) => {
-    if (isGenerating || !apiKey) return;
+    if (isGenerating || (!geminiApiKey && !openaiApiKey)) return;
 
     try {
       setGenerationError(null);
@@ -191,7 +239,7 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
       const message = error instanceof Error ? error.message : '컨셉 이미지 생성 중 알 수 없는 오류가 발생했습니다.';
       setGenerationError(message);
     }
-  }, [isGenerating, apiKey, conceptData, generateConcept, autoSaveConceptImage]);
+  }, [isGenerating, geminiApiKey, openaiApiKey, conceptData, generateConcept, autoSaveConceptImage]);
 
   // 히스토리 아이템 삭제 및 세션 저장
   const handleHistoryDelete = useCallback((id: string) => {
@@ -215,7 +263,10 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
 
     // 먼저 로딩 상태를 화면에 반영한 뒤 복원 로직 실행
     requestAnimationFrame(() => {
-      const model = entry.settings.model === 'nanobanana-2' ? 'nanobanana-2' : 'nanobanana-pro';
+      const model =
+        entry.settings.model === 'gemini-3.1-flash-image-preview' || entry.settings.model === 'gpt-image-2'
+          ? entry.settings.model
+          : 'gemini-3-pro-image-preview';
       const ratio = ['1:1', '16:9', '9:16', '4:3', '3:4'].includes(entry.settings.ratio)
         ? (entry.settings.ratio as ConceptSessionData['generationSettings']['ratio'])
         : '1:1';
@@ -239,6 +290,7 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
           model,
           ratio,
           size,
+          quality: model === 'gpt-image-2' ? (entry.settings as any).quality ?? 'medium' : undefined,
           grid,
         },
       }));
@@ -292,10 +344,11 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
         {/* 우측 패널 - 생성 */}
         <ConceptRightPanel
           settings={conceptData.generationSettings}
+          hasOpenAIApiKey={openaiApiKey.trim().length > 0}
           onSettingsChange={handleSettingsChange}
           onGenerate={handleGenerate}
           isGenerating={isGenerating}
-          disabled={!apiKey}
+          disabled={!geminiApiKey && !openaiApiKey}
           errorMessage={generationError}
           promptValue={restoredPrompt}
         />

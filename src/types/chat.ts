@@ -1,4 +1,5 @@
-import { ImageGenerationModel } from '../hooks/api/useGeminiImageGenerator';
+import { ImageGenerationModel } from '../hooks/api/imageModels';
+import { ImageQualityOption } from '../hooks/api/imageModels';
 import { PixelArtGridLayout } from './pixelart';
 import { ReferenceDocument } from './referenceDocument';
 
@@ -30,6 +31,7 @@ export interface ChatGenerationSettings {
   aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
   imageModel: ImageGenerationModel;
   imageSize: '1K' | '2K' | '4K';
+  imageQuality?: ImageQualityOption;
   pixelArtGrid: PixelArtGridLayout;
   stylePreset?: string;
   customStyle?: string;

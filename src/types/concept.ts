@@ -1,3 +1,6 @@
+import { ImageGenerationModel } from '../hooks/api/imageModels';
+import { ImageQualityOption } from '../hooks/api/imageModels';
+
 /** 컨셉 세션 전용 데이터 */
 export interface ConceptSessionData {
   // 참조 이미지 (1장)
@@ -13,9 +16,10 @@ export interface ConceptSessionData {
 
   // 생성 설정
   generationSettings: {
-    model: 'nanobanana-pro' | 'nanobanana-2';
+    model: ImageGenerationModel;
     ratio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
     size: '1k' | '2k' | '3k';
+    quality?: ImageQualityOption;
     grid: '1x1' | '2x2' | '3x3' | '4x4';
   };
 
@@ -33,6 +37,7 @@ export interface ConceptGenerationEntry {
     model: string;
     ratio: string;
     size: string;
+    quality?: string;
     grid: string;
   };
   gameInfo?: {

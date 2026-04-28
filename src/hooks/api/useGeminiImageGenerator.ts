@@ -4,6 +4,11 @@ import { logger } from '../../lib/logger';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ImageAnalysisResult } from '../../types/analysis';
 import { buildPromptForSession } from '../../lib/prompts/sessionPrompts';
+import {
+  DEFAULT_IMAGE_MODEL,
+  GEMINI_IMAGE_MODELS,
+  GeminiImageGenerationModel,
+} from './imageModels';
 
 // Gemini API 타입 정의
 interface GeminiPart {
@@ -28,15 +33,8 @@ interface GeminiGenerationConfig {
   topP?: number;
 }
 
-// 이미지 생성 모델 정의
-export type ImageGenerationModel = 'gemini-3-pro-image-preview' | 'gemini-3.1-flash-image-preview';
-
-export const IMAGE_MODELS: { id: ImageGenerationModel; label: string }[] = [
-  { id: 'gemini-3-pro-image-preview', label: '나노바나나 프로' },
-  { id: 'gemini-3.1-flash-image-preview', label: '나노바나나2' },
-];
-
-export const DEFAULT_IMAGE_MODEL: ImageGenerationModel = 'gemini-3-pro-image-preview';
+export type ImageGenerationModel = GeminiImageGenerationModel;
+export const IMAGE_MODELS = GEMINI_IMAGE_MODELS;
 
 interface ImageGenerationParams {
   prompt: string; // 서술적 문장 권장
@@ -48,7 +46,7 @@ interface ImageGenerationParams {
   analysis?: ImageAnalysisResult; // 이미지 분석 결과 (픽셀아트 해상도 추출용)
   pixelArtGrid?: PixelArtGridLayout; // 픽셀아트 그리드 레이아웃 (선택)
   referenceDocuments?: ReferenceDocument[]; // 참조 문서 (UI 세션 전용)
-  imageModel?: ImageGenerationModel; // 이미지 생성 모델
+  imageModel?: GeminiImageGenerationModel; // 이미지 생성 모델
 
   // 고급 설정
   seed?: number; // 재현성을 위한 시드 값

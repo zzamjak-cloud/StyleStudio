@@ -7,6 +7,11 @@ import { CAMERA_ANGLES } from '../../types/cameraAngle';
 import { CAMERA_LENSES } from '../../types/cameraLens';
 import { DocumentManager } from './DocumentManager';
 import {
+  ImageGenerationModel,
+  ImageModelDefinition,
+  ImageQualityOption,
+} from '../../hooks/api/imageModels';
+import {
   getGridButtonStyle,
   getGridDescription,
   getPromptPlaceholder,
@@ -16,7 +21,8 @@ import {
 
 interface GeneratorSettingsProps {
   // 기본 정보
-  apiKey: string;
+  geminiApiKey: string;
+  openaiApiKey: string;
   sessionType: SessionType;
   // 상태
   additionalPrompt: string;
@@ -33,6 +39,11 @@ interface GeneratorSettingsProps {
   temperature: number;
   topK: number;
   topP: number;
+  imageModel: ImageGenerationModel;
+  imageQuality: ImageQualityOption;
+  availableModels: ImageModelDefinition[];
+  supportedAspectRatios: ('1:1' | '16:9' | '9:16' | '4:3' | '3:4')[];
+  supportedImageSizes: ('1K' | '2K' | '4K')[];
 
   // 참조 문서 (UI 세션용)
   referenceDocuments: ReferenceDocument[];
@@ -54,6 +65,8 @@ interface GeneratorSettingsProps {
   onTemperatureChange: (value: number) => void;
   onTopKChange: (value: number) => void;
   onTopPChange: (value: number) => void;
+  onImageModelChange: (value: ImageGenerationModel) => void;
+  onImageQualityChange: (value: ImageQualityOption) => void;
   onCameraAngleChange: (value: string) => void;
   onCameraLensChange: (value: string) => void;
   onDocumentAdd?: (document: ReferenceDocument) => void;
@@ -61,7 +74,8 @@ interface GeneratorSettingsProps {
 }
 
 function GeneratorSettingsComponent({
-  apiKey,
+  geminiApiKey,
+  openaiApiKey,
   sessionType,
   additionalPrompt,
   isGenerating,
@@ -77,6 +91,11 @@ function GeneratorSettingsComponent({
   temperature,
   topK,
   topP,
+  imageModel,
+  imageQuality,
+  availableModels,
+  supportedAspectRatios,
+  supportedImageSizes,
   cameraAngle,
   cameraLens,
   referenceDocuments,
@@ -92,6 +111,8 @@ function GeneratorSettingsComponent({
   onTemperatureChange,
   onTopKChange,
   onTopPChange,
+  onImageModelChange,
+  onImageQualityChange,
   onCameraAngleChange,
   onCameraLensChange,
   onDocumentAdd,
@@ -184,7 +205,7 @@ function GeneratorSettingsComponent({
               </label>
               <DocumentManager
                 documents={referenceDocuments}
-                apiKey={apiKey}
+                apiKey={geminiApiKey}
                 onAdd={onDocumentAdd || (() => {})}
                 onDelete={onDocumentDelete || (() => {})}
               />
@@ -325,11 +346,34 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
+          {/* 모델 선택 */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">모델 선택</label>
+            <div className="grid grid-cols-1 gap-2">
+              {availableModels.map((model) => (
+                <button
+                  key={model.id}
+                  onClick={() => onImageModelChange(model.id)}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition-all text-left ${
+                    imageModel === model.id
+                      ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
+                  }`}
+                >
+                  {model.label}
+                </button>
+              ))}
+            </div>
+            {!openaiApiKey.trim() && (
+              <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
+            )}
+          </div>
+
           {/* 이미지 비율 선택 */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 비율</label>
-            <div className="grid grid-cols-5 gap-2">
-              {(['1:1', '16:9', '9:16', '4:3', '3:4'] as const).map((ratio) => (
+            <div className={`grid gap-2 ${supportedAspectRatios.length <= 3 ? 'grid-cols-3' : 'grid-cols-5'}`}>
+              {supportedAspectRatios.map((ratio) => (
                 <button
                   key={ratio}
                   onClick={() => onAspectRatioChange(ratio)}
@@ -353,11 +397,12 @@ function GeneratorSettingsComponent({
                 <button
                   key={size}
                   onClick={() => handleImageSizeClick(size)}
+                  disabled={!supportedImageSizes.includes(size)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
                     imageSize === size
                       ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
                       : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
-                  }`}
+                  } disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed`}
                 >
                   {size}
                 </button>
@@ -367,6 +412,31 @@ function GeneratorSettingsComponent({
               <span className="text-green-600 font-medium">1K 권장</span> · 2K/4K는 비용이 크게 증가합니다
             </p>
           </div>
+
+          {/* 이미지 품질 (덕테이프 전용) */}
+          {imageModel === 'gpt-image-2' && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 품질</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['low', 'medium', 'high'] as const).map((quality) => (
+                  <button
+                    key={quality}
+                    onClick={() => onImageQualityChange(quality)}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                      imageQuality === quality
+                        ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
+                    }`}
+                  >
+                    {quality}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                품질이 높을수록 처리 시간과 생성 비용이 증가할 수 있습니다.
+              </p>
+            </div>
+          )}
 
           {/* 참조 이미지 사용 여부 (스타일 세션에서만) */}
           {sessionType !== 'CHARACTER' && (
@@ -408,7 +478,7 @@ function GeneratorSettingsComponent({
               </button>
             </div>
 
-            {showAdvanced && (
+            {showAdvanced && imageModel !== 'gpt-image-2' && (
               <div className="mt-3 space-y-4 p-4 bg-gray-50 rounded-lg">
                 {/* Seed */}
                 <div>
@@ -491,6 +561,11 @@ function GeneratorSettingsComponent({
                     누적 확률 임계값 (낮을수록 보수적, 높을수록 다양함)
                   </p>
                 </div>
+              </div>
+            )}
+            {showAdvanced && imageModel === 'gpt-image-2' && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                덕테이프 모델에서는 Seed/Temperature/Top-K/Top-P 고급 설정이 지원되지 않습니다.
               </div>
             )}
           </div>

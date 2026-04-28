@@ -2,6 +2,7 @@ import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { Session } from '../types/session';
 import { ChatMessage, ChatGenerationSettings, ChatSessionData, estimateTokenCount } from '../types/chat';
 import { ReferenceDocument } from '../types/referenceDocument';
+import { isOpenAIModel } from './api/imageModels';
 import { updateSession } from '../utils/sessionHelpers';
 import { deleteImage } from '../lib/imageStorage';
 import { logger } from '../lib/logger';
@@ -77,6 +78,7 @@ export function useChatSession(
         aspectRatio: '1:1' as const,
         imageModel: 'gemini-3-pro-image-preview' as const,
         imageSize: '1K' as const,
+        imageQuality: 'medium' as const,
         pixelArtGrid: '1x1' as const,
       },
     };
@@ -153,10 +155,17 @@ export function useChatSession(
       aspectRatio: '1:1',
       imageModel: 'gemini-3-pro-image-preview',
       imageSize: '1K',
+      imageQuality: 'medium',
       pixelArtGrid: '1x1',
       ...sessionRef.current.chatData?.settings,
     };
-    updateChatData({ settings: { ...latestSettings, ...newSettings } });
+    const nextSettings = { ...latestSettings, ...newSettings };
+    if (!isOpenAIModel(nextSettings.imageModel)) {
+      delete nextSettings.imageQuality;
+    } else if (!nextSettings.imageQuality) {
+      nextSettings.imageQuality = 'medium';
+    }
+    updateChatData({ settings: nextSettings });
   }, [updateChatData]);
 
   // 모든 메시지와 요약 정보를 초기화

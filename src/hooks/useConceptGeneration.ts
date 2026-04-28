@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import { ConceptSessionData } from '../types/concept';
 import { useGeminiImageGenerator, ImageGenerationModel } from './api/useGeminiImageGenerator';
+import { isOpenAIModel } from './api/imageModels';
+import { useOpenAIImageGenerator } from './api/useOpenAIImageGenerator';
 
 interface ConceptGenerationParams {
   prompt: string;
@@ -18,15 +20,12 @@ interface ConceptGenerationResult {
 }
 
 /** 컨셉 이미지 생성 훅 */
-export function useConceptGeneration(apiKey: string) {
+export function useConceptGeneration(geminiApiKey: string, openaiApiKey: string) {
   const [isGenerating, setIsGenerating] = useState(false);
   const { generateImage } = useGeminiImageGenerator();
+  const { generateImage: generateOpenAIImage } = useOpenAIImageGenerator();
 
   const generateConcept = useCallback(async (params: ConceptGenerationParams): Promise<ConceptGenerationResult> => {
-    if (!apiKey.trim()) {
-      throw new Error('API 키가 비어 있습니다. 설정에서 API 키를 확인해주세요.');
-    }
-
     setIsGenerating(true);
 
     try {
@@ -72,27 +71,56 @@ export function useConceptGeneration(apiKey: string) {
         finalPrompt += `, ${variations}개의 다양한 베리에이션`;
       }
 
-      const modelMap: Record<ConceptSessionData['generationSettings']['model'], ImageGenerationModel> = {
-        'nanobanana-pro': 'gemini-3-pro-image-preview',
-        'nanobanana-2': 'gemini-3.1-flash-image-preview',
-      };
       const sizeMap: Record<ConceptSessionData['generationSettings']['size'], '1K' | '2K' | '4K'> = {
         '1k': '1K',
         '2k': '2K',
         // 앱 UI의 3k 옵션은 공용 이미지 훅 규격에 맞춰 4K로 매핑
         '3k': '4K',
       };
+      const selectedModel = params.settings.model;
+      const useOpenAI = isOpenAIModel(selectedModel);
+      const selectedApiKey = useOpenAI ? openaiApiKey : geminiApiKey;
+      if (!selectedApiKey.trim()) {
+        throw new Error(
+          useOpenAI
+            ? 'ChatGPT API 키가 비어 있습니다. 설정에서 API 키를 확인해주세요.'
+            : 'Gemini API 키가 비어 있습니다. 설정에서 API 키를 확인해주세요.'
+        );
+      }
 
       const imageBase64 = await new Promise<string>((resolve, reject) => {
+        if (useOpenAI) {
+          void generateOpenAIImage(
+            selectedApiKey,
+            {
+              prompt: finalPrompt,
+              aspectRatio: params.settings.ratio,
+              imageSize: sizeMap[params.settings.size],
+              quality: params.settings.quality ?? 'medium',
+              referenceImages: params.referenceImage ? [params.referenceImage] : undefined,
+            },
+            {
+              onComplete: (generatedImageBase64) => {
+                resolve(`data:image/jpeg;base64,${generatedImageBase64}`);
+              },
+              onError: (error) => {
+                reject(error);
+              },
+            }
+          );
+          return;
+        }
+
+        const geminiModel = selectedModel as ImageGenerationModel;
         void generateImage(
-          apiKey,
+          selectedApiKey,
           {
             prompt: finalPrompt,
             referenceImages: params.referenceImage ? [params.referenceImage] : [],
             aspectRatio: params.settings.ratio,
             imageSize: sizeMap[params.settings.size],
             sessionType: 'CONCEPT',
-            imageModel: modelMap[params.settings.model],
+            imageModel: geminiModel,
             temperature: 0.8,
             topK: 40,
             topP: 0.95,
@@ -115,7 +143,7 @@ export function useConceptGeneration(apiKey: string) {
     } finally {
       setIsGenerating(false);
     }
-  }, [apiKey, generateImage]);
+  }, [geminiApiKey, openaiApiKey, generateImage, generateOpenAIImage]);
 
   return {
     isGenerating,

@@ -4,6 +4,8 @@ import { ChatMessage, ChatGenerationSettings } from '../types/chat';
 import { getPixelArtGridInfo } from '../types/pixelart';
 import { ReferenceDocument } from '../types/referenceDocument';
 import { logger } from '../lib/logger';
+import { isOpenAIModel } from './api/imageModels';
+import { useOpenAIImageGenerator } from './api/useOpenAIImageGenerator';
 
 // 사용자 메시지 앞에 스타일·그리드 힌트를 prefix로 결합해 Gemini가 해당 속성을 반영하도록 유도
 function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): string {
@@ -47,10 +49,12 @@ interface UseChatImageGenerationReturn {
 
 export function useChatImageGeneration(
   session: Session,
-  apiKey: string
+  geminiApiKey: string,
+  openaiApiKey: string
 ): UseChatImageGenerationReturn {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
+  const { generateImage: generateOpenAIImage } = useOpenAIImageGenerator();
   const chatData = session.chatData;
 
   // multi-turn contents 배열 구성
@@ -142,15 +146,19 @@ export function useChatImageGeneration(
     userDocuments?: ReferenceDocument[]
   ): Promise<GenerationResult> => {
     console.log('🎨 generateFromChat 호출됨');
-    if (!apiKey) throw new Error('API 키가 설정되지 않았습니다.');
-
     setIsGenerating(true);
     setGenerationStatus('응답 생성 중...');
 
     const settings = chatData?.settings;
     const imageModel = settings?.imageModel ?? 'gemini-3-pro-image-preview';
+    const useOpenAI = isOpenAIModel(imageModel);
+    const selectedApiKey = useOpenAI ? openaiApiKey : geminiApiKey;
+    if (!selectedApiKey) {
+      throw new Error(useOpenAI ? 'ChatGPT API 키가 설정되지 않았습니다.' : 'Gemini API 키가 설정되지 않았습니다.');
+    }
     const aspectRatio = settings?.aspectRatio ?? '1:1';
     const imageSize = settings?.imageSize ?? '1K';
+    const imageQuality = settings?.imageQuality ?? 'medium';
 
     // 스타일 프리셋·그리드는 API 파라미터가 아니라 프롬프트 prefix로 결합하여 전달
     const prefix = buildSettingsPrefix(settings);
@@ -186,6 +194,35 @@ export function useChatImageGeneration(
     const allImages = [...(userImages ?? []), ...documentImages];
     const contents = buildContents(effectiveUserMessage, allImages.length > 0 ? allImages : undefined);
 
+    if (useOpenAI) {
+      const openAIResult = await new Promise<GenerationResult>((resolve, reject) => {
+        void generateOpenAIImage(
+          selectedApiKey,
+          {
+            prompt: effectiveUserMessage,
+            aspectRatio,
+            imageSize,
+            quality: imageQuality,
+            referenceImages: allImages.length > 0 ? allImages : undefined,
+          },
+          {
+            onProgress: (message) => setGenerationStatus(message),
+            onComplete: (imageBase64) =>
+              resolve({
+                content: '',
+                images: [`data:image/jpeg;base64,${imageBase64}`],
+                imageSignatures: [],
+                isGeneratedImage: true,
+              }),
+            onError: reject,
+          }
+        );
+      });
+      setIsGenerating(false);
+      setGenerationStatus('');
+      return openAIResult;
+    }
+
     const requestBody = {
       contents,
       generationConfig: {
@@ -214,7 +251,7 @@ export function useChatImageGeneration(
         }
 
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent?key=${selectedApiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -270,14 +307,14 @@ export function useChatImageGeneration(
     setIsGenerating(false);
     setGenerationStatus('');
     throw lastError || new Error('이미지 생성에 실패했습니다.');
-  }, [apiKey, chatData, buildContents]);
+  }, [geminiApiKey, openaiApiKey, chatData, buildContents, generateOpenAIImage]);
 
   // 메시지 요약 (Gemini 2.5 Flash 사용)
   const summarizeMessages = useCallback(async (
     messagesToSummarize: ChatMessage[],
     existingSummary?: string
   ): Promise<string> => {
-    if (!apiKey) throw new Error('API 키가 설정되지 않았습니다.');
+    if (!geminiApiKey) throw new Error('Gemini API 키가 설정되지 않았습니다.');
 
     const conversationText = messagesToSummarize
       .filter(m => m.role !== 'summary')
@@ -294,7 +331,7 @@ export function useChatImageGeneration(
 
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -318,7 +355,7 @@ export function useChatImageGeneration(
       logger.error('❌ 대화 요약 실패:', error);
       throw error;
     }
-  }, [apiKey]);
+  }, [geminiApiKey]);
 
   return { isGenerating, generationStatus, generateFromChat, summarizeMessages };
 }

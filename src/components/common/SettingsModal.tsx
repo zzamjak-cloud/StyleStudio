@@ -8,20 +8,29 @@ import { useAuth } from '../../hooks/useAuth';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  currentApiKey: string;
-  onSave: (apiKey: string) => void;
+  currentGeminiApiKey: string;
+  currentOpenAIApiKey: string;
+  onSave: (geminiApiKey: string, openaiApiKey: string) => void;
 }
 
-export const SettingsModal = memo(function SettingsModal({ isOpen, onClose, currentApiKey, onSave }: SettingsModalProps) {
-  const [apiKey, setApiKey] = useState(currentApiKey);
+export const SettingsModal = memo(function SettingsModal({
+  isOpen,
+  onClose,
+  currentGeminiApiKey,
+  currentOpenAIApiKey,
+  onSave,
+}: SettingsModalProps) {
+  const [geminiApiKey, setGeminiApiKey] = useState(currentGeminiApiKey);
+  const [openaiApiKey, setOpenAIApiKey] = useState(currentOpenAIApiKey);
   const [saveNotification, setSaveNotification] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [version, setVersion] = useState('');
   const { user, logout } = useAuth();
 
   useEffect(() => {
-    setApiKey(currentApiKey);
-  }, [currentApiKey]);
+    setGeminiApiKey(currentGeminiApiKey);
+    setOpenAIApiKey(currentOpenAIApiKey);
+  }, [currentGeminiApiKey, currentOpenAIApiKey]);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion('0.0.0'));
@@ -44,8 +53,8 @@ export const SettingsModal = memo(function SettingsModal({ isOpen, onClose, curr
   };
 
   const handleSave = () => {
-    if (apiKey.trim()) {
-      onSave(apiKey.trim());
+    if (geminiApiKey.trim()) {
+      onSave(geminiApiKey.trim(), openaiApiKey.trim());
       setSaveNotification('설정이 저장되었습니다');
       setTimeout(() => {
         setSaveNotification(null);
@@ -97,8 +106,8 @@ export const SettingsModal = memo(function SettingsModal({ isOpen, onClose, curr
             </label>
             <input
               type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              value={geminiApiKey}
+              onChange={(e) => setGeminiApiKey(e.target.value)}
               placeholder="AIza..."
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
@@ -110,6 +119,31 @@ export const SettingsModal = memo(function SettingsModal({ isOpen, onClose, curr
                 className="text-purple-600 hover:underline"
               >
                 Google AI Studio
+              </a>
+              에서 API 키를 발급받을 수 있습니다.
+            </p>
+          </div>
+
+          {/* OpenAI API Key 설정 */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              ChatGPT API Key
+            </label>
+            <input
+              type="password"
+              value={openaiApiKey}
+              onChange={(e) => setOpenAIApiKey(e.target.value)}
+              placeholder="sk-..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              <a
+                href="https://platform.openai.com/api-keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-purple-600 hover:underline"
+              >
+                OpenAI Developers
               </a>
               에서 API 키를 발급받을 수 있습니다.
             </p>

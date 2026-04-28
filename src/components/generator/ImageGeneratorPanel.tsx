@@ -14,13 +14,22 @@ import { getCameraAnglePrompt } from '../../types/cameraAngle';
 import { getCameraLensPrompt } from '../../types/cameraLens';
 import { buildUnifiedPrompt } from '../../lib/promptBuilder';
 import { buildPromptForSession } from '../../lib/prompts/sessionPrompts';
-import { useGeminiImageGenerator, DEFAULT_IMAGE_MODEL } from '../../hooks/api/useGeminiImageGenerator';
-import type { ImageGenerationModel } from '../../hooks/api/useGeminiImageGenerator';
+import { useGeminiImageGenerator } from '../../hooks/api/useGeminiImageGenerator';
+import { useOpenAIImageGenerator } from '../../hooks/api/useOpenAIImageGenerator';
 import { useGeminiTranslator } from '../../hooks/api/useGeminiTranslator';
 import { logger } from '../../lib/logger';
 import { GeneratorSettings } from './GeneratorSettings';
 import { GeneratorPreview } from './GeneratorPreview';
 import { GeneratorHistory } from './GeneratorHistory';
+import {
+  getAvailableImageModels,
+  DEFAULT_IMAGE_MODEL,
+  type GeminiImageGenerationModel,
+  getImageModelDefinition,
+  isOpenAIModel,
+  type ImageGenerationModel,
+  type ImageQualityOption,
+} from '../../hooks/api/imageModels';
 import {
   IMAGE_GENERATION_DEFAULTS,
   ADVANCED_SETTINGS_DEFAULTS,
@@ -310,7 +319,8 @@ async function removeWhiteBackground(imageDataUrl: string, threshold: number = 2
 }
 
 interface ImageGeneratorPanelProps {
-  apiKey: string;
+  geminiApiKey: string;
+  openaiApiKey: string;
   analysis: ImageAnalysisResult;
   referenceImages: string[];
   sessionType: SessionType;
@@ -351,10 +361,12 @@ interface GeneratorState {
   referenceStrength: number;
   historyHeight: number;
   imageModel: ImageGenerationModel;
+  imageQuality: ImageQualityOption;
 }
 
 export function ImageGeneratorPanel({
-  apiKey,
+  geminiApiKey,
+  openaiApiKey,
   analysis,
   referenceImages,
   sessionType,
@@ -374,7 +386,9 @@ export function ImageGeneratorPanel({
     [analysis]
   );
   const { generateImage } = useGeminiImageGenerator();
+  const { generateImage: generateOpenAIImage } = useOpenAIImageGenerator();
   const { translateToEnglish, containsKorean } = useGeminiTranslator();
+  const hasOpenAIApiKey = openaiApiKey.trim().length > 0;
 
   // 통합 상태 관리
   const [state, setState] = useState<GeneratorState>({
@@ -401,6 +415,7 @@ export function ImageGeneratorPanel({
     referenceStrength: ADVANCED_SETTINGS_DEFAULTS.REFERENCE_STRENGTH,
     historyHeight: HISTORY_PANEL.DEFAULT_HEIGHT,
     imageModel: DEFAULT_IMAGE_MODEL,
+    imageQuality: 'medium',
   });
 
   // 상태 업데이트 헬퍼 함수 (useCallback으로 안정화하여 자식 메모이제이션 유지)
@@ -433,6 +448,7 @@ export function ImageGeneratorPanel({
     referenceStrength,
     historyHeight,
     imageModel,
+    imageQuality,
   } = state;
 
   // 기존 코드 호환성을 위한 개별 setter 함수들 (useCallback으로 안정화)
@@ -456,6 +472,8 @@ export function ImageGeneratorPanel({
   const setTemperature = useCallback((value: number) => updateState({ temperature: value }), [updateState]);
   const setTopK = useCallback((value: number) => updateState({ topK: value }), [updateState]);
   const setTopP = useCallback((value: number) => updateState({ topP: value }), [updateState]);
+  const setImageModel = useCallback((value: ImageGenerationModel) => updateState({ imageModel: value }), [updateState]);
+  const setImageQuality = useCallback((value: ImageQualityOption) => updateState({ imageQuality: value }), [updateState]);
 
   // 줌 메뉴 외부 클릭 시 닫기
   useEffect(() => {
@@ -465,6 +483,22 @@ export function ImageGeneratorPanel({
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [showZoomMenu]);
+
+  useEffect(() => {
+    const modelDef = getImageModelDefinition(imageModel);
+    const nextState: Partial<GeneratorState> = {};
+
+    if (!modelDef.supports.aspectRatios.includes(aspectRatio)) {
+      nextState.aspectRatio = modelDef.supports.aspectRatios[0];
+    }
+    if (!modelDef.supports.imageSizes.includes(imageSize)) {
+      nextState.imageSize = modelDef.supports.imageSizes[0];
+    }
+
+    if (Object.keys(nextState).length > 0) {
+      updateState(nextState);
+    }
+  }, [imageModel, aspectRatio, imageSize, updateState]);
 
   // setState updater 패턴 + useCallback으로 자식 memo 무효화 방지
   const handleHistoryResize = useCallback((delta: number) => {
@@ -476,8 +510,16 @@ export function ImageGeneratorPanel({
 
 
   const handleGenerate = async () => {
-    if (!apiKey) {
-      alert('API 키를 먼저 설정해주세요. Style Studio 헤더의 설정 아이콘을 클릭하여 API 키를 입력하세요.');
+    const selectedModel = getImageModelDefinition(imageModel);
+    const useOpenAI = isOpenAIModel(imageModel);
+    const selectedApiKey = useOpenAI ? openaiApiKey : geminiApiKey;
+
+    if (!selectedApiKey) {
+      alert(
+        useOpenAI
+          ? 'ChatGPT API 키를 먼저 설정해주세요. Style Studio 헤더의 설정 아이콘에서 입력할 수 있습니다.'
+          : 'Gemini API 키를 먼저 설정해주세요. Style Studio 헤더의 설정 아이콘에서 입력할 수 있습니다.'
+      );
       return;
     }
 
@@ -495,7 +537,7 @@ export function ImageGeneratorPanel({
       if (additionalPrompt.trim()) {
         if (containsKorean(additionalPrompt.trim())) {
           logger.debug('🌐 추가 프롬프트 번역 중...');
-          translatedAdditionalPrompt = await translateToEnglish(apiKey, additionalPrompt.trim());
+          translatedAdditionalPrompt = await translateToEnglish(geminiApiKey, additionalPrompt.trim());
         } else {
           translatedAdditionalPrompt = additionalPrompt.trim();
         }
@@ -580,34 +622,12 @@ export function ImageGeneratorPanel({
         finalReferenceImages = referenceImages;
       }
 
-      await generateImage(
-        apiKey,
-        {
-          prompt: finalPrompt,
-          negativePrompt: negativePrompt,
-          referenceImages: finalReferenceImages,
-          aspectRatio: aspectRatio,
-          imageSize: imageSize,
-          sessionType: sessionType,
-          // 고급 설정
-          seed: seed,
-          temperature: temperature,
-          topK: topK,
-          topP: topP,
-          referenceStrength: referenceStrength,
-          // 픽셀아트 전용 설정
-          analysis: analysis, // 이미지 분석 결과 (픽셀아트 해상도 추출용)
-          pixelArtGrid: pixelArtGrid, // 픽셀아트 그리드 레이아웃
-          // UI 세션 전용 설정
-          referenceDocuments: referenceDocuments, // 참조 문서 (UI 세션에서 기획 내용 반영)
-          imageModel: imageModel, // 이미지 생성 모델
+      const callbacks = {
+        onProgress: (message: string) => {
+          setProgressMessage(message);
+          logger.debug('📊 진행:', message);
         },
-        {
-          onProgress: (message) => {
-            setProgressMessage(message);
-            logger.debug('📊 진행:', message);
-          },
-          onComplete: async (imageBase64) => {
+        onComplete: async (imageBase64: string) => {
             // Gemini API는 JPEG 바이너리를 반환하므로 올바른 MIME 타입 사용
             let dataUrl = `data:image/jpeg;base64,${imageBase64}`;
 
@@ -670,15 +690,54 @@ export function ImageGeneratorPanel({
               logger.debug('📜 히스토리에 추가됨:', historyEntry.id);
             }
           },
-          onError: (error) => {
-            setIsGenerating(false);
-            setIsTranslating(false);
-            setProgressMessage('');
-            logger.error('❌ 생성 오류:', error);
-            alert('이미지 생성 실패: ' + error.message);
+        onError: (error: Error) => {
+          setIsGenerating(false);
+          setIsTranslating(false);
+          setProgressMessage('');
+          logger.error('❌ 생성 오류:', error);
+          alert('이미지 생성 실패: ' + error.message);
+        },
+      };
+
+      if (selectedModel.provider === 'openai') {
+        await generateOpenAIImage(
+          selectedApiKey,
+          {
+            prompt: finalPrompt,
+            aspectRatio: aspectRatio,
+            imageSize: imageSize,
+            quality: imageQuality,
+            referenceImages: finalReferenceImages,
           },
-        }
-      );
+          callbacks
+        );
+      } else {
+        const geminiModel = imageModel as GeminiImageGenerationModel;
+        await generateImage(
+          selectedApiKey,
+          {
+            prompt: finalPrompt,
+            negativePrompt: negativePrompt,
+            referenceImages: finalReferenceImages,
+            aspectRatio: aspectRatio,
+            imageSize: imageSize,
+            sessionType: sessionType,
+            // 고급 설정
+            seed: seed,
+            temperature: temperature,
+            topK: topK,
+            topP: topP,
+            referenceStrength: referenceStrength,
+            // 픽셀아트 전용 설정
+            analysis: analysis, // 이미지 분석 결과 (픽셀아트 해상도 추출용)
+            pixelArtGrid: pixelArtGrid, // 픽셀아트 그리드 레이아웃
+            // UI 세션 전용 설정
+            referenceDocuments: referenceDocuments, // 참조 문서 (UI 세션에서 기획 내용 반영)
+            imageModel: geminiModel, // 이미지 생성 모델
+          },
+          callbacks
+        );
+      }
     } catch (error) {
       setIsGenerating(false);
       setIsTranslating(false);
@@ -920,7 +979,7 @@ export function ImageGeneratorPanel({
                   : sessionType === 'LOGO'
                   ? '로고 세션'
                   : '스타일 세션'}{' '}
-                · Gemini 3 Pro
+                · {getImageModelDefinition(imageModel).label}
               </p>
             </div>
           </div>
@@ -1030,7 +1089,8 @@ export function ImageGeneratorPanel({
       <div className="flex-1 flex overflow-hidden">
         {/* 왼쪽: 설정 패널 */}
         <GeneratorSettings
-          apiKey={apiKey}
+          geminiApiKey={geminiApiKey}
+          openaiApiKey={openaiApiKey}
           sessionType={sessionType}
           additionalPrompt={additionalPrompt}
           isGenerating={isGenerating}
@@ -1046,6 +1106,11 @@ export function ImageGeneratorPanel({
           temperature={temperature}
           topK={topK}
           topP={topP}
+          imageModel={imageModel}
+          imageQuality={imageQuality}
+          availableModels={getAvailableImageModels(hasOpenAIApiKey)}
+          supportedAspectRatios={getImageModelDefinition(imageModel).supports.aspectRatios}
+          supportedImageSizes={getImageModelDefinition(imageModel).supports.imageSizes}
           cameraAngle={cameraAngle}
           cameraLens={cameraLens}
           referenceDocuments={referenceDocuments}
@@ -1061,6 +1126,8 @@ export function ImageGeneratorPanel({
           onTemperatureChange={setTemperature}
           onTopKChange={setTopK}
           onTopPChange={setTopP}
+          onImageModelChange={setImageModel}
+          onImageQualityChange={setImageQuality}
           onCameraAngleChange={setCameraAngle}
           onCameraLensChange={setCameraLens}
           onDocumentAdd={onDocumentAdd}

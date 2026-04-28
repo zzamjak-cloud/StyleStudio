@@ -88,14 +88,15 @@ function App() {
     useImageHandling();
 
   const {
-    apiKey,
+    geminiApiKey,
+    openaiApiKey,
     sessions,
     setSessions,
     currentSession,
     setCurrentSession,
     showSettings,
     setShowSettings,
-    handleSaveApiKey,
+    handleSaveApiKeys,
     handleSelectSession,
     handleDeleteSession,
     handleExportSession,
@@ -107,6 +108,7 @@ function App() {
     handleDocumentDelete,
     saveSessionWithoutTranslation,
   } = useSessionManagement();
+  const apiKey = geminiApiKey;
   const { analyzeImages } = useGeminiAnalyzer();
 
   // 폴더 관리 Hook
@@ -895,6 +897,7 @@ function App() {
           aspectRatio: '1:1',
           imageModel: 'gemini-3-pro-image-preview',
           imageSize: '1K',
+            imageQuality: 'medium',
           pixelArtGrid: '1x1',
         },
       };
@@ -906,9 +909,10 @@ function App() {
         gameGenres: [],
         artStyles: [],
         generationSettings: {
-          model: 'nanobanana-pro',
+          model: 'gemini-3-pro-image-preview',
           ratio: '9:16',
           size: '1k',
+          quality: 'medium',
           grid: '1x1',
         },
         history: [],
@@ -1167,14 +1171,16 @@ function App() {
           <ChatPanel
             key={currentSession.id}
             session={currentSession}
-            apiKey={apiKey}
+            geminiApiKey={geminiApiKey}
+            openaiApiKey={openaiApiKey}
             onSessionUpdate={handleSessionUpdate}
           />
         ) : currentSession?.type === 'CONCEPT' ? (
           <ConceptPanel
             key={currentSession.id}
             session={currentSession}
-            apiKey={apiKey}
+            geminiApiKey={geminiApiKey}
+            openaiApiKey={openaiApiKey}
             onSessionUpdate={handleSessionUpdate}
             onSessionSaveOnly={handleSessionSaveOnly}
           />
@@ -1224,7 +1230,8 @@ function App() {
           ) : (
             analysisResult && (
               <ImageGeneratorPanel
-                apiKey={apiKey}
+                geminiApiKey={geminiApiKey}
+                openaiApiKey={openaiApiKey}
                 analysis={analysisResult}
                 referenceImages={currentSession.illustrationData?.characters.flatMap(c => c.images) || []}
                 sessionType="ILLUSTRATION"
@@ -1296,7 +1303,8 @@ function App() {
           ) : (
             analysisResult && (
               <ImageGeneratorPanel
-                apiKey={apiKey}
+                geminiApiKey={geminiApiKey}
+                openaiApiKey={openaiApiKey}
                 analysis={analysisResult}
                 referenceImages={uploadedImages}
                 sessionType={currentSession?.type || 'STYLE'}
@@ -1323,8 +1331,9 @@ function App() {
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-        currentApiKey={apiKey}
-        onSave={handleSaveApiKey}
+        currentGeminiApiKey={geminiApiKey}
+        currentOpenAIApiKey={openaiApiKey}
+        onSave={handleSaveApiKeys}
       />
 
       <SaveSessionModal
