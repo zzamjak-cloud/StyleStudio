@@ -152,43 +152,25 @@ jobs:
           echo "VITE_GOOGLE_CLIENT_SECRET=${{ secrets.STYLESTUDIO_GOOGLE_CLIENT_SECRET }}" >> .env
           echo "VITE_ALLOWED_DOMAIN=${{ secrets.STYLESTUDIO_ALLOWED_DOMAIN }}" >> .env
 
-      # Base64로 인코딩된 키를 디코딩하여 환경 변수로 설정
-      # PEM은 멀티라인이므로 GITHUB_ENV heredoc 문법 사용. 구분자는 PEM 본문(base64 줄)에 절대 안 나오는 UUID 권장
+      # Base64 시크릿 → PEM 파일 → Python으로 GITHUB_ENV에 멀티라인 기록
+      # (bash `{ echo <<DELIM; cat; echo DELIM } >> GITHUB_ENV` 는 macOS 러너에서 종료 구분자 미매칭 버그가 보고됨)
       # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/workflow-commands-for-github-actions#multiline-strings
-      - name: Decode signing key (macOS/Linux)
-        if: matrix.platform != 'windows-latest'
+      - name: Decode signing key
+        shell: bash
         env:
           STYLESTUDIO_SIGNING_KEY_BASE64: ${{ secrets.STYLESTUDIO_SIGNING_KEY_BASE64 }}
         run: |
           set -euo pipefail
           CLEAN_B64=$(printf '%s' "$STYLESTUDIO_SIGNING_KEY_BASE64" | tr -d '\n\r ')
-          printf '%s' "$CLEAN_B64" | base64 -d > /tmp/signing_key.txt
-          if [ ! -s /tmp/signing_key.txt ]; then
+          TMPKEY="${RUNNER_TEMP:-/tmp}/stylestudio_signing.pem"
+          printf '%s' "$CLEAN_B64" | base64 -d > "$TMPKEY"
+          if [ ! -s "$TMPKEY" ]; then
             echo "::error::Signing key decode produced empty file (check STYLESTUDIO_SIGNING_KEY_BASE64)"
             exit 1
           fi
-          DELIM=$(uuidgen | tr -d '\n\r ')
-          {
-            echo "TAURI_SIGNING_PRIVATE_KEY<<${DELIM}"
-            cat /tmp/signing_key.txt
-            echo "${DELIM}"
-          } >> "$GITHUB_ENV"
-          rm -f /tmp/signing_key.txt
-
-      - name: Decode signing key (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        env:
-          STYLESTUDIO_SIGNING_KEY_BASE64: ${{ secrets.STYLESTUDIO_SIGNING_KEY_BASE64 }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $b64 = ($env:STYLESTUDIO_SIGNING_KEY_BASE64 -replace '\s','')
-          $key = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
-          if ([string]::IsNullOrEmpty($key)) { throw "Decoded signing key is empty" }
-          $delim = [guid]::NewGuid().ToString()
-          Add-Content -Path $env:GITHUB_ENV -Value "TAURI_SIGNING_PRIVATE_KEY<<$delim"
-          Add-Content -Path $env:GITHUB_ENV -Value $key
-          Add-Content -Path $env:GITHUB_ENV -Value $delim
+          PY="$(command -v python3 || command -v python)"
+          "$PY" scripts/ci/append_tauri_signing_env.py "$TMPKEY"
+          rm -f "$TMPKEY"
 
       - name: Verify signing key is loaded
         shell: bash
