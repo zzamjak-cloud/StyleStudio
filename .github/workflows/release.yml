@@ -125,6 +125,19 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
 
+      # 릴리스 태그 커밋에는 scripts/ci가 없을 수 있음. 워크플로는 항상 기본 브랜치 최신 정의를 쓰므로,
+      # 서명 헬퍼만 기본 브랜치에서 덮어써 경로를 맞춘다(앱 소스는 계속 RELEASE_TAG).
+      - name: Load CI signing helper from default branch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git fetch origin "${DEFAULT_BRANCH}" --depth=1
+          mkdir -p scripts/ci
+          git show "origin/${DEFAULT_BRANCH}:scripts/ci/append_tauri_signing_env.py" > scripts/ci/append_tauri_signing_env.py
+          test -s scripts/ci/append_tauri_signing_env.py
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
