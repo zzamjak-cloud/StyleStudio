@@ -17,7 +17,7 @@ export interface ConceptSessionData {
   // 생성 설정
   generationSettings: {
     model: ImageGenerationModel;
-    ratio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+    ratio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '1:3' | '3:1';
     size: '1k' | '2k' | '3k';
     quality?: ImageQualityOption;
     grid: '1x1' | '2x2' | '3x3' | '4x4';

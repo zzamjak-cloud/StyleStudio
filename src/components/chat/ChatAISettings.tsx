@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, AlertTriangle } from 'lucide-react';
+import { Settings, AlertTriangle, Lightbulb } from 'lucide-react';
 import { ChatGenerationSettings } from '../../types/chat';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { getAvailableImageModels } from '../../hooks/api/imageModels';
@@ -96,21 +96,38 @@ export function ChatAISettings({
           <label className="block text-sm font-medium text-gray-700 mb-2">
             이미지 비율
           </label>
-          <div className={`grid gap-1 ${aspectRatios.length <= 3 ? 'grid-cols-3' : 'grid-cols-5'}`}>
-            {aspectRatios.map((ratio) => (
-              <button
-                key={ratio}
-                onClick={() => onSettingsChange({ aspectRatio: ratio })}
-                className={`px-1 py-1.5 text-xs rounded-md border transition-colors ${
-                  settings.aspectRatio === ratio
-                    ? 'bg-purple-500 text-white border-purple-500'
-                    : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
-                }`}
-              >
-                {ratio}
-              </button>
-            ))}
+          <div
+            className={`grid gap-1 ${
+              aspectRatios.length <= 3
+                ? 'grid-cols-3'
+                : aspectRatios.length <= 5
+                ? 'grid-cols-5'
+                : 'grid-cols-4'
+            }`}
+          >
+            {aspectRatios.map((ratio) => {
+              const isExtreme = ratio === '1:3' || ratio === '3:1';
+              return (
+                <button
+                  key={ratio}
+                  onClick={() => onSettingsChange({ aspectRatio: ratio })}
+                  title={isExtreme ? '극단적 비율(베타) — 배너/파노라마용' : undefined}
+                  className={`px-1 py-1.5 text-xs rounded-md border transition-colors ${
+                    settings.aspectRatio === ratio
+                      ? 'bg-purple-500 text-white border-purple-500'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+                  }`}
+                >
+                  {ratio}
+                </button>
+              );
+            })}
           </div>
+          {(settings.aspectRatio === '1:3' || settings.aspectRatio === '3:1') && (
+            <p className="text-xs text-amber-600 mt-1">
+              극단적 비율(베타) — 배너/파노라마 전용 · Gemini 모델에서만 지원
+            </p>
+          )}
         </div>
 
         {/* 크기 선택 */}
@@ -169,6 +186,25 @@ export function ChatAISettings({
           </div>
         )}
 
+        {/* Thinking Mode 토글 (베타) */}
+        <div>
+          <label className="flex items-center justify-between gap-2 cursor-pointer">
+            <span className="flex items-center gap-2">
+              <Lightbulb className="w-4 h-4 text-amber-500" />
+              <span className="text-sm font-medium text-gray-700">추론 모드 (베타)</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={!!settings.thinkingMode}
+              onChange={(e) => onSettingsChange({ thinkingMode: e.target.checked })}
+              className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+            />
+          </label>
+          <p className="text-xs text-gray-500 mt-1">
+            ON 시 단계별 사고(고증·구도·일관성) prefix를 추가합니다. 토큰 사용량이 소폭 증가합니다.
+          </p>
+        </div>
+
         {/* 그리드 설정 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -211,65 +247,81 @@ export function ChatAISettings({
         </p>
       </div>
 
-      {/* 비용 경고 팝업 */}
+      {/* 비용 경고 팝업 (2K=amber, 4K=red 위험 등급 분리) */}
       {costWarning && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-3 bg-amber-100 rounded-full">
-                  <AlertTriangle size={28} className="text-amber-600" />
+        (() => {
+          const is4K = costWarning.size === '4K';
+          const accent = is4K
+            ? { bg: 'bg-red-100', icon: 'text-red-600', heading: 'text-red-700', boxBg: 'bg-red-50', boxBorder: 'border-red-200', bullet: 'text-red-600', btnBg: 'bg-red-600 hover:bg-red-700' }
+            : { bg: 'bg-amber-100', icon: 'text-amber-600', heading: 'text-amber-700', boxBg: 'bg-amber-50', boxBorder: 'border-amber-200', bullet: 'text-amber-600', btnBg: 'bg-amber-500 hover:bg-amber-600' };
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+                <div className="p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`p-3 ${accent.bg} rounded-full`}>
+                      <AlertTriangle size={28} className={accent.icon} />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-800">{is4K ? '🔴 매우 높은 비용 경고' : '비용 경고'}</h3>
+                  </div>
+                  <div className="space-y-3 text-gray-700">
+                    <p className={`font-semibold text-lg ${accent.heading}`}>
+                      ⚠️ {costWarning.size} 이미지는 비용이 크게 증가합니다!
+                    </p>
+                    <div className={`${accent.boxBg} border ${accent.boxBorder} rounded-lg p-4`}>
+                      <ul className="space-y-2 text-sm">
+                        <li className="flex items-start gap-2">
+                          <span className={accent.bullet}>•</span>
+                          <span>
+                            <span className="font-medium">일반적인 용도</span>에서는{' '}
+                            <span className="text-green-600 font-bold">1K 이미지로 충분</span>합니다.
+                          </span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className={accent.bullet}>•</span>
+                          <span>
+                            {is4K ? '4K는 1K 대비 약 16배' : '2K는 1K 대비 약 4배'}의 비용이 발생할 수 있습니다.
+                          </span>
+                        </li>
+                        {is4K && (
+                          <li className="flex items-start gap-2">
+                            <span className={accent.bullet}>•</span>
+                            <span>
+                              <span className="font-medium">모바일 게임 자산</span> 용도에서는 거의 필요하지 않습니다.
+                            </span>
+                          </li>
+                        )}
+                        <li className="flex items-start gap-2">
+                          <span className={accent.bullet}>•</span>
+                          <span>
+                            <span className="font-medium">실제로 고화질이 필요한 경우</span>에만 선택적으로 사용하세요.
+                          </span>
+                        </li>
+                      </ul>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-2">
+                      💡 먼저 1K로 테스트하고, 마음에 드는 결과물만 고화질로 다시 생성하는 것을 권장합니다.
+                    </p>
+                  </div>
                 </div>
-                <h3 className="text-xl font-bold text-gray-800">비용 경고</h3>
-              </div>
-              <div className="space-y-3 text-gray-700">
-                <p className="font-semibold text-lg text-amber-700">
-                  ⚠️ {costWarning.size} 이미지는 비용이 크게 증가합니다!
-                </p>
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <ul className="space-y-2 text-sm">
-                    <li className="flex items-start gap-2">
-                      <span className="text-amber-600">•</span>
-                      <span>
-                        <span className="font-medium">일반적인 용도</span>에서는{' '}
-                        <span className="text-green-600 font-bold">1K 이미지로 충분</span>합니다.
-                      </span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-amber-600">•</span>
-                      <span>
-                        {costWarning.size === '2K' ? '2K는 1K 대비 약 4배' : '4K는 1K 대비 약 16배'}의 비용이 발생할 수 있습니다.
-                      </span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-amber-600">•</span>
-                      <span>
-                        <span className="font-medium">실제로 고화질이 필요한 경우</span>에만 선택적으로 사용하세요.
-                      </span>
-                    </li>
-                  </ul>
+                <div className="flex gap-3 p-4 bg-gray-50 rounded-b-xl border-t border-gray-200">
+                  <button
+                    onClick={() => setCostWarning(null)}
+                    className="flex-1 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 rounded-lg font-medium transition-colors text-gray-700"
+                  >
+                    취소 (1K 유지)
+                  </button>
+                  <button
+                    onClick={confirmSizeChange}
+                    className={`flex-1 px-4 py-2.5 ${accent.btnBg} text-white rounded-lg font-medium transition-colors`}
+                  >
+                    {costWarning.size} 사용
+                  </button>
                 </div>
-                <p className="text-sm text-gray-600 mt-2">
-                  💡 먼저 1K로 테스트하고, 마음에 드는 결과물만 고화질로 다시 생성하는 것을 권장합니다.
-                </p>
               </div>
             </div>
-            <div className="flex gap-3 p-4 bg-gray-50 rounded-b-xl border-t border-gray-200">
-              <button
-                onClick={() => setCostWarning(null)}
-                className="flex-1 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 rounded-lg font-medium transition-colors text-gray-700"
-              >
-                취소 (1K 유지)
-              </button>
-              <button
-                onClick={confirmSizeChange}
-                className="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
-              >
-                {costWarning.size} 사용
-              </button>
-            </div>
-          </div>
-        </div>
+          );
+        })()
       )}
     </div>
   );

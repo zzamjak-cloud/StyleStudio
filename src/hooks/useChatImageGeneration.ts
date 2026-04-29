@@ -8,11 +8,16 @@ import { loadImage } from '../lib/imageStorage';
 import { CHAT_SIGNATURE_KEY_MARKER } from '../lib/storage';
 import { isOpenAIModel } from './api/imageModels';
 import { useOpenAIImageGenerator } from './api/useOpenAIImageGenerator';
+import { buildThinkingPrefix } from '../lib/prompts/thinkingPrefix';
 
-// 사용자 메시지 앞에 스타일·그리드 힌트를 prefix로 결합해 Gemini가 해당 속성을 반영하도록 유도
+// 사용자 메시지 앞에 스타일·그리드·추론 힌트를 prefix로 결합해 모델이 반영하도록 유도
 function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): string {
   if (!settings) return '';
   const parts: string[] = [];
+
+  if (settings.thinkingMode) {
+    parts.push(buildThinkingPrefix('chat'));
+  }
 
   if (settings.pixelArtGrid && settings.pixelArtGrid !== '1x1') {
     const info = getPixelArtGridInfo(settings.pixelArtGrid);
@@ -21,7 +26,7 @@ function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): stri
     );
   }
 
-  return parts.length > 0 ? parts.join(' ') + '\n\n' : '';
+  return parts.length > 0 ? parts.join('\n\n') + '\n\n' : '';
 }
 
 // 최대 재시도 횟수
@@ -76,21 +81,47 @@ export function useChatImageGeneration(
 
       for (const msg of messages) {
         if (msg.role === 'summary') continue;
+        const resolvedImages = msg.images && msg.images.length > 0
+          ? await Promise.all(
+              msg.images.map(async (img) => {
+                if (img.startsWith('data:')) return img;
+                return (await loadImage(img)) ?? img;
+              })
+            )
+          : [];
+
+        // signature 없는 생성 이미지(OpenAI/어노테이션 결과)는 model 역할로 inline_data 전송 시
+        // Gemini가 400을 반환하므로, "사용자가 첨부한 참고 이미지"처럼 user 보조 턴으로 분리해서 보냄
+        const hasUsableSignatures = !!msg.imageSignatures && msg.imageSignatures.some((s) => !!s);
+        const isOrphanGeneratedImage = msg.isGeneratedImage && !hasUsableSignatures && resolvedImages.length > 0;
+
+        if (isOrphanGeneratedImage) {
+          // 1) user 역할로 직전 생성 이미지를 컨텍스트 첨부
+          const userParts: Array<Record<string, unknown>> = [
+            { text: '[직전 채팅에서 생성된 이미지입니다. 이어지는 작업의 기준 이미지로 참고하세요.]' },
+          ];
+          for (const img of resolvedImages) {
+            const base64Data = img.includes(',') ? img.split(',')[1] : img;
+            const mimeMatch = img.match(/data:([^;]+);base64/);
+            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            userParts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
+          }
+          contents.push({ role: 'user', parts: userParts });
+          // 2) model 역할로 짧은 텍스트 응답을 끼워 turn 페어 유지 (Gemini는 user→model 교차 권장)
+          const ack = msg.content?.trim() || '확인했습니다. 이어서 도와드리겠습니다.';
+          contents.push({ role: 'model', parts: [{ text: ack }] });
+          continue;
+        }
+
         const parts: Array<Record<string, unknown>> = [];
         if (msg.content) {
           parts.push({ text: msg.content });
         }
-        if (msg.images && msg.images.length > 0) {
-          const resolvedImages = await Promise.all(
-            msg.images.map(async (img) => {
-              if (img.startsWith('data:')) return img;
-              return (await loadImage(img)) ?? img;
-            })
-          );
-
-          if (msg.isGeneratedImage && msg.imageSignatures) {
+        if (resolvedImages.length > 0) {
+          if (msg.isGeneratedImage) {
+            // signature가 있는 Gemini 생성 이미지: thought_signature와 함께 model 역할로 전송
             const resolvedSigs = await Promise.all(
-              msg.imageSignatures.map(async (sig) => {
+              (msg.imageSignatures ?? []).map(async (sig) => {
                 if (!sig) return sig;
                 if (sig.includes(CHAT_SIGNATURE_KEY_MARKER)) {
                   return (await loadImage(sig)) ?? sig;
@@ -102,16 +133,16 @@ export function useChatImageGeneration(
               const img = resolvedImages[i];
               const signature = resolvedSigs[i];
               const base64Data = img.includes(',') ? img.split(',')[1] : img;
+              const mimeMatch = img.match(/data:([^;]+);base64/);
+              const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
               const part: Record<string, unknown> = {
-                inline_data: { mime_type: 'image/jpeg', data: base64Data },
+                inline_data: { mime_type: mimeType, data: base64Data },
               };
               if (signature) {
                 part.thought_signature = signature;
               }
               parts.push(part);
             }
-          } else if (msg.isGeneratedImage) {
-            parts.push({ text: `[이전에 생성한 이미지 ${resolvedImages.length}개]` });
           } else {
             for (const img of resolvedImages) {
               const base64Data = img.includes(',') ? img.split(',')[1] : img;

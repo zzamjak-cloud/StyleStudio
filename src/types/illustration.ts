@@ -43,6 +43,40 @@ export interface BackgroundAnalysisResult {
   style_keywords: string;            // 아트 스타일 키워드
 }
 
+// 사용자 구도 스케치에 배치된 캐릭터 라벨
+export interface CharacterPlacement {
+  characterId: string;
+  name: string;
+  // 0~1 정규화 좌표 (캔버스 비율 무관)
+  position: { x: number; y: number; width: number; height: number };
+  pose?: string;
+  facingDirection?: 'left' | 'right' | 'front' | 'back';
+  interactingWith?: string[]; // 다른 캐릭터 id
+}
+
+export interface CompositionAnalysis {
+  layout: string;                       // "rule of thirds, characters in foreground"
+  perspective: string;                  // "low angle, three-quarter view"
+  cameraDistance: 'close-up' | 'medium' | 'wide' | 'extreme-wide';
+  placements: CharacterPlacement[];
+  backgroundElements: string[];
+  moodHint: string;
+}
+
+export interface SketchLabel {
+  id: string;
+  characterId?: string; // 등록된 캐릭터와 연결 (없으면 자유 라벨)
+  text: string;
+  x: number; // 0~1 정규화
+  y: number;
+}
+
+export interface ConceptSketch {
+  sketchPng: string;        // 사용자 손으로 그린 구도 스케치 PNG (data URL)
+  labels: SketchLabel[];    // 캐릭터 이름 라벨
+  analysis?: CompositionAnalysis;
+}
+
 // 일러스트 세션 데이터
 export interface IllustrationSessionData {
   characters: IllustrationCharacter[];  // 최대 5명
@@ -50,6 +84,7 @@ export interface IllustrationSessionData {
   backgroundImageKeys?: string[];        // IndexedDB 키
   backgroundAnalysis?: BackgroundAnalysisResult;
   backgroundNegativePrompt?: string;     // 배경 피해야 할 요소
+  conceptSketch?: ConceptSketch;         // 구도 스케치 (선택, Phase 4 신규)
 }
 
 // 제한 상수

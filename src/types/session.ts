@@ -41,7 +41,7 @@ export interface GenerationHistoryEntry {
 
 // 생성 설정
 export interface GenerationSettings {
-  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '1:3' | '3:1';
   imageSize: '1K' | '2K' | '4K';
   seed?: number;
   temperature?: number;
@@ -52,4 +52,5 @@ export interface GenerationSettings {
   pixelArtGrid?: PixelArtGridLayout; // 스프라이트 그리드 레이아웃 (1x1, 2x2, 4x4, 6x6, 8x8)
   cameraAngle?: string; // 카메라 앵글 프리셋 ID
   cameraLens?: string;  // 카메라 렌즈/화각 프리셋 ID
+  thinkingMode?: boolean; // GPT-Image-2 / Gemini 추론 기반 생성 prefix 적용 여부 (베타)
 }

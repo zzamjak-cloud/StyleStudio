@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { Languages, Wand2, Dices, HelpCircle, X, Award, AlertTriangle, Camera, ChevronDown } from 'lucide-react';
+import { Languages, Wand2, Dices, HelpCircle, X, Award, AlertTriangle, Camera, ChevronDown, Lightbulb } from 'lucide-react';
 import { SessionType } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
@@ -7,9 +7,11 @@ import { CAMERA_ANGLES } from '../../types/cameraAngle';
 import { CAMERA_LENSES } from '../../types/cameraLens';
 import { DocumentManager } from './DocumentManager';
 import {
+  AspectRatioOption,
   ImageGenerationModel,
   ImageModelDefinition,
   ImageQualityOption,
+  ImageSizeOption,
 } from '../../hooks/api/imageModels';
 import {
   getGridButtonStyle,
@@ -29,8 +31,8 @@ interface GeneratorSettingsProps {
   isGenerating: boolean;
   isTranslating: boolean;
   progressMessage: string;
-  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
-  imageSize: '1K' | '2K' | '4K';
+  aspectRatio: AspectRatioOption;
+  imageSize: ImageSizeOption;
   useReferenceImages: boolean;
   pixelArtGrid: PixelArtGridLayout;
   showAdvanced: boolean;
@@ -41,9 +43,10 @@ interface GeneratorSettingsProps {
   topP: number;
   imageModel: ImageGenerationModel;
   imageQuality: ImageQualityOption;
+  thinkingMode?: boolean;
   availableModels: ImageModelDefinition[];
-  supportedAspectRatios: ('1:1' | '16:9' | '9:16' | '4:3' | '3:4')[];
-  supportedImageSizes: ('1K' | '2K' | '4K')[];
+  supportedAspectRatios: AspectRatioOption[];
+  supportedImageSizes: ImageSizeOption[];
 
   // 참조 문서 (UI 세션용)
   referenceDocuments: ReferenceDocument[];
@@ -55,8 +58,9 @@ interface GeneratorSettingsProps {
   // 콜백
   onGenerate: () => void;
   onAdditionalPromptChange: (value: string) => void;
-  onAspectRatioChange: (value: '1:1' | '16:9' | '9:16' | '4:3' | '3:4') => void;
-  onImageSizeChange: (value: '1K' | '2K' | '4K') => void;
+  onAspectRatioChange: (value: AspectRatioOption) => void;
+  onImageSizeChange: (value: ImageSizeOption) => void;
+  onThinkingModeChange?: (value: boolean) => void;
   onUseReferenceImagesChange: (value: boolean) => void;
   onPixelArtGridChange: (value: PixelArtGridLayout) => void;
   onShowAdvancedChange: (value: boolean) => void;
@@ -93,6 +97,7 @@ function GeneratorSettingsComponent({
   topP,
   imageModel,
   imageQuality,
+  thinkingMode,
   availableModels,
   supportedAspectRatios,
   supportedImageSizes,
@@ -113,6 +118,7 @@ function GeneratorSettingsComponent({
   onTopPChange,
   onImageModelChange,
   onImageQualityChange,
+  onThinkingModeChange,
   onCameraAngleChange,
   onCameraLensChange,
   onDocumentAdd,
@@ -136,7 +142,7 @@ function GeneratorSettingsComponent({
   const [costWarning, setCostWarning] = useState<{ size: '2K' | '4K' } | null>(null);
 
   // 이미지 크기 변경 핸들러 (비용 경고 포함)
-  const handleImageSizeClick = (size: '1K' | '2K' | '4K') => {
+  const handleImageSizeClick = (size: ImageSizeOption) => {
     if (size === '2K' || size === '4K') {
       setCostWarning({ size });
     } else {
@@ -372,21 +378,38 @@ function GeneratorSettingsComponent({
           {/* 이미지 비율 선택 */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 비율</label>
-            <div className={`grid gap-2 ${supportedAspectRatios.length <= 3 ? 'grid-cols-3' : 'grid-cols-5'}`}>
-              {supportedAspectRatios.map((ratio) => (
-                <button
-                  key={ratio}
-                  onClick={() => onAspectRatioChange(ratio)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
-                    aspectRatio === ratio
-                      ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
-                  }`}
-                >
-                  {ratio}
-                </button>
-              ))}
+            <div
+              className={`grid gap-2 ${
+                supportedAspectRatios.length <= 3
+                  ? 'grid-cols-3'
+                  : supportedAspectRatios.length <= 5
+                  ? 'grid-cols-5'
+                  : 'grid-cols-4'
+              }`}
+            >
+              {supportedAspectRatios.map((ratio) => {
+                const isExtreme = ratio === '1:3' || ratio === '3:1';
+                return (
+                  <button
+                    key={ratio}
+                    onClick={() => onAspectRatioChange(ratio)}
+                    title={isExtreme ? '극단적 비율(베타) — 배너/파노라마용' : undefined}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                      aspectRatio === ratio
+                        ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
+                    }`}
+                  >
+                    {ratio}
+                  </button>
+                );
+              })}
             </div>
+            {(aspectRatio === '1:3' || aspectRatio === '3:1') && (
+              <p className="text-xs text-amber-600 mt-1">
+                극단적 비율(베타) — 배너/파노라마 전용 · Gemini 모델에서만 지원
+              </p>
+            )}
           </div>
 
           {/* 이미지 크기 선택 */}
@@ -434,6 +457,27 @@ function GeneratorSettingsComponent({
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 품질이 높을수록 처리 시간과 생성 비용이 증가할 수 있습니다.
+              </p>
+            </div>
+          )}
+
+          {/* Thinking Mode 토글 (베타) */}
+          {onThinkingModeChange && (
+            <div>
+              <label className="flex items-center justify-between gap-2 cursor-pointer">
+                <span className="flex items-center gap-2">
+                  <Lightbulb size={16} className="text-amber-500" />
+                  <span className="text-sm font-semibold text-gray-700">추론 모드 (베타)</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={!!thinkingMode}
+                  onChange={(e) => onThinkingModeChange(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                />
+              </label>
+              <p className="text-xs text-gray-500 mt-1">
+                ON 시 단계별 사고(고증·구도·일관성) prefix를 추가합니다. 토큰 사용량이 소폭 증가합니다.
               </p>
             </div>
           )}
@@ -617,6 +661,8 @@ function GeneratorSettingsComponent({
                   <li>9:16 - 세로형 (모바일 배경, 스토리)</li>
                   <li>4:3 - 가로형 (일반 사진)</li>
                   <li>3:4 - 세로형 (인물 사진)</li>
+                  <li>3:1 - 가로 파노라마 (헤더/와이드 배너) · Gemini 전용</li>
+                  <li>1:3 - 세로 배너 (모바일 광고/스토리) · Gemini 전용</li>
                 </ul>
               </div>
               <div>
@@ -652,65 +698,81 @@ function GeneratorSettingsComponent({
         </div>
       )}
 
-      {/* 비용 경고 팝업 */}
+      {/* 비용 경고 팝업 (2K=amber, 4K=red 위험 등급 분리) */}
       {costWarning && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-3 bg-amber-100 rounded-full">
-                  <AlertTriangle size={28} className="text-amber-600" />
+        (() => {
+          const is4K = costWarning.size === '4K';
+          const accent = is4K
+            ? { bg: 'bg-red-100', icon: 'text-red-600', heading: 'text-red-700', boxBg: 'bg-red-50', boxBorder: 'border-red-200', bullet: 'text-red-600', btnBg: 'bg-red-600 hover:bg-red-700' }
+            : { bg: 'bg-amber-100', icon: 'text-amber-600', heading: 'text-amber-700', boxBg: 'bg-amber-50', boxBorder: 'border-amber-200', bullet: 'text-amber-600', btnBg: 'bg-amber-500 hover:bg-amber-600' };
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+                <div className="p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`p-3 ${accent.bg} rounded-full`}>
+                      <AlertTriangle size={28} className={accent.icon} />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-800">{is4K ? '🔴 매우 높은 비용 경고' : '비용 경고'}</h3>
+                  </div>
+                  <div className="space-y-3 text-gray-700">
+                    <p className={`font-semibold text-lg ${accent.heading}`}>
+                      ⚠️ {costWarning.size} 이미지는 비용이 크게 증가합니다!
+                    </p>
+                    <div className={`${accent.boxBg} border ${accent.boxBorder} rounded-lg p-4`}>
+                      <ul className="space-y-2 text-sm">
+                        <li className="flex items-start gap-2">
+                          <span className={accent.bullet}>•</span>
+                          <span>
+                            <span className="font-medium">일반적인 용도</span>에서는{' '}
+                            <span className="text-green-600 font-bold">1K 이미지로 충분</span>합니다.
+                          </span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className={accent.bullet}>•</span>
+                          <span>
+                            {is4K ? '4K는 1K 대비 약 16배' : '2K는 1K 대비 약 4배'}의 비용이 발생할 수 있습니다.
+                          </span>
+                        </li>
+                        {is4K && (
+                          <li className="flex items-start gap-2">
+                            <span className={accent.bullet}>•</span>
+                            <span>
+                              <span className="font-medium">모바일 게임 자산</span> 용도에서는 거의 필요하지 않습니다.
+                            </span>
+                          </li>
+                        )}
+                        <li className="flex items-start gap-2">
+                          <span className={accent.bullet}>•</span>
+                          <span>
+                            <span className="font-medium">실제로 고화질이 필요한 경우</span>에만 선택적으로 사용하세요.
+                          </span>
+                        </li>
+                      </ul>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-2">
+                      💡 먼저 1K로 테스트하고, 마음에 드는 결과물만 고화질로 다시 생성하는 것을 권장합니다.
+                    </p>
+                  </div>
                 </div>
-                <h3 className="text-xl font-bold text-gray-800">비용 경고</h3>
-              </div>
-              <div className="space-y-3 text-gray-700">
-                <p className="font-semibold text-lg text-amber-700">
-                  ⚠️ {costWarning.size} 이미지는 비용이 크게 증가합니다!
-                </p>
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <ul className="space-y-2 text-sm">
-                    <li className="flex items-start gap-2">
-                      <span className="text-amber-600">•</span>
-                      <span>
-                        <span className="font-medium">일반적인 용도</span>에서는{' '}
-                        <span className="text-green-600 font-bold">1K 이미지로 충분</span>합니다.
-                      </span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-amber-600">•</span>
-                      <span>
-                        {costWarning.size === '2K' ? '2K는 1K 대비 약 4배' : '4K는 1K 대비 약 16배'}의 비용이 발생할 수 있습니다.
-                      </span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-amber-600">•</span>
-                      <span>
-                        <span className="font-medium">실제로 고화질이 필요한 경우</span>에만 선택적으로 사용하세요.
-                      </span>
-                    </li>
-                  </ul>
+                <div className="flex gap-3 p-4 bg-gray-50 rounded-b-xl border-t border-gray-200">
+                  <button
+                    onClick={() => setCostWarning(null)}
+                    className="flex-1 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 rounded-lg font-medium transition-colors text-gray-700"
+                  >
+                    취소 (1K 유지)
+                  </button>
+                  <button
+                    onClick={confirmImageSizeChange}
+                    className={`flex-1 px-4 py-2.5 ${accent.btnBg} text-white rounded-lg font-medium transition-colors`}
+                  >
+                    {costWarning.size} 사용
+                  </button>
                 </div>
-                <p className="text-sm text-gray-600 mt-2">
-                  💡 먼저 1K로 테스트하고, 마음에 드는 결과물만 고화질로 다시 생성하는 것을 권장합니다.
-                </p>
               </div>
             </div>
-            <div className="flex gap-3 p-4 bg-gray-50 rounded-b-xl border-t border-gray-200">
-              <button
-                onClick={() => setCostWarning(null)}
-                className="flex-1 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-100 rounded-lg font-medium transition-colors text-gray-700"
-              >
-                취소 (1K 유지)
-              </button>
-              <button
-                onClick={confirmImageSizeChange}
-                className="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
-              >
-                {costWarning.size} 사용
-              </button>
-            </div>
-          </div>
-        </div>
+          );
+        })()
       )}
     </div>
   );

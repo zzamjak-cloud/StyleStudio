@@ -3,6 +3,23 @@ import { ReferenceDocument } from '../../types/referenceDocument';
 import { PixelArtGridLayout, getPixelArtGridInfo } from '../../types/pixelart';
 import { ImageAnalysisResult } from '../../types/analysis';
 import { IllustrationSessionData } from '../../types/illustration';
+import { buildThinkingPrefix, ThinkingSessionType } from './thinkingPrefix';
+import { formatCompositionForPrompt } from '../sketch/analyzeSketch';
+
+const THINKING_TYPE_BY_SESSION: Partial<Record<SessionType, ThinkingSessionType>> = {
+  BASIC: 'chat',
+  CHARACTER: 'character',
+  BACKGROUND: 'background',
+  ICON: 'icon',
+  STYLE: 'style',
+  UI: 'ui',
+  LOGO: 'logo',
+  PIXELART_CHARACTER: 'pixelart',
+  PIXELART_BACKGROUND: 'pixelart',
+  PIXELART_ICON: 'pixelart',
+  ILLUSTRATION: 'illustration',
+  CONCEPT: 'concept',
+};
 
 /**
  * 해상도 문자열에서 숫자 추출
@@ -29,6 +46,7 @@ export interface PromptGenerationParams {
   referenceDocuments?: ReferenceDocument[];
   illustrationData?: IllustrationSessionData; // ILLUSTRATION 세션 전용
   cameraSettings?: string; // 카메라 앵글/렌즈 설정 (별도 처리용)
+  thinkingMode?: boolean; // 추론 기반 생성 prefix 적용 여부
 }
 
 /**
@@ -55,16 +73,19 @@ const promptGenerators: Record<SessionType, PromptGeneratorFunction> = {
  * 메인 프롬프트 빌더 함수
  */
 export function buildPromptForSession(params: PromptGenerationParams): string {
+  let body: string;
   if (!params.hasReferenceImages || !params.sessionType) {
-    return params.basePrompt;
+    body = params.basePrompt;
+  } else {
+    const generator = promptGenerators[params.sessionType];
+    body = generator ? generator(params) : params.basePrompt;
   }
 
-  const generator = promptGenerators[params.sessionType];
-  if (!generator) {
-    return params.basePrompt;
+  if (params.thinkingMode) {
+    const thinkingType = (params.sessionType && THINKING_TYPE_BY_SESSION[params.sessionType]) ?? 'generic';
+    return `${buildThinkingPrefix(thinkingType)}\n\n${body}`;
   }
-
-  return generator(params);
+  return body;
 }
 
 /**
@@ -512,6 +533,15 @@ function generateIllustrationPrompt(params: PromptGenerationParams): string {
     ? `\n📷 CAMERA (apply AFTER ensuring character accuracy):\n${cameraSettings}\n⚠️ Camera settings must NOT alter character appearance - only affect composition/framing.`
     : '';
 
+  // 구도 스케치 섹션 (분석 결과 + reference image 가이드 명시)
+  const hasSketchImage = !!illustrationData.conceptSketch?.sketchPng;
+  const sketchPreamble = hasSketchImage
+    ? '\n📎 The LAST reference image is a USER COMPOSITION SKETCH (rough drawing with character name labels). DO NOT copy its art style or pen lines. Use it ONLY as a layout guide — match where each named character is placed (left/right, foreground/background) and the overall framing. The final illustration must be rendered in the art style of the CHARACTER reference images, not the sketch.'
+    : '';
+  const compositionSection = illustrationData.conceptSketch?.analysis
+    ? `${sketchPreamble}\n${formatCompositionForPrompt(illustrationData.conceptSketch.analysis)}\n⚠️ Composition rules: respect the placements EXACTLY (do not swap left/right). Character appearance still comes from the character reference images — do not let the rough sketch alter their identity.`
+    : sketchPreamble;
+
   // 그리드 레이아웃 처리
   if (pixelArtGrid && pixelArtGrid !== '1x1') {
     const gridInfo = getPixelArtGridInfo(pixelArtGrid);
@@ -548,7 +578,7 @@ You MUST draw these EXACT characters - not similar ones, not inspired by, but ID
 ⛔ NO GRID LINES - cells blend seamlessly with no borders or dividers.
 
 🎬 SCENE: ${basePrompt || 'Various poses with the characters'}
-${cameraSection}
+${cameraSection}${compositionSection}
 
 Each of the ${frameCount} cells shows the SAME characters (copied pixel-perfect from reference) in different poses/scenes.
 
@@ -583,7 +613,7 @@ You MUST draw these EXACT characters - not similar ones, not inspired by, but ID
 - DO NOT add or remove any features
 
 🎬 SCENE: ${basePrompt}
-${cameraSection}
+${cameraSection}${compositionSection}
 
 ⚠️ FINAL REMINDER: The characters in your output must be VISUALLY IDENTICAL to the reference images. Character accuracy is MORE IMPORTANT than camera angles or any other instruction. If someone compared them side by side, they should look like the same character drawn by the same artist.`;
 }

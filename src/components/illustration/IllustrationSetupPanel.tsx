@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Plus, Users } from 'lucide-react';
+import { Plus, Users, Pencil, Check, Trash2 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { CharacterCard } from './CharacterCard';
 import { BackgroundSection } from './BackgroundSection';
-import { IllustrationSessionData, IllustrationCharacter, ILLUSTRATION_LIMITS } from '../../types/illustration';
+import { ConceptSketchPanel } from './conceptSketch/ConceptSketchPanel';
+import { IllustrationSessionData, IllustrationCharacter, ILLUSTRATION_LIMITS, ConceptSketch } from '../../types/illustration';
 import { logger } from '../../lib/logger';
 
 // 드롭 타겟 타입
@@ -21,13 +22,32 @@ interface IllustrationSetupPanelProps {
   data: IllustrationSessionData;
   onDataChange: (data: IllustrationSessionData) => void;
   disabled?: boolean;
+  geminiApiKey?: string;
 }
 
 export function IllustrationSetupPanel({
   data,
   onDataChange,
   disabled = false,
+  geminiApiKey = '',
 }: IllustrationSetupPanelProps) {
+  // 구도 스케치 모달 상태
+  const [sketchOpen, setSketchOpen] = useState(false);
+
+  const handleSketchSave = useCallback(
+    (sketch: ConceptSketch) => {
+      onDataChange({ ...data, conceptSketch: sketch });
+    },
+    [data, onDataChange]
+  );
+
+  const handleSketchClear = useCallback(() => {
+    if (!confirm('등록된 구도 스케치를 삭제하시겠습니까?')) return;
+    const next = { ...data };
+    delete next.conceptSketch;
+    onDataChange(next);
+  }, [data, onDataChange]);
+
   // 드래그앤드롭 상태
   const [isDragging, setIsDragging] = useState(false);
   const [activeDropTarget, setActiveDropTarget] = useState<DropTargetType>(null);
@@ -379,6 +399,67 @@ export function IllustrationSetupPanel({
         unregisterDropZone={unregisterDropZone}
       />
 
+      {/* 구도 스케치 섹션 (Phase 4) */}
+      <div className="border-t border-gray-200 pt-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Pencil className="w-4 h-4 text-purple-600" />
+            <h3 className="text-sm font-semibold text-gray-800">구도 스케치 (선택)</h3>
+            {data.conceptSketch && (
+              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                <Check size={10} /> 등록됨
+              </span>
+            )}
+            {data.conceptSketch?.analysis && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                AI 분석 완료
+              </span>
+            )}
+          </div>
+          <div className="flex gap-1">
+            {data.conceptSketch && (
+              <button
+                onClick={handleSketchClear}
+                disabled={disabled}
+                className="flex items-center gap-1 text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-red-50 hover:border-red-300 text-gray-700 hover:text-red-600 disabled:opacity-50"
+                title="스케치 삭제"
+              >
+                <Trash2 size={12} /> 삭제
+              </button>
+            )}
+            <button
+              onClick={() => setSketchOpen(true)}
+              disabled={disabled}
+              className="flex items-center gap-1 text-xs px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium disabled:opacity-50"
+            >
+              <Pencil size={12} />
+              {data.conceptSketch ? '편집' : '구도 스케치 그리기'}
+            </button>
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-500 leading-relaxed">
+          캔버스에 거친 도형으로 인물 위치를 잡고 캐릭터 이름 라벨을 배치하면, AI가 분석하여 layout/perspective/placements를 추출하고 최종 이미지 생성에 반영합니다.
+        </p>
+        {data.conceptSketch && (
+          <div className="mt-2 flex gap-3 items-start">
+            <img
+              src={data.conceptSketch.sketchPng}
+              alt="구도 스케치 미리보기"
+              className="w-32 h-20 object-contain border border-gray-300 rounded bg-white"
+            />
+            {data.conceptSketch.analysis && (
+              <div className="flex-1 text-[11px] text-gray-600">
+                <p>📐 <span className="font-medium">{data.conceptSketch.analysis.layout}</span></p>
+                <p>📷 {data.conceptSketch.analysis.perspective} · {data.conceptSketch.analysis.cameraDistance}</p>
+                {data.conceptSketch.analysis.placements.length > 0 && (
+                  <p>👥 {data.conceptSketch.analysis.placements.length}개 캐릭터 배치 인식</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* 준비 완료 상태 */}
       {hasCharactersWithImages && (
         <div className="border-t border-gray-200 pt-4">
@@ -390,6 +471,16 @@ export function IllustrationSetupPanel({
           </p>
         </div>
       )}
+
+      {/* 구도 스케치 모달 */}
+      <ConceptSketchPanel
+        open={sketchOpen}
+        geminiApiKey={geminiApiKey}
+        characters={data.characters}
+        initial={data.conceptSketch}
+        onClose={() => setSketchOpen(false)}
+        onSave={handleSketchSave}
+      />
     </div>
   );
 }

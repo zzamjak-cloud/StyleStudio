@@ -127,7 +127,7 @@ const SessionListItem = memo(function SessionListItem({
               if (e.key === 'Enter') onInlineRename();
               if (e.key === 'Escape') onInlineCancel();
             }}
-            onBlur={onInlineCancel}
+            onBlur={onInlineRename}
             className="flex-1 min-w-0 px-1 py-0.5 text-xs bg-gray-700 border border-purple-500 rounded text-white focus:outline-none"
             onClick={(e) => e.stopPropagation()}
           />
@@ -245,7 +245,7 @@ const FolderListItem = memo(function FolderListItem({
               if (e.key === 'Enter') onInlineRename();
               if (e.key === 'Escape') onInlineCancel();
             }}
-            onBlur={onInlineCancel}
+            onBlur={onInlineRename}
             className="flex-1 min-w-0 px-1 py-0.5 text-xs bg-gray-700 border border-purple-500 rounded text-white focus:outline-none"
             onClick={(e) => e.stopPropagation()}
           />
@@ -558,7 +558,7 @@ export function Sidebar({
         return;
       }
 
-      // F2: 폴더가 선택된 경우에만 폴더명 인라인 편집
+      // F2: 세션이 선택되어 있으면 세션명 편집, 아니면 폴더명 편집
       if (e.key === 'F2' && !disabled) {
         const activeElement = document.activeElement;
         if (
@@ -570,6 +570,16 @@ export function Sidebar({
           return;
         }
         e.preventDefault();
+        // 세션이 선택된 경우 우선 적용 (사용자 의도: 세션 리스트에서 F2 → 세션명 편집)
+        if (currentSessionId && onRenameSession) {
+          const session = sessions.find((s) => s.id === currentSessionId);
+          if (session) {
+            setInlineEditSessionId(currentSessionId);
+            setInlineEditValue(session.name);
+            return;
+          }
+        }
+        // 폴더만 선택된 경우 폴더명 편집
         if (selectedFolderId) {
           const folder = folders.find((f) => f.id === selectedFolderId);
           if (folder) {

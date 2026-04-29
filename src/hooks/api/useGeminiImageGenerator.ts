@@ -20,7 +20,7 @@ interface GeminiPart {
 }
 
 interface GeminiImageConfig {
-  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '1:3' | '3:1';
   imageSize: '1K' | '2K' | '4K';
 }
 
@@ -39,7 +39,7 @@ export const IMAGE_MODELS = GEMINI_IMAGE_MODELS;
 interface ImageGenerationParams {
   prompt: string; // 서술적 문장 권장
   referenceImages?: string[]; // base64 이미지 배열 (최대 14개)
-  aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+  aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '1:3' | '3:1';
   imageSize?: '1K' | '2K' | '4K'; // Gemini 3 Pro만 지원
   negativePrompt?: string; // 피해야 할 요소
   sessionType?: SessionType; // 세션 타입 (CHARACTER/STYLE)

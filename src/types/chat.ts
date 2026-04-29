@@ -28,13 +28,14 @@ export interface ChatSessionData {
 
 // 채팅 전용 간소화 설정
 export interface ChatGenerationSettings {
-  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '1:3' | '3:1';
   imageModel: ImageGenerationModel;
   imageSize: '1K' | '2K' | '4K';
   imageQuality?: ImageQualityOption;
   pixelArtGrid: PixelArtGridLayout;
   stylePreset?: string;
   customStyle?: string;
+  thinkingMode?: boolean; // GPT-Image-2 / Gemini 추론 기반 생성 prefix 적용 여부 (베타)
 }
 
 // 토큰 수 추정 (한국어 ~2자/토큰, 이미지 ~258토큰)

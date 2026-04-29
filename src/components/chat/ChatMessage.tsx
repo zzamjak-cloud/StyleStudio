@@ -1,5 +1,5 @@
 import { memo, useState } from 'react';
-import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trash2, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import type { ChatMessage as ChatMessageType } from '../../types/chat';
 import { LazyImage } from '../common/LazyImage';
 import { loadImage } from '../../lib/imageStorage';
@@ -8,10 +8,11 @@ interface ChatMessageProps {
   message: ChatMessageType;
   onDelete: (id: string) => void;
   onImageClick?: (imageBase64: string) => void;
+  onAnnotateImage?: (messageId: string, imageBase64: string) => void;
 }
 
 /** 개별 채팅 메시지 렌더링 컴포넌트 */
-function ChatMessageComponent({ message, onDelete, onImageClick }: ChatMessageProps) {
+function ChatMessageComponent({ message, onDelete, onImageClick, onAnnotateImage }: ChatMessageProps) {
   // 요약 메시지의 펼침/접힘 상태
   const [expanded, setExpanded] = useState(false);
 
@@ -71,24 +72,42 @@ function ChatMessageComponent({ message, onDelete, onImageClick }: ChatMessagePr
           {/* 이미지 첨부 */}
           {message.images && message.images.length > 0 && (
             <div className={`flex flex-wrap gap-2 ${message.content ? 'mt-2' : ''}`}>
-              {message.images.map((img, idx) => (
-                <LazyImage
-                  key={idx}
-                  src={img}
-                  alt={`${isUser ? '첨부' : '생성'} 이미지 ${idx + 1}`}
-                  loading="lazy"
-                  decoding="async"
-                  className="max-h-48 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                  onClick={async () => {
-                    if (!onImageClick) return;
-                    // 키일 경우 IndexedDB에서 base64로 복원해 미리보기에 전달
-                    const resolved = img.startsWith('data:')
-                      ? img
-                      : (await loadImage(img)) ?? img;
-                    onImageClick(resolved);
-                  }}
-                />
-              ))}
+              {message.images.map((img, idx) => {
+                const canAnnotate = !isUser && message.isGeneratedImage && onAnnotateImage;
+                return (
+                  <div key={idx} className="relative group/img">
+                    <LazyImage
+                      src={img}
+                      alt={`${isUser ? '첨부' : '생성'} 이미지 ${idx + 1}`}
+                      loading="lazy"
+                      decoding="async"
+                      className="max-h-48 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={async () => {
+                        if (!onImageClick) return;
+                        const resolved = img.startsWith('data:')
+                          ? img
+                          : (await loadImage(img)) ?? img;
+                        onImageClick(resolved);
+                      }}
+                    />
+                    {canAnnotate && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const resolved = img.startsWith('data:')
+                            ? img
+                            : (await loadImage(img)) ?? img;
+                          onAnnotateImage(message.id, resolved);
+                        }}
+                        className="absolute top-1 right-1 p-1.5 bg-white/90 hover:bg-purple-600 hover:text-white text-gray-700 rounded-md shadow opacity-0 group-hover/img:opacity-100 transition-opacity"
+                        title="이미지 위에 그려서 부분 편집"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

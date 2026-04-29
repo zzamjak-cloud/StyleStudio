@@ -1187,6 +1187,7 @@ function App() {
                       data={currentSession.illustrationData || { characters: [], backgroundImages: [] }}
                       onDataChange={handleIllustrationDataChange}
                       disabled={false}
+                      geminiApiKey={geminiApiKey}
                     />
                   </div>
                   {/* 이미지 생성으로 이동 버튼 */}

@@ -1,4 +1,4 @@
-export type AspectRatioOption = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+export type AspectRatioOption = '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '1:3' | '3:1';
 export type ImageSizeOption = '1K' | '2K' | '4K';
 export type ImageQualityOption = 'low' | 'medium' | 'high';
 
@@ -23,7 +23,8 @@ export interface ImageModelDefinition {
   };
 }
 
-const COMMON_ASPECT_RATIOS: AspectRatioOption[] = ['1:1', '16:9', '9:16', '4:3', '3:4'];
+// Gemini는 표준 5종 + 극단적 비율 2종(1:3 세로 배너, 3:1 가로 파노라마) 지원
+const GEMINI_ASPECT_RATIOS: AspectRatioOption[] = ['1:1', '16:9', '9:16', '4:3', '3:4', '1:3', '3:1'];
 const OPENAI_ASPECT_RATIOS: AspectRatioOption[] = ['1:1', '16:9', '9:16'];
 
 export const IMAGE_MODELS: ImageModelDefinition[] = [
@@ -32,7 +33,7 @@ export const IMAGE_MODELS: ImageModelDefinition[] = [
     label: '나노바나나 프로',
     provider: 'gemini',
     supports: {
-      aspectRatios: COMMON_ASPECT_RATIOS,
+      aspectRatios: GEMINI_ASPECT_RATIOS,
       imageSizes: ['1K', '2K', '4K'],
       qualities: ['medium'],
       geminiAdvancedControls: true,
@@ -43,7 +44,7 @@ export const IMAGE_MODELS: ImageModelDefinition[] = [
     label: '나노바나나2',
     provider: 'gemini',
     supports: {
-      aspectRatios: COMMON_ASPECT_RATIOS,
+      aspectRatios: GEMINI_ASPECT_RATIOS,
       imageSizes: ['1K', '2K', '4K'],
       qualities: ['medium'],
       geminiAdvancedControls: true,

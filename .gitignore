@@ -36,3 +36,6 @@ dist-ssr
 
 # Claude local settings
 .claude/
+
+# 사용자 세션/폴더 내보내기 결과 (개인 데이터)
+0_Sessions/

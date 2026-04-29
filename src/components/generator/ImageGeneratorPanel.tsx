@@ -30,6 +30,8 @@ import {
   isOpenAIModel,
   type ImageGenerationModel,
   type ImageQualityOption,
+  type AspectRatioOption,
+  type ImageSizeOption,
 } from '../../hooks/api/imageModels';
 import {
   IMAGE_GENERATION_DEFAULTS,
@@ -341,8 +343,8 @@ interface ImageGeneratorPanelProps {
 interface GeneratorState {
   additionalPrompt: string;
   isTranslating: boolean;
-  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
-  imageSize: '1K' | '2K' | '4K';
+  aspectRatio: AspectRatioOption;
+  imageSize: ImageSizeOption;
   useReferenceImages: boolean;
   isGenerating: boolean;
   progressMessage: string;
@@ -363,6 +365,7 @@ interface GeneratorState {
   historyHeight: number;
   imageModel: ImageGenerationModel;
   imageQuality: ImageQualityOption;
+  thinkingMode: boolean;
 }
 
 export function ImageGeneratorPanel({
@@ -417,6 +420,7 @@ export function ImageGeneratorPanel({
     historyHeight: HISTORY_PANEL.DEFAULT_HEIGHT,
     imageModel: DEFAULT_IMAGE_MODEL,
     imageQuality: 'medium',
+    thinkingMode: false,
   });
 
   // 상태 업데이트 헬퍼 함수 (useCallback으로 안정화하여 자식 메모이제이션 유지)
@@ -450,6 +454,7 @@ export function ImageGeneratorPanel({
     historyHeight,
     imageModel,
     imageQuality,
+    thinkingMode,
   } = state;
 
   const resolveStoredImage = useCallback(async (image: string): Promise<string> => {
@@ -462,8 +467,8 @@ export function ImageGeneratorPanel({
   // 기존 코드 호환성을 위한 개별 setter 함수들 (useCallback으로 안정화)
   const setAdditionalPrompt = useCallback((value: string) => updateState({ additionalPrompt: value }), [updateState]);
   const setIsTranslating = useCallback((value: boolean) => updateState({ isTranslating: value }), [updateState]);
-  const setAspectRatio = useCallback((value: '1:1' | '16:9' | '9:16' | '4:3' | '3:4') => updateState({ aspectRatio: value }), [updateState]);
-  const setImageSize = useCallback((value: '1K' | '2K' | '4K') => updateState({ imageSize: value }), [updateState]);
+  const setAspectRatio = useCallback((value: AspectRatioOption) => updateState({ aspectRatio: value }), [updateState]);
+  const setImageSize = useCallback((value: ImageSizeOption) => updateState({ imageSize: value }), [updateState]);
   const setUseReferenceImages = useCallback((value: boolean) => updateState({ useReferenceImages: value }), [updateState]);
   const setIsGenerating = useCallback((value: boolean) => updateState({ isGenerating: value }), [updateState]);
   const setProgressMessage = useCallback((value: string) => updateState({ progressMessage: value }), [updateState]);
@@ -482,6 +487,7 @@ export function ImageGeneratorPanel({
   const setTopP = useCallback((value: number) => updateState({ topP: value }), [updateState]);
   const setImageModel = useCallback((value: ImageGenerationModel) => updateState({ imageModel: value }), [updateState]);
   const setImageQuality = useCallback((value: ImageQualityOption) => updateState({ imageQuality: value }), [updateState]);
+  const setThinkingMode = useCallback((value: boolean) => updateState({ thinkingMode: value }), [updateState]);
 
   // 줌 메뉴 외부 클릭 시 닫기
   useEffect(() => {
@@ -577,6 +583,7 @@ export function ImageGeneratorPanel({
           illustrationData: illustrationData,
           pixelArtGrid: pixelArtGrid, // 그리드 레이아웃 전달
           cameraSettings: cameraSettingsStr || undefined, // 카메라 설정 별도 전달
+          thinkingMode,
         });
       } else {
         // 모든 세션 타입: buildPromptForSession으로 통합 처리
@@ -602,6 +609,7 @@ export function ImageGeneratorPanel({
           pixelArtGrid,
           analysis,
           referenceDocuments,
+          thinkingMode,
         });
       }
 
@@ -623,6 +631,11 @@ export function ImageGeneratorPanel({
         // 배경 참조 이미지 수집
         if (illustrationData.backgroundImages && illustrationData.backgroundImages.length > 0) {
           allImages.push(...illustrationData.backgroundImages);
+        }
+        // 구도 스케치를 마지막 reference로 첨부 — prompt에서 "마지막 reference는 구도 가이드"로 명시
+        if (illustrationData.conceptSketch?.sketchPng) {
+          allImages.push(illustrationData.conceptSketch.sketchPng);
+          logger.debug('   - 구도 스케치 1장 첨부 (마지막 reference)');
         }
         finalReferenceImages =
           allImages.length > 0
@@ -1125,6 +1138,7 @@ export function ImageGeneratorPanel({
           topP={topP}
           imageModel={imageModel}
           imageQuality={imageQuality}
+          thinkingMode={thinkingMode}
           availableModels={getAvailableImageModels(hasOpenAIApiKey)}
           supportedAspectRatios={getImageModelDefinition(imageModel).supports.aspectRatios}
           supportedImageSizes={getImageModelDefinition(imageModel).supports.imageSizes}
@@ -1145,6 +1159,7 @@ export function ImageGeneratorPanel({
           onTopPChange={setTopP}
           onImageModelChange={setImageModel}
           onImageQualityChange={setImageQuality}
+          onThinkingModeChange={setThinkingMode}
           onCameraAngleChange={setCameraAngle}
           onCameraLensChange={setCameraLens}
           onDocumentAdd={onDocumentAdd}

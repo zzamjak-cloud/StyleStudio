@@ -12,8 +12,10 @@ import { useChatImageGeneration } from '../../hooks/useChatImageGeneration';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatAISettings } from './ChatAISettings';
+import { ImageAnnotator } from './annotation/ImageAnnotator';
 import { logger } from '../../lib/logger';
 import { getImageModelDefinition } from '../../hooks/api/imageModels';
+import { serializeColorInstructions, AnnotationResult } from '../../types/annotation';
 
 interface ChatPanelProps {
   session: Session;
@@ -65,6 +67,10 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
 
   // 이미지 미리보기 모달 상태
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // 어노테이션 모달 상태
+  const [annotationTarget, setAnnotationTarget] = useState<{ messageId: string; imageBase64: string } | null>(null);
+  const [isAnnotating, setIsAnnotating] = useState(false);
 
   // 메시지 스크롤 영역 ref
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -179,6 +185,43 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
     }
   }, []);
 
+  // 어노테이션 제출 핸들러:
+  // - 모델에 합성본(컬러 라인이 그려진 이미지)을 직접 보내면 결과에 라인이 그대로 모방되는 문제가 발생.
+  // - 따라서 깨끗한 원본만 reference로 전송하고, 색상별 영역(bounding box)은 정규화 좌표를 텍스트 prompt로 직렬화하여 전달.
+  // - 이렇게 하면 모델은 컬러 라인을 "보지 못한" 채로 좌표 기반 영역 지시만 받게 됨.
+  // - 모델 분기(Gemini multi-turn / OpenAI gpt-image-2)는 settings.imageModel 기반으로 자동 처리.
+  const handleAnnotationSubmit = useCallback(
+    async (result: AnnotationResult) => {
+      setIsAnnotating(true);
+      try {
+        const colorSection = serializeColorInstructions(
+          result.colorInstructions,
+          result.usedColors,
+          result.colorRegions
+        );
+        const userIntent = [result.globalInstructions.trim(), colorSection].filter(Boolean).join('\n\n');
+        const promptText = [
+          '[부분 편집 — 첨부 이미지의 지정 영역만 편집]',
+          '첨부 이미지는 편집 시작점(베이스)입니다. 아래 좌표(가로/세로 % 범위)로 지정된 영역만 지시대로 편집하고, 나머지 영역은 원본의 형태/색상/디테일을 가능한 한 그대로 유지하세요.',
+          '',
+          userIntent || '지정 영역을 자연스럽게 편집해주세요.',
+          '',
+          '⚠️ 좌표는 첨부 이미지의 좌상단을 (0%, 0%), 우하단을 (100%, 100%)로 한 정규화 비율입니다.',
+          '⚠️ 결과 이미지에는 편집된 자연스러운 결과만 보여야 하며, 색상 마커/라인/박스 등 어노테이션 흔적은 절대 포함되어서는 안 됩니다 (마커는 모델에 전달되지 않았습니다).',
+        ].join('\n');
+        // 합성본 미첨부 — 깨끗한 원본만 reference로 전송
+        await handleSend(promptText, [result.originalImage]);
+      } catch (error) {
+        logger.error('❌ 어노테이션 편집 실패:', error);
+        const message = error instanceof Error ? error.message : String(error);
+        addMessage('assistant', `어노테이션 편집 실패: ${message}`);
+      } finally {
+        setIsAnnotating(false);
+      }
+    },
+    [addMessage, handleSend]
+  );
+
   // 이미지 저장 (Tauri 다이얼로그 + 파일 쓰기)
   const handleSaveImage = useCallback(async (imageBase64: string) => {
     console.log('🔍 handleSaveImage 호출됨');
@@ -278,6 +321,11 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
               message={msg}
               onDelete={deleteMessage}
               onImageClick={setPreviewImage}
+              onAnnotateImage={
+                openaiApiKey.trim()
+                  ? (messageId, imageBase64) => setAnnotationTarget({ messageId, imageBase64 })
+                  : undefined
+              }
             />
           ))}
 
@@ -320,6 +368,23 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
           setAttachedDocuments(attachedDocuments.filter((d) => d.id !== id))
         }
       />
+
+      {/* 어노테이션 모달 */}
+      <ImageAnnotator
+        open={!!annotationTarget}
+        imageBase64={annotationTarget?.imageBase64 ?? ''}
+        originalImageRef={annotationTarget?.messageId ?? ''}
+        onClose={() => setAnnotationTarget(null)}
+        onSubmit={handleAnnotationSubmit}
+      />
+
+      {/* 어노테이션 진행 중 인디케이터 */}
+      {isAnnotating && (
+        <div className="fixed bottom-6 right-6 px-4 py-3 bg-purple-600 text-white rounded-lg shadow-2xl flex items-center gap-2 z-40">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm font-medium">AI가 부분 편집 중...</span>
+        </div>
+      )}
 
       {/* 이미지 미리보기 모달 */}
       {previewImage && (

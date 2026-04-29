@@ -887,13 +887,13 @@ export async function exportFolderToFile(
   sessionFolderMap: Record<string, string | null>
 ): Promise<void> {
   try {
-    // 파일 저장 다이얼로그 열기
+    // 파일 저장 다이얼로그 열기 (파일명 규칙: folder_{폴더명}.json)
     const filePath = await save({
-      defaultPath: `${folder.name}.stylestudio-folder.json`,
+      defaultPath: `folder_${folder.name}.json`,
       filters: [
         {
           name: 'StyleStudio Folder',
-          extensions: ['stylestudio-folder.json', 'json'],
+          extensions: ['json'],
         },
       ],
     });
