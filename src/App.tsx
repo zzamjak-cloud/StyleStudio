@@ -6,7 +6,6 @@ import { EmptyState } from './components/common/EmptyState';
 import { ImageUpload } from './components/generator/ImageUpload';
 import { AnalysisPanel } from './components/analysis/AnalysisPanel';
 import { SettingsModal } from './components/common/SettingsModal';
-import { SaveSessionModal } from './components/common/SaveSessionModal';
 import { NewSessionModal } from './components/common/NewSessionModal';
 import { UpdateModal } from './components/common/UpdateModal';
 
@@ -41,7 +40,6 @@ import { Session, SessionType } from './types/session';
 import { IllustrationSessionData } from './types/illustration';
 import { useImageHandling } from './hooks/useImageHandling';
 import { useSessionManagement } from './hooks/useSessionManagement';
-import { useSessionPersistence } from './hooks/useSessionPersistence';
 import { useFolderManagement } from './hooks/useFolderManagement';
 import {
   createNewSession,
@@ -55,7 +53,6 @@ import { logger } from './lib/logger';
 import { exportFolderToFile, importFromFile } from './lib/storage';
 
 function App() {
-  const [showSaveSession, setShowSaveSession] = useState(false);
   const [showNewSession, setShowNewSession] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<ImageAnalysisResult | null>(null);
@@ -131,7 +128,16 @@ function App() {
     getCurrentFolderIdForNewSession,
     importFolderData,
     restoreFolderData,
+    alignSessionFolderMapWithSessions,
   } = useFolderManagement();
+
+  // 세션 목록과 폴더 매핑 동기화 (삭제된 세션 ID 제거). 초기 빈 배열일 때는 폴더 맵을 건드리지 않음.
+  const hasHadSessionsRef = useRef(false);
+  useEffect(() => {
+    if (sessions.length > 0) hasHadSessionsRef.current = true;
+    if (!hasHadSessionsRef.current) return;
+    alignSessionFolderMapWithSessions(sessions.map((s) => s.id));
+  }, [sessions, alignSessionFolderMapWithSessions]);
 
   // 자동 업데이트
   const {
@@ -216,17 +222,6 @@ function App() {
       logger.debug('📂 빈 폴더 진입');
     }
   }, [currentFolderId, currentFolderSessions.length, currentFolderSubfolders.length]);
-
-  // 세션 저장 및 지속성 관리
-  const { saveProgress, saveSession } = useSessionPersistence({
-    apiKey,
-    currentSession,
-    sessions,
-    setSessions,
-    setCurrentSession,
-    analysisResult,
-    uploadedImages,
-  });
 
   // 자동 저장 Hook
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -824,17 +819,6 @@ function App() {
     }
   }, [currentFolderId, sessions, importFolderData, moveSessionToFolder, setSessions, setCurrentSession]);
 
-  const handleSaveSessionClick = useCallback(() => {
-    if (!analysisResult || uploadedImages.length === 0) {
-      setInfoDialog({
-        title: '분석 결과 없음',
-        message: '분석 결과가 없습니다'
-      });
-      return;
-    }
-    setShowSaveSession(true);
-  }, [analysisResult, uploadedImages]);
-
   const handleReset = useCallback(() => {
     // 신규 세션 모달 표시
     setShowNewSession(true);
@@ -1245,14 +1229,13 @@ function App() {
               />
             )
           )
-        ) : uploadedImages.length > 0 ? (
+        ) : (uploadedImages.length > 0 || !!analysisResult) ? (
           currentView === 'analysis' ? (
             <AnalysisPanel
               images={uploadedImages}
               isAnalyzing={isAnalyzing}
               analysisResult={analysisResult}
                             onAnalyze={handleAnalyze}
-              onSaveSession={handleSaveSessionClick}
               onAddImage={handleImageSelect}
               onRemoveImage={handleRemoveImage}
               onGenerateImage={analysisResult ? handleGenerateImage : undefined}
@@ -1336,13 +1319,6 @@ function App() {
         onSave={handleSaveApiKeys}
       />
 
-      <SaveSessionModal
-        isOpen={showSaveSession}
-        onClose={() => setShowSaveSession(false)}
-        onSave={saveSession}
-        currentSession={currentSession}
-      />
-
       <NewSessionModal
         isOpen={showNewSession}
         onClose={() => setShowNewSession(false)}
@@ -1351,7 +1327,6 @@ function App() {
       />
 
       <ProgressIndicator {...progress} />
-      {saveProgress.stage !== 'idle' && <ProgressIndicator {...saveProgress} />}
       {importProgress.stage !== 'idle' && <ProgressIndicator {...importProgress} />}
 
       {/* 분석 강화 확인 다이얼로그 */}

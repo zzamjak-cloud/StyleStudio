@@ -1,6 +1,6 @@
 # StyleStudio - AI 이미지 생성 워크스테이션
 
-AI를 활용한 게임 아트 제작을 위한 데스크톱 애플리케이션 (v0.4.0)
+AI를 활용한 게임 아트 제작을 위한 데스크톱 애플리케이션 (v0.4.11)
 
 ## 주요 기능
 
@@ -67,17 +67,38 @@ AI를 활용한 게임 아트 제작을 위한 데스크톱 애플리케이션 (
 
 ```bash
 npm install
-npm run tauri dev
+npm run tauri:dev
 ```
 
 ## 빌드 가이드
 
 ### 로컬 빌드
-1. `tauri.conf.json`의 `createUpdaterArtifacts`를 `false`로 변경
-2. `npm run tauri build` 실행
+개발/테스트용 로컬 빌드는 자동 업데이트 서명 없이 빌드합니다.
+
+```bash
+npm run tauri:build:local
+```
+
+- 내부적으로 `src-tauri/tauri.local.conf.json`을 사용하여
+  `createUpdaterArtifacts=false`로 빌드합니다.
+- `TAURI_SIGNING_PRIVATE_KEY`가 없어도 빌드됩니다.
+
+기본 릴리스 빌드(서명/업데이터 아티팩트 포함)는 아래 명령을 사용합니다.
+
+```bash
+npm run tauri:build
+```
 
 ### 릴리스 빌드 (태그 푸시)
-1. `tauri.conf.json`의 `createUpdaterArtifacts`가 `true`인지 확인
-2. 버전 태그 푸시 (예: `git tag v0.4.0 && git push origin v0.4.0`)
-3. GitHub Actions가 macOS (Universal) / Windows 빌드 및 릴리스 자동 생성
-4. 롤링 릴리스(`latest`)를 통해 인앱 자동 업데이트 제공
+1. `package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 버전을 동일하게 맞추고 `CHANGELOG.md`를 갱신합니다.
+2. `src-tauri/tauri.conf.json`의 `bundle.createUpdaterArtifacts`가 `true`인지 확인합니다 (기본 릴리스 빌드용).
+3. 커밋 후 버전 태그를 생성·푸시합니다. 예:
+   ```bash
+   git tag v0.4.11
+   git push origin main
+   git push origin v0.4.11
+   ```
+4. GitHub Actions가 macOS (Universal) / Windows 빌드 및 GitHub Releases 아티팩트를 생성합니다.
+5. 인앱 자동 업데이트는 설정된 업데이터·서명 키(`TAURI_SIGNING_PRIVATE_KEY` 등)와 롤링 릴리스 채널에 따라 제공됩니다.
+
+**참고:** 서명 키 없이 로컬에서 설치 파일만 검증할 때는 `npm run tauri:build:local`을 사용하세요.

@@ -5,6 +5,26 @@
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-04-29
+
+### Added
+- 사이드바에서 **F2**로 선택된 폴더 이름 인라인 편집
+- 로컬 전용 Tauri 빌드 `npm run tauri:build:local` (`tauri.local.conf.json` — 업데이터 아티팩트·서명 없이 빌드)
+
+### Changed
+- 세션·이미지 저장: 대용량 이미지·`thought_signature` 등을 AppData 파일 저장소 위주로 분리해 `settings.json` 부담 완화, 개발/배포 빌드 간 이미지 데이터 공유
+- 채팅 세션: 기획 문서 첨부 UI를 입력창 하단 → **우측 AI 설정 패널 하단**으로 이동해 채팅 영역 확보
+- 분석 패널: 분석 강화·이미지 생성 버튼을 아이콘만 → **텍스트 라벨 병기**
+- 이미지 생성 화면: 뒤로가기를 **「이미지 분석」** 텍스트 버튼으로 표시
+- 채팅 세션에서 **스타일 프리셋** UI 제거 (생성 프롬프트에서도 스타일 프리셋 prefix 미적용)
+
+### Removed
+- 자동 저장이 주력인 **수동 세션 저장** 버튼 및 `SaveSessionModal` / 관련 수동 저장 훅 정리
+
+### Fixed (CI / Storage)
+- GitHub Actions 릴리즈: `TAURI_SIGNING_PRIVATE_KEY` 다중 줄 시크릿을 heredoc 등으로 안전하게 주입하도록 워크플로 보강
+- 레거시 IndexedDB·폴더 맵 정합성 보강(백필·정리)으로 세션·이미지 표시 안정화
+
 ## [0.4.9] - 2026-04-25
 
 ### Added

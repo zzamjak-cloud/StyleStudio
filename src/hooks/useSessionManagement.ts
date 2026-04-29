@@ -8,6 +8,8 @@ import {
   saveGeminiApiKey,
   saveOpenAIApiKey,
   loadSessions,
+  backfillStoredSessionsIfNeeded,
+  pruneSessionFolderMapToSessions,
   exportSessionToFile,
   importSessionFromFile,
 } from '../lib/storage';
@@ -73,6 +75,15 @@ export function useSessionManagement(): UseSessionManagementReturn {
 
       const savedSessions = await loadSessions();
       setSessions(savedSessions);
+      await pruneSessionFolderMapToSessions(savedSessions.map((s) => s.id));
+
+      // 1회성 백필: 과거 레거시 세션(base64/대용량 문자열)을 즉시 마이그레이션
+      const backfilled = await backfillStoredSessionsIfNeeded();
+      if (backfilled) {
+        const reloadedSessions = await loadSessions();
+        setSessions(reloadedSessions);
+        await pruneSessionFolderMapToSessions(reloadedSessions.map((s) => s.id));
+      }
     } catch (error) {
       logger.error('초기화 오류:', error);
       setShowSettings(true);

@@ -1,9 +1,30 @@
 import { openDB, IDBPDatabase } from 'idb';
+import {
+  BaseDirectory,
+  exists,
+  mkdir,
+  readDir,
+  readTextFile,
+  remove,
+  writeTextFile,
+} from '@tauri-apps/plugin-fs';
 import { logger } from './logger';
 
 const DB_NAME = 'StyleStudioImages';
 const STORE_NAME = 'images';
 const DB_VERSION = 1;
+const IMAGE_FS_DIR = 'images';
+const IMAGE_FS_EXT = '.txt';
+
+function getImageFileName(key: string): string {
+  return `${key}${IMAGE_FS_EXT}`;
+}
+
+async function ensureImageDir(): Promise<void> {
+  if (!(await exists(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData }))) {
+    await mkdir(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData, recursive: true });
+  }
+}
 
 /**
  * IndexedDB 데이터베이스 초기화 및 반환
@@ -38,10 +59,8 @@ export async function saveImage(
   dataUrl: string
 ): Promise<string> {
   try {
-    const db = await getImageDB();
     const key = `${sessionId}-${imageIndex}`;
-
-    await db.put(STORE_NAME, dataUrl, key);
+    await saveImageWithKey(key, dataUrl);
     logger.debug(`✅ 이미지 저장 완료: ${key} (${Math.round(dataUrl.length / 1024)} KB)`);
 
     return key;
@@ -56,11 +75,21 @@ export async function saveImage(
  */
 export async function saveImageWithKey(key: string, dataUrl: string): Promise<void> {
   try {
-    const db = await getImageDB();
-    await db.put(STORE_NAME, dataUrl, key);
+    await ensureImageDir();
+    await writeTextFile(`${IMAGE_FS_DIR}/${getImageFileName(key)}`, dataUrl, {
+      baseDir: BaseDirectory.AppData,
+    });
   } catch (error) {
-    logger.error('❌ 이미지 키 저장 실패:', error);
-    throw error;
+    // 권한/경로 이슈 시 레거시 IndexedDB로 폴백
+    try {
+      const db = await getImageDB();
+      await db.put(STORE_NAME, dataUrl, key);
+      logger.warn(`⚠️ 파일 저장 실패로 IndexedDB 폴백 저장: ${key}`);
+      return;
+    } catch (fallbackError) {
+      logger.error('❌ 이미지 키 저장 실패:', error, fallbackError);
+      throw fallbackError;
+    }
   }
 }
 
@@ -71,17 +100,36 @@ export async function saveImageWithKey(key: string, dataUrl: string): Promise<vo
  */
 export async function loadImage(key: string): Promise<string | null> {
   try {
-    const db = await getImageDB();
-    const dataUrl = await db.get(STORE_NAME, key);
-
-    if (dataUrl) {
+    const fsPath = `${IMAGE_FS_DIR}/${getImageFileName(key)}`;
+    if (await exists(fsPath, { baseDir: BaseDirectory.AppData })) {
+      const dataUrl = await readTextFile(fsPath, { baseDir: BaseDirectory.AppData });
       logger.debug(`✅ 이미지 로드 완료: ${key}`);
-      return dataUrl as string;
-    } else {
-      logger.warn(`⚠️ 이미지를 찾을 수 없음: ${key}`);
-      return null;
+      return dataUrl;
     }
+
+    // 하위 호환: 예전 IndexedDB에만 있는 데이터를 읽고 파일 저장소로 승격
+    const db = await getImageDB();
+    const legacyDataUrl = await db.get(STORE_NAME, key);
+    if (legacyDataUrl && typeof legacyDataUrl === 'string') {
+      await saveImageWithKey(key, legacyDataUrl);
+      logger.debug(`♻️ IndexedDB → 파일 저장소 승격 완료: ${key}`);
+      return legacyDataUrl;
+    }
+
+    logger.warn(`⚠️ 이미지를 찾을 수 없음: ${key}`);
+    return null;
   } catch (error) {
+    // 파일 저장소 접근 실패 시 레거시 IndexedDB 조회 폴백
+    try {
+      const db = await getImageDB();
+      const legacyDataUrl = await db.get(STORE_NAME, key);
+      if (legacyDataUrl && typeof legacyDataUrl === 'string') {
+        logger.warn(`⚠️ 파일 저장소 로드 실패로 IndexedDB 폴백 로드: ${key}`);
+        return legacyDataUrl;
+      }
+    } catch {
+      // no-op
+    }
     logger.error('❌ 이미지 로드 실패:', error);
     return null;
   }
@@ -112,23 +160,17 @@ export async function loadImages(keys: string[]): Promise<string[]> {
  */
 export async function deleteSessionImages(sessionId: string): Promise<void> {
   try {
-    const db = await getImageDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-
-    // sessionId로 시작하는 모든 키 찾기
-    const allKeys = await store.getAllKeys();
-    const sessionKeys = allKeys.filter((key: IDBValidKey) =>
-      typeof key === 'string' && key.startsWith(`${sessionId}-`)
-    );
-
-    // 모든 세션 이미지 삭제
+    if (!(await exists(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData }))) return;
+    const entries = await readDir(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData });
+    const targetNames = entries
+      .filter((entry) => entry.isFile && entry.name?.startsWith(`${sessionId}-`))
+      .map((entry) => entry.name!);
     await Promise.all(
-      sessionKeys.map((key: IDBValidKey) => store.delete(key))
+      targetNames.map((name) =>
+        remove(`${IMAGE_FS_DIR}/${name}`, { baseDir: BaseDirectory.AppData })
+      )
     );
-
-    await tx.done;
-    logger.debug(`✅ 세션 이미지 삭제 완료: ${sessionId} (${sessionKeys.length}개)`);
+    logger.debug(`✅ 세션 이미지 삭제 완료: ${sessionId} (${targetNames.length}개)`);
   } catch (error) {
     logger.error('❌ 세션 이미지 삭제 실패:', error);
     throw error;
@@ -141,8 +183,10 @@ export async function deleteSessionImages(sessionId: string): Promise<void> {
  */
 export async function deleteImage(key: string): Promise<void> {
   try {
-    const db = await getImageDB();
-    await db.delete(STORE_NAME, key);
+    const fsPath = `${IMAGE_FS_DIR}/${getImageFileName(key)}`;
+    if (await exists(fsPath, { baseDir: BaseDirectory.AppData })) {
+      await remove(fsPath, { baseDir: BaseDirectory.AppData });
+    }
     logger.debug(`✅ 이미지 삭제 완료: ${key}`);
   } catch (error) {
     logger.error('❌ 이미지 삭제 실패:', error);
@@ -155,15 +199,21 @@ export async function deleteImage(key: string): Promise<void> {
  */
 export async function getStorageSize(): Promise<number> {
   try {
-    const db = await getImageDB();
-    const allValues = await db.getAll(STORE_NAME);
-
-    const totalSize = allValues.reduce((sum: number, dataUrl: any) => {
-      return sum + (typeof dataUrl === 'string' ? dataUrl.length : 0);
-    }, 0);
+    if (!(await exists(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData }))) {
+      return 0;
+    }
+    const entries = await readDir(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData });
+    let totalSize = 0;
+    for (const entry of entries) {
+      if (!entry.isFile || !entry.name) continue;
+      const content = await readTextFile(`${IMAGE_FS_DIR}/${entry.name}`, {
+        baseDir: BaseDirectory.AppData,
+      });
+      totalSize += content.length;
+    }
 
     const sizeInMB = totalSize / (1024 * 1024);
-    logger.debug(`💾 IndexedDB 사용량: ${sizeInMB.toFixed(2)} MB`);
+    logger.debug(`💾 이미지 파일 저장소 사용량: ${sizeInMB.toFixed(2)} MB`);
 
     return sizeInMB;
   } catch (error) {
@@ -177,9 +227,11 @@ export async function getStorageSize(): Promise<number> {
  */
 export async function clearAllImages(): Promise<void> {
   try {
-    const db = await getImageDB();
-    await db.clear(STORE_NAME);
-    logger.debug('✅ 모든 이미지 삭제 완료');
+    if (await exists(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData })) {
+      await remove(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData, recursive: true });
+    }
+    await ensureImageDir();
+    logger.debug('✅ 모든 이미지 삭제 완료 (파일 저장소)');
   } catch (error) {
     logger.error('❌ 이미지 전체 삭제 실패:', error);
     throw error;

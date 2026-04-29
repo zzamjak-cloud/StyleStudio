@@ -46,6 +46,18 @@
         },
         {
           "path": "$DOWNLOAD/*"
+        },
+        {
+          "path": "$APPDATA/**"
+        },
+        {
+          "path": "$APPDATA/*"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$APPLOCALDATA/*"
         }
       ]
     },

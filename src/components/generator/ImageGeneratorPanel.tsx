@@ -18,6 +18,7 @@ import { useGeminiImageGenerator } from '../../hooks/api/useGeminiImageGenerator
 import { useOpenAIImageGenerator } from '../../hooks/api/useOpenAIImageGenerator';
 import { useGeminiTranslator } from '../../hooks/api/useGeminiTranslator';
 import { logger } from '../../lib/logger';
+import { loadImage } from '../../lib/imageStorage';
 import { GeneratorSettings } from './GeneratorSettings';
 import { GeneratorPreview } from './GeneratorPreview';
 import { GeneratorHistory } from './GeneratorHistory';
@@ -451,6 +452,13 @@ export function ImageGeneratorPanel({
     imageQuality,
   } = state;
 
+  const resolveStoredImage = useCallback(async (image: string): Promise<string> => {
+    if (!image) return image;
+    if (image.startsWith('data:')) return image;
+    const restored = await loadImage(image);
+    return restored ?? image;
+  }, []);
+
   // 기존 코드 호환성을 위한 개별 setter 함수들 (useCallback으로 안정화)
   const setAdditionalPrompt = useCallback((value: string) => updateState({ additionalPrompt: value }), [updateState]);
   const setIsTranslating = useCallback((value: boolean) => updateState({ isTranslating: value }), [updateState]);
@@ -616,10 +624,15 @@ export function ImageGeneratorPanel({
         if (illustrationData.backgroundImages && illustrationData.backgroundImages.length > 0) {
           allImages.push(...illustrationData.backgroundImages);
         }
-        finalReferenceImages = allImages.length > 0 ? allImages : undefined;
+        finalReferenceImages =
+          allImages.length > 0
+            ? await Promise.all(allImages.map((img) => resolveStoredImage(img)))
+            : undefined;
         logger.debug(`📸 ILLUSTRATION 참조 이미지 총: ${allImages.length}장`);
       } else if (sessionType === 'CHARACTER' || useReferenceImages) {
-        finalReferenceImages = referenceImages;
+        finalReferenceImages = await Promise.all(
+          referenceImages.map((img) => resolveStoredImage(img))
+        );
       }
 
       const callbacks = {
@@ -903,9 +916,11 @@ export function ImageGeneratorPanel({
   }, [generatedImage, sessionType, sessionName]);
 
   // 히스토리에서 설정 복원 (단일 setState + useCallback으로 자식 memo 유지)
-  const handleRestoreFromHistory = useCallback((e: React.MouseEvent, entry: GenerationHistoryEntry) => {
+  const handleRestoreFromHistory = useCallback(async (e: React.MouseEvent, entry: GenerationHistoryEntry) => {
     e.stopPropagation();
     logger.debug('🔄 히스토리에서 설정 복원:', entry.id);
+
+    const restoredHistoryImage = await resolveStoredImage(entry.imageBase64);
 
     setState(prev => ({
       ...prev,
@@ -921,11 +936,11 @@ export function ImageGeneratorPanel({
       cameraAngle: entry.settings.cameraAngle ?? 'none',
       cameraLens: entry.settings.cameraLens ?? 'none',
       additionalPrompt: entry.additionalPrompt ?? prev.additionalPrompt,
-      generatedImage: entry.imageBase64,
+      generatedImage: restoredHistoryImage,
     }));
 
     alert('설정이 복원되었습니다. 프롬프트를 수정한 후 "이미지 생성"을 클릭하세요.');
-  }, []);
+  }, [resolveStoredImage]);
 
   // 히스토리 삭제 요청
 
@@ -949,11 +964,13 @@ export function ImageGeneratorPanel({
           <div className="flex items-center gap-3">
             {onBack && (
               <button
+                type="button"
                 onClick={onBack}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-700"
                 title="분석 화면으로 돌아가기"
               >
-                <ArrowLeft size={20} className="text-gray-600" />
+                <ArrowLeft size={18} className="text-gray-600 flex-shrink-0" />
+                <span className="text-sm font-medium">이미지 분석</span>
               </button>
             )}
             <div className="p-2 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg">

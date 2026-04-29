@@ -4,6 +4,8 @@ import { ChatMessage, ChatGenerationSettings } from '../types/chat';
 import { getPixelArtGridInfo } from '../types/pixelart';
 import { ReferenceDocument } from '../types/referenceDocument';
 import { logger } from '../lib/logger';
+import { loadImage } from '../lib/imageStorage';
+import { CHAT_SIGNATURE_KEY_MARKER } from '../lib/storage';
 import { isOpenAIModel } from './api/imageModels';
 import { useOpenAIImageGenerator } from './api/useOpenAIImageGenerator';
 
@@ -11,12 +13,6 @@ import { useOpenAIImageGenerator } from './api/useOpenAIImageGenerator';
 function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): string {
   if (!settings) return '';
   const parts: string[] = [];
-
-  const stylePreset = settings.stylePreset;
-  const style = stylePreset === 'custom' ? settings.customStyle?.trim() : stylePreset;
-  if (style) {
-    parts.push(`[스타일: ${style}]`);
-  }
 
   if (settings.pixelArtGrid && settings.pixelArtGrid !== '1x1') {
     const info = getPixelArtGridInfo(settings.pixelArtGrid);
@@ -57,87 +53,100 @@ export function useChatImageGeneration(
   const { generateImage: generateOpenAIImage } = useOpenAIImageGenerator();
   const chatData = session.chatData;
 
-  // multi-turn contents 배열 구성
-  const buildContents = useCallback((additionalUserText?: string, additionalUserImages?: string[]) => {
-    const contents: Array<{ role: string; parts: Array<Record<string, unknown>> }> = [];
+  // multi-turn contents 배열 구성 (히스토리 이미지·signature가 IndexedDB 키일 수 있음 → API 직전에 복원)
+  const buildContents = useCallback(
+    async (additionalUserText?: string, additionalUserImages?: string[]) => {
+      const contents: Array<{ role: string; parts: Array<Record<string, unknown>> }> = [];
 
-    // 요약이 있으면 첫 번째 컨텍스트로 추가
-    if (chatData?.summary) {
-      contents.push({
-        role: 'user',
-        parts: [{ text: `[이전 대화 요약]\n${chatData.summary}\n\n위 내용은 이전 대화의 요약입니다. 이 맥락을 기반으로 대화를 이어가주세요.` }],
-      });
-      contents.push({
-        role: 'model',
-        parts: [{ text: '네, 이전 대화 내용을 이해했습니다. 이어서 도와드리겠습니다.' }],
-      });
-    }
-
-    // 요약 이후의 메시지들만 포함
-    const startIndex = (chatData?.summarizedUpTo ?? -1) + 1;
-    const messages = chatData?.messages?.slice(startIndex) ?? [];
-
-    for (const msg of messages) {
-      if (msg.role === 'summary') continue;
-      const parts: Array<Record<string, unknown>> = [];
-      if (msg.content) {
-        parts.push({ text: msg.content });
+      // 요약이 있으면 첫 번째 컨텍스트로 추가
+      if (chatData?.summary) {
+        contents.push({
+          role: 'user',
+          parts: [{ text: `[이전 대화 요약]\n${chatData.summary}\n\n위 내용은 이전 대화의 요약입니다. 이 맥락을 기반으로 대화를 이어가주세요.` }],
+        });
+        contents.push({
+          role: 'model',
+          parts: [{ text: '네, 이전 대화 내용을 이해했습니다. 이어서 도와드리겠습니다.' }],
+        });
       }
-      if (msg.images && msg.images.length > 0) {
-        if (msg.isGeneratedImage && msg.imageSignatures) {
-          // AI 생성 이미지: thought_signature와 함께 전송
-          for (let i = 0; i < msg.images.length; i++) {
-            const img = msg.images[i];
-            const signature = msg.imageSignatures[i];
-            const base64Data = img.includes(',') ? img.split(',')[1] : img;
-            // AI 생성 이미지는 JPEG이므로 mime_type을 올바르게 설정
-            const part: Record<string, unknown> = {
-              inline_data: { mime_type: 'image/jpeg', data: base64Data },
-            };
-            if (signature) {
-              part.thought_signature = signature;
+
+      // 요약 이후의 메시지들만 포함
+      const startIndex = (chatData?.summarizedUpTo ?? -1) + 1;
+      const messages = chatData?.messages?.slice(startIndex) ?? [];
+
+      for (const msg of messages) {
+        if (msg.role === 'summary') continue;
+        const parts: Array<Record<string, unknown>> = [];
+        if (msg.content) {
+          parts.push({ text: msg.content });
+        }
+        if (msg.images && msg.images.length > 0) {
+          const resolvedImages = await Promise.all(
+            msg.images.map(async (img) => {
+              if (img.startsWith('data:')) return img;
+              return (await loadImage(img)) ?? img;
+            })
+          );
+
+          if (msg.isGeneratedImage && msg.imageSignatures) {
+            const resolvedSigs = await Promise.all(
+              msg.imageSignatures.map(async (sig) => {
+                if (!sig) return sig;
+                if (sig.includes(CHAT_SIGNATURE_KEY_MARKER)) {
+                  return (await loadImage(sig)) ?? sig;
+                }
+                return sig;
+              })
+            );
+            for (let i = 0; i < resolvedImages.length; i++) {
+              const img = resolvedImages[i];
+              const signature = resolvedSigs[i];
+              const base64Data = img.includes(',') ? img.split(',')[1] : img;
+              const part: Record<string, unknown> = {
+                inline_data: { mime_type: 'image/jpeg', data: base64Data },
+              };
+              if (signature) {
+                part.thought_signature = signature;
+              }
+              parts.push(part);
             }
-            parts.push(part);
+          } else if (msg.isGeneratedImage) {
+            parts.push({ text: `[이전에 생성한 이미지 ${resolvedImages.length}개]` });
+          } else {
+            for (const img of resolvedImages) {
+              const base64Data = img.includes(',') ? img.split(',')[1] : img;
+              const mimeMatch = img.match(/data:([^;]+);base64/);
+              const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+              parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
+            }
           }
-        } else if (msg.isGeneratedImage) {
-          // thought_signature 없는 AI 생성 이미지 (레거시) — 텍스트 설명으로 대체
-          parts.push({ text: `[이전에 생성한 이미지 ${msg.images.length}개]` });
-        } else {
-          // 사용자가 첨부한 이미지는 원본 MIME 타입 유지 (보통 PNG)
-          for (const img of msg.images) {
+        }
+        if (parts.length > 0) {
+          contents.push({ role: msg.role === 'user' ? 'user' : 'model', parts });
+        }
+      }
+
+      // 현재 사용자 메시지 추가
+      if (additionalUserText || (additionalUserImages && additionalUserImages.length > 0)) {
+        const userParts: Array<Record<string, unknown>> = [];
+        if (additionalUserText) {
+          userParts.push({ text: additionalUserText });
+        }
+        if (additionalUserImages) {
+          for (const img of additionalUserImages) {
             const base64Data = img.includes(',') ? img.split(',')[1] : img;
-            // 원본 이미지의 MIME 타입 추출 시도
             const mimeMatch = img.match(/data:([^;]+);base64/);
             const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-            parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
+            userParts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
           }
         }
+        contents.push({ role: 'user', parts: userParts });
       }
-      if (parts.length > 0) {
-        contents.push({ role: msg.role === 'user' ? 'user' : 'model', parts });
-      }
-    }
 
-    // 현재 사용자 메시지 추가
-    if (additionalUserText || (additionalUserImages && additionalUserImages.length > 0)) {
-      const userParts: Array<Record<string, unknown>> = [];
-      if (additionalUserText) {
-        userParts.push({ text: additionalUserText });
-      }
-      if (additionalUserImages) {
-        for (const img of additionalUserImages) {
-          const base64Data = img.includes(',') ? img.split(',')[1] : img;
-          // 사용자가 첨부한 이미지의 MIME 타입 추출 (PNG가 기본값)
-          const mimeMatch = img.match(/data:([^;]+);base64/);
-          const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-          userParts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
-        }
-      }
-      contents.push({ role: 'user', parts: userParts });
-    }
-
-    return contents;
-  }, [chatData]);
+      return contents;
+    },
+    [chatData]
+  );
 
   // 채팅 기반 이미지/텍스트 생성
   const generateFromChat = useCallback(async (
@@ -192,7 +201,7 @@ export function useChatImageGeneration(
 
     // 사용자 이미지 + 문서 추출 이미지 합산하여 Gemini에 참조로 전달
     const allImages = [...(userImages ?? []), ...documentImages];
-    const contents = buildContents(effectiveUserMessage, allImages.length > 0 ? allImages : undefined);
+    const contents = await buildContents(effectiveUserMessage, allImages.length > 0 ? allImages : undefined);
 
     if (useOpenAI) {
       const openAIResult = await new Promise<GenerationResult>((resolve, reject) => {
@@ -236,8 +245,6 @@ export function useChatImageGeneration(
       aspectRatio,
       imageSize,
       pixelArtGrid: settings?.pixelArtGrid,
-      stylePreset: settings?.stylePreset,
-      customStyle: settings?.customStyle,
       prefixApplied: !!prefix,
     });
 

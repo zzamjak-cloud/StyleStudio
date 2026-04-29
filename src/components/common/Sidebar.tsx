@@ -544,6 +544,7 @@ export function Sidebar({
 
   // 키보드 단축키 핸들러
   // - Ctrl+Shift+N / Cmd+Shift+N: 폴더 생성
+  // - F2: 선택된 폴더 이름 편집
   // - Enter: 선택된 세션/폴더 이름 변경
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -554,6 +555,28 @@ export function Sidebar({
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'N') {
         e.preventDefault();
         handleCreateFolderWithDefaultName();
+        return;
+      }
+
+      // F2: 폴더가 선택된 경우에만 폴더명 인라인 편집
+      if (e.key === 'F2' && !disabled) {
+        const activeElement = document.activeElement;
+        if (
+          activeElement &&
+          (activeElement.tagName === 'INPUT' ||
+            activeElement.tagName === 'TEXTAREA' ||
+            (activeElement as HTMLElement).isContentEditable)
+        ) {
+          return;
+        }
+        e.preventDefault();
+        if (selectedFolderId) {
+          const folder = folders.find((f) => f.id === selectedFolderId);
+          if (folder) {
+            setInlineEditFolderId(selectedFolderId);
+            setInlineEditValue(folder.name);
+          }
+        }
         return;
       }
 

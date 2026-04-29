@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Sparkles, Save, Plus, Trash2, Wand2, HelpCircle, X } from 'lucide-react';
+import { Sparkles, Plus, Trash2, Wand2, HelpCircle, X } from 'lucide-react';
 import { ImageAnalysisResult } from '../../types/analysis';
 import { fileToBase64 } from '../../utils/fileUtils';
 import { useImagePaste } from '../../hooks/useImagePaste';
@@ -19,7 +19,6 @@ interface AnalysisPanelProps {
   isAnalyzing: boolean;
   analysisResult: ImageAnalysisResult | null;
   onAnalyze: () => void;
-  onSaveSession?: () => void;
   onAddImage?: (imageData: string) => void;
   onRemoveImage?: (index: number) => void;
   onGenerateImage?: () => void;
@@ -37,7 +36,6 @@ export function AnalysisPanel({
   isAnalyzing,
   analysisResult,
   onAnalyze,
-  onSaveSession,
   onAddImage,
   onRemoveImage,
   onGenerateImage,
@@ -197,31 +195,24 @@ export function AnalysisPanel({
               {/* 분석 강화 버튼 */}
               <button
                 onClick={onAnalyze}
-                className="flex-1 flex items-center justify-center p-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg"
+                className="flex-1 flex items-center justify-center gap-2 px-2 py-2 min-h-[40px] bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg"
                 title={currentSession ? '분석 강화' : '다시 분석'}
               >
-                <Sparkles size={18} />
+                <Sparkles size={16} className="flex-shrink-0" />
+                <span className="text-xs font-semibold leading-tight">
+                  {currentSession ? '분석 강화' : '다시 분석'}
+                </span>
               </button>
-
-              {/* 세션 저장 버튼 */}
-              {onSaveSession && (
-                <button
-                  onClick={onSaveSession}
-                  className="flex-1 flex items-center justify-center p-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg"
-                  title="세션 저장"
-                >
-                  <Save size={18} />
-                </button>
-              )}
 
               {/* 이미지 생성 버튼 */}
               {onGenerateImage && (
                 <button
                   onClick={onGenerateImage}
-                  className="flex-1 flex items-center justify-center p-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg"
+                  className="flex-1 flex items-center justify-center gap-2 px-2 py-2 min-h-[40px] bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all shadow-md hover:shadow-lg"
                   title="이미지 생성하기"
                 >
-                  <Wand2 size={18} />
+                  <Wand2 size={16} className="flex-shrink-0" />
+                  <span className="text-xs font-semibold leading-tight">이미지 생성</span>
                 </button>
               )}
             </div>

@@ -5,6 +5,7 @@ import { ReferenceDocument } from '../types/referenceDocument';
 import { isOpenAIModel } from './api/imageModels';
 import { updateSession } from '../utils/sessionHelpers';
 import { deleteImage } from '../lib/imageStorage';
+import { CHAT_SIGNATURE_KEY_MARKER } from '../lib/storage';
 import { logger } from '../lib/logger';
 
 // 요약 임계값: 총 토큰 수가 이 값을 초과하면 요약 필요
@@ -129,11 +130,16 @@ export function useChatSession(
     const targetMessage = currentMessages.find(m => m.id === messageId);
     if (!targetMessage) return;
 
-    // IndexedDB orphan 정리: 메시지에 첨부/생성된 이미지 키도 함께 제거
+    // IndexedDB orphan 정리: 메시지에 첨부/생성된 이미지 키 + thought_signature 블롭
+    const sessionId = sessionRef.current.id;
     if (targetMessage.images && targetMessage.images.length > 0) {
-      const sessionId = sessionRef.current.id;
       for (let i = 0; i < targetMessage.images.length; i++) {
         void deleteImage(`${sessionId}-chat-${messageId}-${i}`).catch(() => {});
+      }
+    }
+    if (targetMessage.imageSignatures && targetMessage.imageSignatures.length > 0) {
+      for (let i = 0; i < targetMessage.imageSignatures.length; i++) {
+        void deleteImage(`${sessionId}${CHAT_SIGNATURE_KEY_MARKER}${messageId}-${i}`).catch(() => {});
       }
     }
 

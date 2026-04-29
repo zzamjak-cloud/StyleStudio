@@ -58,6 +58,9 @@ interface UseFolderManagementReturn {
     backupFolders: Folder[],
     backupSessionFolderMap: Record<string, string | null>
   ) => Promise<void>;
+
+  /** 디스크 정리 후 메모리의 session_folder_map도 존재 세션만 남김 */
+  alignSessionFolderMapWithSessions: (sessionIds: string[]) => void;
 }
 
 /**
@@ -421,6 +424,16 @@ export function useFolderManagement(): UseFolderManagementReturn {
     }
   };
 
+  const alignSessionFolderMapWithSessions = useCallback((sessionIds: string[]) => {
+    const allowed = new Set(sessionIds);
+    setSessionFolderMap((prev) => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([id]) => allowed.has(id))
+      );
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+  }, []);
+
   return {
     folders,
     currentFolderId,
@@ -443,5 +456,6 @@ export function useFolderManagement(): UseFolderManagementReturn {
     getCurrentFolderIdForNewSession,
     importFolderData,
     restoreFolderData,
+    alignSessionFolderMapWithSessions,
   };
 }

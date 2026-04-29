@@ -12,7 +12,6 @@ import { useChatImageGeneration } from '../../hooks/useChatImageGeneration';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatAISettings } from './ChatAISettings';
-import { DocumentManager } from '../generator/DocumentManager';
 import { logger } from '../../lib/logger';
 import { getImageModelDefinition } from '../../hooks/api/imageModels';
 
@@ -295,23 +294,8 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
           )}
         </div>
 
-        {/* 하단 입력 영역: 문서 첨부 + 채팅 입력 */}
+        {/* 하단 입력 영역 — 기획 문서는 우측 AI 설정 패널 하단으로 이동 */}
         <div className="border-t border-gray-200 bg-white">
-          {/* 문서 추가 버튼 영역 */}
-          <div className="px-4 pt-2">
-            <DocumentManager
-              documents={attachedDocuments}
-                apiKey={geminiApiKey}
-              onAdd={(doc) => {
-                const exists = attachedDocuments.some((d) => d.filePath === doc.filePath);
-                if (exists) return;
-                setAttachedDocuments([...attachedDocuments, doc]);
-              }}
-              onDelete={(id) => setAttachedDocuments(attachedDocuments.filter((d) => d.id !== id))}
-              showPersistentBadge={true}
-              persistentBadgeText="대화 참조중"
-            />
-          </div>
           <ChatInput
             onSend={handleSend}
             isGenerating={isGenerating}
@@ -325,6 +309,16 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
         settings={settings}
         hasOpenAIApiKey={openaiApiKey.trim().length > 0}
         onSettingsChange={updateSettings}
+        attachedDocuments={attachedDocuments}
+        documentApiKey={geminiApiKey}
+        onDocumentAdd={(doc) => {
+          const exists = attachedDocuments.some((d) => d.filePath === doc.filePath);
+          if (exists) return;
+          setAttachedDocuments([...attachedDocuments, doc]);
+        }}
+        onDocumentDelete={(id) =>
+          setAttachedDocuments(attachedDocuments.filter((d) => d.id !== id))
+        }
       />
 
       {/* 이미지 미리보기 모달 */}

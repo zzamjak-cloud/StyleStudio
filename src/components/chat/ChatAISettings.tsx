@@ -1,21 +1,34 @@
 import { useState } from 'react';
-import { Settings, Palette, AlertTriangle, ChevronDown } from 'lucide-react';
+import { Settings, AlertTriangle } from 'lucide-react';
 import { ChatGenerationSettings } from '../../types/chat';
-import { ART_STYLE_PRESETS } from '../../types/concept';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { getAvailableImageModels } from '../../hooks/api/imageModels';
+import { ReferenceDocument } from '../../types/referenceDocument';
+import { DocumentManager } from '../generator/DocumentManager';
 
 interface ChatAISettingsProps {
   settings: ChatGenerationSettings;
   hasOpenAIApiKey: boolean;
   onSettingsChange: (settings: Partial<ChatGenerationSettings>) => void;
+  attachedDocuments: ReferenceDocument[];
+  documentApiKey: string;
+  onDocumentAdd: (doc: ReferenceDocument) => void;
+  onDocumentDelete: (documentId: string) => void;
 }
 
 type ImageSize = ChatGenerationSettings['imageSize'];
 type AspectRatio = ChatGenerationSettings['aspectRatio'];
 
 /** 채팅 세션 우측 AI 설정 패널 */
-export function ChatAISettings({ settings, hasOpenAIApiKey, onSettingsChange }: ChatAISettingsProps) {
+export function ChatAISettings({
+  settings,
+  hasOpenAIApiKey,
+  onSettingsChange,
+  attachedDocuments,
+  documentApiKey,
+  onDocumentAdd,
+  onDocumentDelete,
+}: ChatAISettingsProps) {
   // 비용 경고 팝업 상태 (2K 이상은 비용 증가 경고)
   const [costWarning, setCostWarning] = useState<{ size: '2K' | '4K' } | null>(null);
 
@@ -44,9 +57,9 @@ export function ChatAISettings({ settings, hasOpenAIApiKey, onSettingsChange }: 
   const supportedSizes = selectedModel.supports.imageSizes;
 
   return (
-    <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
+    <div className="w-80 border-l border-gray-200 bg-white flex flex-col min-h-0 h-full">
       {/* 헤더 */}
-      <div className="px-4 py-3 border-b border-gray-200">
+      <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-gray-600" />
           <h3 className="font-semibold text-gray-800">AI 설정</h3>
@@ -54,7 +67,7 @@ export function ChatAISettings({ settings, hasOpenAIApiKey, onSettingsChange }: 
       </div>
 
       {/* 설정 영역 */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-6">
         {/* 모델 선택 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -177,57 +190,22 @@ export function ChatAISettings({ settings, hasOpenAIApiKey, onSettingsChange }: 
             ))}
           </div>
         </div>
+      </div>
 
-        {/* 스타일 프리셋 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <div className="flex items-center gap-2">
-              <Palette className="w-4 h-4" />
-              <span>스타일 프리셋</span>
-            </div>
-          </label>
-          <div className="relative">
-            <select
-              value={settings.stylePreset ?? ''}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === '') {
-                  onSettingsChange({ stylePreset: undefined, customStyle: undefined });
-                } else if (value === 'custom') {
-                  onSettingsChange({ stylePreset: 'custom', customStyle: '' });
-                } else {
-                  onSettingsChange({ stylePreset: value, customStyle: undefined });
-                }
-              }}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent appearance-none pr-10"
-            >
-              <option value="">스타일 선택...</option>
-              {ART_STYLE_PRESETS.map((preset) => (
-                <option key={preset} value={preset}>
-                  {preset}
-                </option>
-              ))}
-              <option value="custom">직접 입력</option>
-            </select>
-            <ChevronDown
-              size={16}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-            />
-          </div>
-          {settings.stylePreset === 'custom' && (
-            <input
-              type="text"
-              value={settings.customStyle ?? ''}
-              onChange={(e) => onSettingsChange({ customStyle: e.target.value })}
-              placeholder="스타일을 직접 입력하세요..."
-              className="w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-          )}
-        </div>
+      {/* 기획 문서 (채팅 입력 영역 확보를 위해 사이드바 하단으로 배치) */}
+      <div className="flex-shrink-0 border-t border-gray-200 px-3 py-3 bg-gray-50 max-h-[42vh] min-h-0 overflow-y-auto">
+        <DocumentManager
+          documents={attachedDocuments}
+          apiKey={documentApiKey}
+          onAdd={onDocumentAdd}
+          onDelete={onDocumentDelete}
+          showPersistentBadge={true}
+          persistentBadgeText="대화 참조중"
+        />
       </div>
 
       {/* 하단 정보 */}
-      <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
+      <div className="flex-shrink-0 px-4 py-3 border-t border-gray-200 bg-gray-50">
         <p className="text-xs text-gray-500">
           설정은 다음 이미지 생성부터 적용됩니다
         </p>

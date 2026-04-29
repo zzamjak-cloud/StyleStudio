@@ -20,6 +20,26 @@ async function getStore(): Promise<Store> {
   return await Store.load('settings.json');
 }
 
+/** 현재 존재하는 세션 ID에 맞게 session_folder_map에서 고아 항목 제거 */
+export async function pruneSessionFolderMapToSessions(sessionIds: string[]): Promise<void> {
+  const store = await getStore();
+  const idSet = new Set(sessionIds);
+  const existingMap =
+    (await store.get<Record<string, string | null>>('session_folder_map')) ?? {};
+  const prunedMap = Object.fromEntries(
+    Object.entries(existingMap).filter(([id]) => idSet.has(id))
+  );
+  if (Object.keys(prunedMap).length === Object.keys(existingMap).length) return;
+  await store.set('session_folder_map', prunedMap);
+  await store.save();
+  logger.debug(
+    '🧹 session_folder_map 정리:',
+    Object.keys(existingMap).length,
+    '→',
+    Object.keys(prunedMap).length
+  );
+}
+
 // Gemini API 키 저장
 export async function saveGeminiApiKey(apiKey: string): Promise<void> {
   const store = await getStore();
@@ -101,6 +121,39 @@ function isImageKey(str: string): boolean {
   return !str.startsWith('data:');
 }
 
+/** 채팅 thought_signature 등 IndexedDB에 넣은 불투명 문자열 키 (images와 네임스페이스 분리) */
+export const CHAT_SIGNATURE_KEY_MARKER = '-chatsig-';
+
+function isChatSignatureStorageKey(value: string | undefined, expectedKey: string): boolean {
+  return !!value && value === expectedKey;
+}
+
+/**
+ * thought_signature 등 큰 불투명 문자열을 IndexedDB에 저장하고 키만 남긴다.
+ * (data: URL이 아니어도 크기가 크면 저장 대상)
+ */
+async function persistOpaqueBlobField(
+  rawValue: string | undefined,
+  storageKey: string
+): Promise<string | undefined> {
+  if (rawValue === undefined || rawValue === '') return rawValue;
+  if (rawValue === storageKey) return rawValue;
+  if (isChatSignatureStorageKey(rawValue, storageKey)) return rawValue;
+  await saveImageWithKey(storageKey, rawValue);
+  return storageKey;
+}
+
+async function restoreOpaqueBlobField(
+  rawValue: string | undefined
+): Promise<string | undefined> {
+  if (rawValue === undefined || rawValue === '') return rawValue;
+  if (rawValue.includes(CHAT_SIGNATURE_KEY_MARKER)) {
+    const restored = await loadImage(rawValue);
+    return restored ?? rawValue;
+  }
+  return rawValue;
+}
+
 /**
  * 단일 base64 → IndexedDB 키 변환 (이미 키이면 그대로 반환)
  * 키 네임스페이스를 명시적으로 받아 generationHistory/concept/chat 등에서 충돌 방지.
@@ -149,21 +202,36 @@ async function migrateSessionExtras(session: Session): Promise<Session> {
     );
   }
 
-  // 2) chatData.messages[].images[]
+  // 2) chatData.messages[].images[] + imageSignatures[] (thought_signature 대용량 문자열)
   let nextChatData = session.chatData;
   if (nextChatData && nextChatData.messages.length > 0) {
     const newMessages = await Promise.all(
       nextChatData.messages.map(async (msg) => {
-        if (!msg.images || msg.images.length === 0) return msg;
-        const newImages = await Promise.all(
-          msg.images.map(async (img, idx) => {
-            const key = `${sessionId}-chat-${msg.id}-${idx}`;
-            return (await persistImageField(img, key)) ?? img;
-          })
-        );
-        // 모두 동일하면 원본 유지
-        const changed = newImages.some((v, i) => v !== msg.images![i]);
-        return changed ? { ...msg, images: newImages } : msg;
+        let nextMsg = msg;
+
+        if (msg.images && msg.images.length > 0) {
+          const newImages = await Promise.all(
+            msg.images.map(async (img, idx) => {
+              const key = `${sessionId}-chat-${msg.id}-${idx}`;
+              return (await persistImageField(img, key)) ?? img;
+            })
+          );
+          const imagesChanged = newImages.some((v, i) => v !== msg.images![i]);
+          if (imagesChanged) nextMsg = { ...nextMsg, images: newImages };
+        }
+
+        if (msg.imageSignatures && msg.imageSignatures.length > 0) {
+          const newSigs = await Promise.all(
+            msg.imageSignatures.map(async (sig, idx) => {
+              const sigKey = `${sessionId}${CHAT_SIGNATURE_KEY_MARKER}${msg.id}-${idx}`;
+              return (await persistOpaqueBlobField(sig, sigKey)) ?? sig;
+            })
+          );
+          const sigsChanged = newSigs.some((v, i) => v !== msg.imageSignatures![i]);
+          if (sigsChanged) nextMsg = { ...nextMsg, imageSignatures: newSigs };
+        }
+
+        return nextMsg !== msg ? nextMsg : msg;
       })
     );
     const messagesChanged = newMessages.some((m, i) => m !== nextChatData!.messages[i]);
@@ -208,10 +276,59 @@ async function migrateSessionExtras(session: Session): Promise<Session> {
     }
   }
 
+  // 4) illustrationData.characters[].images + illustrationData.backgroundImages
+  let nextIllustrationData = session.illustrationData;
+  if (nextIllustrationData) {
+    let illChanged = false;
+
+    const nextCharacters = await Promise.all(
+      nextIllustrationData.characters.map(async (character) => {
+        if (!character.images || character.images.length === 0) return character;
+
+        const migratedImages = await Promise.all(
+          character.images.map(async (img, idx) => {
+            const key = `${sessionId}-illuchar-${character.id}-${idx}`;
+            return (await persistImageField(img, key)) ?? img;
+          })
+        );
+
+        const changed = migratedImages.some((v, i) => v !== character.images[i]);
+        if (!changed) return character;
+
+        illChanged = true;
+        return {
+          ...character,
+          images: migratedImages,
+        };
+      })
+    );
+
+    const bgImages = nextIllustrationData.backgroundImages || [];
+    const migratedBgImages = await Promise.all(
+      bgImages.map(async (img, idx) => {
+        const key = `${sessionId}-illubg-${idx}`;
+        return (await persistImageField(img, key)) ?? img;
+      })
+    );
+    const bgChanged = migratedBgImages.some((v, i) => v !== bgImages[i]);
+    if (bgChanged) {
+      illChanged = true;
+    }
+
+    if (illChanged) {
+      nextIllustrationData = {
+        ...nextIllustrationData,
+        characters: nextCharacters,
+        backgroundImages: migratedBgImages,
+      };
+    }
+  }
+
   if (
     nextGenerationHistory === session.generationHistory &&
     nextChatData === session.chatData &&
-    nextConceptData === session.conceptData
+    nextConceptData === session.conceptData &&
+    nextIllustrationData === session.illustrationData
   ) {
     return session;
   }
@@ -221,6 +338,7 @@ async function migrateSessionExtras(session: Session): Promise<Session> {
     generationHistory: nextGenerationHistory,
     chatData: nextChatData,
     conceptData: nextConceptData,
+    illustrationData: nextIllustrationData,
   };
 }
 
@@ -240,18 +358,30 @@ async function restoreSessionExtras(session: Session): Promise<Session> {
     );
   }
 
-  // chatData
+  // chatData (이미지 + thought_signature 블롭)
   let nextChatData = session.chatData;
   if (nextChatData && nextChatData.messages.length > 0) {
     const newMessages = await Promise.all(
       nextChatData.messages.map(async (msg) => {
-        if (!msg.images || msg.images.length === 0) return msg;
-        const newImages = await Promise.all(
-          msg.images.map((img) => restoreImageField(img))
-        );
-        const finalImages = newImages.map((v, i) => v ?? msg.images![i]);
-        const changed = finalImages.some((v, i) => v !== msg.images![i]);
-        return changed ? { ...msg, images: finalImages } : msg;
+        let nextMsg = msg;
+
+        if (msg.images && msg.images.length > 0) {
+          const newImages = await Promise.all(msg.images.map((img) => restoreImageField(img)));
+          const finalImages = newImages.map((v, i) => v ?? msg.images![i]);
+          const imgChanged = finalImages.some((v, i) => v !== msg.images![i]);
+          if (imgChanged) nextMsg = { ...nextMsg, images: finalImages };
+        }
+
+        if (msg.imageSignatures && msg.imageSignatures.length > 0) {
+          const newSigs = await Promise.all(
+            msg.imageSignatures.map((sig) => restoreOpaqueBlobField(sig))
+          );
+          const finalSigs = newSigs.map((v, i) => v ?? msg.imageSignatures![i]);
+          const sigChanged = finalSigs.some((v, i) => v !== msg.imageSignatures![i]);
+          if (sigChanged) nextMsg = { ...nextMsg, imageSignatures: finalSigs };
+        }
+
+        return nextMsg !== msg ? nextMsg : msg;
       })
     );
     if (newMessages.some((m, i) => m !== nextChatData!.messages[i])) {
@@ -292,10 +422,54 @@ async function restoreSessionExtras(session: Session): Promise<Session> {
     }
   }
 
+  // illustrationData (export 시에는 키를 base64로 복원)
+  let nextIllustrationData = session.illustrationData;
+  if (nextIllustrationData) {
+    let illChanged = false;
+
+    const nextCharacters = await Promise.all(
+      nextIllustrationData.characters.map(async (character) => {
+        if (!character.images || character.images.length === 0) return character;
+
+        const restoredImages = await Promise.all(
+          character.images.map((img) => restoreImageField(img))
+        );
+        const finalImages = restoredImages.map((v, i) => v ?? character.images[i]);
+        const changed = finalImages.some((v, i) => v !== character.images[i]);
+        if (!changed) return character;
+
+        illChanged = true;
+        return {
+          ...character,
+          images: finalImages,
+        };
+      })
+    );
+
+    const bgImages = nextIllustrationData.backgroundImages || [];
+    const restoredBgImages = await Promise.all(
+      bgImages.map((img) => restoreImageField(img))
+    );
+    const finalBgImages = restoredBgImages.map((v, i) => v ?? bgImages[i]);
+    const bgChanged = finalBgImages.some((v, i) => v !== bgImages[i]);
+    if (bgChanged) {
+      illChanged = true;
+    }
+
+    if (illChanged) {
+      nextIllustrationData = {
+        ...nextIllustrationData,
+        characters: nextCharacters,
+        backgroundImages: finalBgImages,
+      };
+    }
+  }
+
   if (
     nextGenerationHistory === session.generationHistory &&
     nextChatData === session.chatData &&
-    nextConceptData === session.conceptData
+    nextConceptData === session.conceptData &&
+    nextIllustrationData === session.illustrationData
   ) {
     return session;
   }
@@ -305,46 +479,93 @@ async function restoreSessionExtras(session: Session): Promise<Session> {
     generationHistory: nextGenerationHistory,
     chatData: nextChatData,
     conceptData: nextConceptData,
+    illustrationData: nextIllustrationData,
   };
+}
+
+/**
+ * 세션에 포함된 모든 이미지/블롭 키를 수집한다.
+ * (레거시 IndexedDB -> 파일 저장소 승격 대상으로 사용)
+ */
+function collectSessionStorageKeys(session: Session): string[] {
+  const keys = new Set<string>();
+  const pushIfKey = (value: string | undefined) => {
+    if (!value) return;
+    if (value.startsWith('data:')) return;
+    keys.add(value);
+  };
+
+  for (const ref of session.referenceImages || []) pushIfKey(ref);
+  for (const key of session.imageKeys || []) pushIfKey(key);
+
+  for (const entry of session.generationHistory || []) pushIfKey(entry.imageBase64);
+
+  for (const msg of session.chatData?.messages || []) {
+    for (const img of msg.images || []) pushIfKey(img);
+    for (const sig of msg.imageSignatures || []) pushIfKey(sig);
+  }
+
+  for (const concept of session.conceptData?.history || []) pushIfKey(concept.imageBase64);
+  pushIfKey(session.conceptData?.referenceImage);
+
+  for (const character of session.illustrationData?.characters || []) {
+    for (const img of character.images || []) pushIfKey(img);
+  }
+  for (const bg of session.illustrationData?.backgroundImages || []) pushIfKey(bg);
+
+  return Array.from(keys);
 }
 
 /**
  * 세션 저장 (Base64 이미지를 IndexedDB로 마이그레이션)
  */
-export async function saveSessions(sessions: Session[]): Promise<void> {
-  try {
-    // 각 세션의 이미지를 IndexedDB로 마이그레이션
-    const migratedSessions = await Promise.all(
-      sessions.map(async (session) => {
-        // 이미 imageKeys가 있거나, referenceImages가 모두 키 형식이면 마이그레이션 불필요
-        const hasImageKeys = session.imageKeys && session.imageKeys.length > 0;
-        const allAreKeys = session.referenceImages.every(isImageKey);
+async function migrateSessionsForStorage(sessions: Session[]): Promise<Session[]> {
+  return Promise.all(
+    sessions.map(async (session) => {
+      // 이미 imageKeys가 있거나, referenceImages가 모두 키 형식이면 마이그레이션 불필요
+      const hasImageKeys = session.imageKeys && session.imageKeys.length > 0;
+      const allAreKeys = session.referenceImages.every(isImageKey);
 
-        let baseSession: Session;
-        if (hasImageKeys || allAreKeys) {
-          baseSession = session;
-        } else {
-          // Base64 이미지를 IndexedDB로 저장
-          logger.debug(`  - 세션 "${session.name}": ${session.referenceImages.length}개 참조 이미지 마이그레이션 중...`);
-          const imageKeys = await Promise.all(
-            session.referenceImages.map((dataUrl, index) =>
-              saveImage(session.id, index, dataUrl)
-            )
-          );
+      let baseSession: Session;
+      if (hasImageKeys || allAreKeys) {
+        // imageKeys가 있는데 referenceImages가 비어 있으면,
+        // 이전 로드 실패로 빈 배열이 저장되는 것을 방지하기 위해 키로 복원한다.
+        if (hasImageKeys && session.referenceImages.length === 0) {
           baseSession = {
             ...session,
-            imageKeys,
-            referenceImages: imageKeys,
+            referenceImages: session.imageKeys ?? [],
           };
+        } else {
+          baseSession = session;
         }
+      } else {
+        // Base64 이미지를 IndexedDB로 저장
+        logger.debug(
+          `  - 세션 "${session.name}": ${session.referenceImages.length}개 참조 이미지 마이그레이션 중...`
+        );
+        const imageKeys = await Promise.all(
+          session.referenceImages.map((dataUrl, index) => saveImage(session.id, index, dataUrl))
+        );
+        baseSession = {
+          ...session,
+          imageKeys,
+          referenceImages: imageKeys,
+        };
+      }
 
-        // 부가 영역(generationHistory/chatData/conceptData)의 base64 이미지도
-        // IndexedDB로 옮겨 settings.json 본체 크기를 압축한다.
-        return migrateSessionExtras(baseSession);
-      })
-    );
+      // 부가 영역(generationHistory/chatData/conceptData/illustrationData)의 대용량 데이터도
+      // IndexedDB로 옮겨 settings.json 본체 크기를 압축한다.
+      return migrateSessionExtras(baseSession);
+    })
+  );
+}
 
-    // Store에 저장
+export async function saveSessions(sessions: Session[]): Promise<void> {
+  try {
+    const migratedSessions = await migrateSessionsForStorage(sessions);
+
+    await pruneSessionFolderMapToSessions(migratedSessions.map((s) => s.id));
+
     const store = await getStore();
     await store.set('sessions', migratedSessions);
     await store.save();
@@ -352,6 +573,34 @@ export async function saveSessions(sessions: Session[]): Promise<void> {
   } catch (error) {
     logger.error('❌ 세션 저장 실패:', error);
     throw error;
+  }
+}
+
+/**
+ * 기존 settings.json의 레거시 세션 데이터를 즉시 백필 마이그레이션한다.
+ * 앱 시작 시 1회 실행하여, 아직 저장되지 않은 과거 세션의 대용량 문자열을 정리한다.
+ */
+export async function backfillStoredSessionsIfNeeded(): Promise<boolean> {
+  try {
+    const store = await getStore();
+    const sessions = (await store.get<Session[]>('sessions')) ?? [];
+    if (sessions.length === 0) return false;
+
+    const migrated = await migrateSessionsForStorage(sessions);
+    const before = JSON.stringify(sessions);
+    const after = JSON.stringify(migrated);
+    const changed = before !== after;
+
+    if (!changed) return false;
+
+    await pruneSessionFolderMapToSessions(migrated.map((s) => s.id));
+    await store.set('sessions', migrated);
+    await store.save();
+    logger.info('🧹 레거시 세션 백필 마이그레이션 완료:', migrated.length, '개');
+    return true;
+  } catch (error) {
+    logger.error('❌ 레거시 세션 백필 마이그레이션 실패:', error);
+    return false;
   }
 }
 
@@ -366,6 +615,16 @@ export async function loadSessions(): Promise<Session[]> {
     if (!sessions || sessions.length === 0) {
       logger.debug('📦 세션 로드: 0개');
       return [];
+    }
+
+    // 레거시 블롭 승격: 현재 환경에서 접근 가능한 IndexedDB가 있다면
+    // 키를 읽는 과정에서 AppData 파일 저장소로 자동 승격시킨다.
+    // (dev/prod 교차 사용을 위해 공유 저장소에 가능한 한 미리 채워둠)
+    const promoteKeys = Array.from(
+      new Set(sessions.flatMap((session) => collectSessionStorageKeys(session)))
+    );
+    if (promoteKeys.length > 0) {
+      await Promise.all(promoteKeys.map((key) => loadImage(key)));
     }
 
     // 각 세션의 이미지를 IndexedDB에서 복원
@@ -386,7 +645,11 @@ export async function loadSessions(): Promise<Session[]> {
 
           return {
             ...session,
-            referenceImages: images, // 복원된 이미지 (빈 배열일 수 있음)
+            // 복원 실패 시에도 키 배열을 유지해 이후 저장 시 데이터가 소거되지 않게 보호
+            referenceImages:
+              images.length > 0
+                ? images
+                : (session.referenceImages.length > 0 ? session.referenceImages : session.imageKeys),
           };
         }
 
@@ -406,7 +669,8 @@ export async function loadSessions(): Promise<Session[]> {
 
           return {
             ...session,
-            referenceImages: images, // 복원된 이미지 (빈 배열일 수 있음)
+            // 복원 실패 시 키 유지 (빈 배열로 덮어써지는 데이터 손실 방지)
+            referenceImages: images.length > 0 ? images : session.referenceImages,
             imageKeys: session.referenceImages, // 키 정보 보존
           };
         }

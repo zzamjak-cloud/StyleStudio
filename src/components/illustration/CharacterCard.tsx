@@ -5,6 +5,7 @@ import { readFile } from '@tauri-apps/plugin-fs';
 import { IllustrationCharacter } from '../../types/illustration';
 import { ILLUSTRATION_LIMITS } from '../../types/illustration';
 import { logger } from '../../lib/logger';
+import { LazyImage } from '../common/LazyImage';
 
 // 드롭 영역 정보 타입
 interface DropZoneInfo {
@@ -223,7 +224,7 @@ export function CharacterCard({
             key={idx}
             className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 shadow-sm group"
           >
-            <img
+            <LazyImage
               src={img}
               alt={`${character.name} ${idx + 1}`}
               loading="lazy"

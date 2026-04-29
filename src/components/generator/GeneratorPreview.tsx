@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Image as ImageIcon, Download } from 'lucide-react';
+import { LazyImage } from '../common/LazyImage';
 
 interface GeneratorPreviewProps {
   isGenerating: boolean;
@@ -53,7 +54,7 @@ function GeneratorPreviewComponent({
               </button>
 
               {zoomLevel === 'fit' ? (
-                <img
+                <LazyImage
                   src={generatedImage}
                   alt="Generated"
                   className="rounded-lg"
@@ -67,7 +68,7 @@ function GeneratorPreviewComponent({
                 />
               ) : (
                 <div className="flex items-center justify-center">
-                  <img
+                  <LazyImage
                     src={generatedImage}
                     alt="Generated"
                     className="rounded-lg"

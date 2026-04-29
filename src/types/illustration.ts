@@ -25,7 +25,7 @@ export interface IllustrationCharacterAnalysis {
 export interface IllustrationCharacter {
   id: string;
   name: string;                      // 캐릭터 이름 (프롬프트 참조용)
-  images: string[];                  // Base64 이미지 (최대 5장)
+  images: string[];                  // Base64 이미지 또는 IndexedDB 키 (최대 5장)
   imageKeys?: string[];              // IndexedDB 키
   analysis?: IllustrationCharacterAnalysis; // 개별 분석 결과
   negativePrompt?: string;           // 피해야 할 요소
@@ -46,7 +46,7 @@ export interface BackgroundAnalysisResult {
 // 일러스트 세션 데이터
 export interface IllustrationSessionData {
   characters: IllustrationCharacter[];  // 최대 5명
-  backgroundImages: string[];            // 최대 5장, 선택사항
+  backgroundImages: string[];            // Base64 이미지 또는 IndexedDB 키, 최대 5장
   backgroundImageKeys?: string[];        // IndexedDB 키
   backgroundAnalysis?: BackgroundAnalysisResult;
   backgroundNegativePrompt?: string;     // 배경 피해야 할 요소

@@ -144,14 +144,29 @@ jobs:
         if: matrix.platform != 'windows-latest'
         run: |
           echo "${{ secrets.STYLESTUDIO_SIGNING_KEY_BASE64 }}" | base64 --decode > /tmp/signing_key.txt
-          echo "TAURI_SIGNING_PRIVATE_KEY=$(cat /tmp/signing_key.txt)" >> $GITHUB_ENV
+          {
+            echo "TAURI_SIGNING_PRIVATE_KEY<<TAURI_KEY_EOF"
+            cat /tmp/signing_key.txt
+            echo "TAURI_KEY_EOF"
+          } >> "$GITHUB_ENV"
 
       - name: Decode signing key (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
           $key = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.STYLESTUDIO_SIGNING_KEY_BASE64 }}"))
-          echo "TAURI_SIGNING_PRIVATE_KEY=$key" >> $env:GITHUB_ENV
+          Add-Content -Path $env:GITHUB_ENV -Value "TAURI_SIGNING_PRIVATE_KEY<<TAURI_KEY_EOF"
+          Add-Content -Path $env:GITHUB_ENV -Value $key
+          Add-Content -Path $env:GITHUB_ENV -Value "TAURI_KEY_EOF"
+
+      - name: Verify signing key is loaded
+        shell: bash
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is empty"
+            exit 1
+          fi
+          echo "TAURI signing key loaded (${#TAURI_SIGNING_PRIVATE_KEY} chars)"
 
       - name: Build and Release (macOS without Apple signing)
         if: matrix.platform == 'macos-latest'

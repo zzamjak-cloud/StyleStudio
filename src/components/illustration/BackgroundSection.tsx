@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { ILLUSTRATION_LIMITS } from '../../types/illustration';
 import { logger } from '../../lib/logger';
+import { LazyImage } from '../common/LazyImage';
 
 // 드롭 영역 정보 타입
 interface DropZoneInfo {
@@ -203,7 +204,7 @@ export function BackgroundSection({
                 key={idx}
                 className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 shadow-sm group"
               >
-                <img
+                <LazyImage
                   src={img}
                   alt={`배경 ${idx + 1}`}
                   loading="lazy"
