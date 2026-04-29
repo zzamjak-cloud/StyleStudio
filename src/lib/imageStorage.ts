@@ -20,6 +20,17 @@ function getImageFileName(key: string): string {
   return `${key}${IMAGE_FS_EXT}`;
 }
 
+function normalizeImageKey(rawKey: string): string {
+  let key = rawKey.trim();
+  if (key.startsWith(`${IMAGE_FS_DIR}/`)) {
+    key = key.slice(`${IMAGE_FS_DIR}/`.length);
+  }
+  if (key.endsWith(IMAGE_FS_EXT)) {
+    key = key.slice(0, -IMAGE_FS_EXT.length);
+  }
+  return key;
+}
+
 async function ensureImageDir(): Promise<void> {
   if (!(await exists(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData }))) {
     await mkdir(IMAGE_FS_DIR, { baseDir: BaseDirectory.AppData, recursive: true });
@@ -100,19 +111,31 @@ export async function saveImageWithKey(key: string, dataUrl: string): Promise<vo
  */
 export async function loadImage(key: string): Promise<string | null> {
   try {
-    const fsPath = `${IMAGE_FS_DIR}/${getImageFileName(key)}`;
-    if (await exists(fsPath, { baseDir: BaseDirectory.AppData })) {
-      const dataUrl = await readTextFile(fsPath, { baseDir: BaseDirectory.AppData });
-      logger.debug(`✅ 이미지 로드 완료: ${key}`);
-      return dataUrl;
+    const normalizedKey = normalizeImageKey(key);
+    const fsCandidates = Array.from(
+      new Set([
+        `${IMAGE_FS_DIR}/${getImageFileName(normalizedKey)}`,
+        key.startsWith(`${IMAGE_FS_DIR}/`) ? key : '',
+        key.endsWith(IMAGE_FS_EXT) && !key.startsWith(`${IMAGE_FS_DIR}/`) ? `${IMAGE_FS_DIR}/${key}` : '',
+      ].filter(Boolean))
+    );
+
+    for (const fsPath of fsCandidates) {
+      if (await exists(fsPath, { baseDir: BaseDirectory.AppData })) {
+        const dataUrl = await readTextFile(fsPath, { baseDir: BaseDirectory.AppData });
+        logger.debug(`✅ 이미지 로드 완료: ${key} -> ${fsPath}`);
+        return dataUrl;
+      }
     }
 
     // 하위 호환: 예전 IndexedDB에만 있는 데이터를 읽고 파일 저장소로 승격
     const db = await getImageDB();
-    const legacyDataUrl = await db.get(STORE_NAME, key);
+    const legacyDataUrl =
+      (await db.get(STORE_NAME, key)) ??
+      (normalizedKey !== key ? await db.get(STORE_NAME, normalizedKey) : undefined);
     if (legacyDataUrl && typeof legacyDataUrl === 'string') {
-      await saveImageWithKey(key, legacyDataUrl);
-      logger.debug(`♻️ IndexedDB → 파일 저장소 승격 완료: ${key}`);
+      await saveImageWithKey(normalizedKey, legacyDataUrl);
+      logger.debug(`♻️ IndexedDB → 파일 저장소 승격 완료: ${key} -> ${normalizedKey}`);
       return legacyDataUrl;
     }
 
@@ -183,7 +206,8 @@ export async function deleteSessionImages(sessionId: string): Promise<void> {
  */
 export async function deleteImage(key: string): Promise<void> {
   try {
-    const fsPath = `${IMAGE_FS_DIR}/${getImageFileName(key)}`;
+    const normalizedKey = normalizeImageKey(key);
+    const fsPath = `${IMAGE_FS_DIR}/${getImageFileName(normalizedKey)}`;
     if (await exists(fsPath, { baseDir: BaseDirectory.AppData })) {
       await remove(fsPath, { baseDir: BaseDirectory.AppData });
     }

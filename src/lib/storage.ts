@@ -793,11 +793,32 @@ export async function importFromFile(): Promise<ImportResult> {
 
     // 폴더 파일인지 확인 (exportVersion 필드로 판단)
     if (firstData.exportVersion && firstData.folder && firstData.subfolders) {
+      const sessions = Array.isArray(firstData.sessions) ? (firstData.sessions as Session[]) : [];
+      const legacyMap =
+        firstData.sessionFolderMap && typeof firstData.sessionFolderMap === 'object'
+          ? (firstData.sessionFolderMap as Record<string, string | null>)
+          : {};
+      const rootFolderId: string | null = firstData.folder?.id ?? null;
+
+      // 구버전 폴더 파일 마이그레이션:
+      // - sessionFolderMap이 없거나 비어 있으면 session.folderId(있다면)를 우선 사용
+      // - 그래도 없으면 폴더 루트로 귀속시켜 "세션이 루트로 튀는" 현상 방지
+      const normalizedSessionFolderMap: Record<string, string | null> = { ...legacyMap };
+      for (const session of sessions) {
+        if (normalizedSessionFolderMap[session.id] !== undefined) continue;
+        normalizedSessionFolderMap[session.id] =
+          typeof session.folderId === 'string' ? session.folderId : rootFolderId;
+      }
+
       logger.debug('📁 폴더 파일 감지됨');
       return {
         type: 'folder',
-        sessions: firstData.sessions || [],
-        folderData: firstData as FolderExportData,
+        sessions,
+        folderData: {
+          ...(firstData as FolderExportData),
+          sessions,
+          sessionFolderMap: normalizedSessionFolderMap,
+        },
       };
     }
 

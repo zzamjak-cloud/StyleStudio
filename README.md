@@ -1,6 +1,6 @@
 # StyleStudio - AI 이미지 생성 워크스테이션
 
-AI를 활용한 게임 아트 제작을 위한 데스크톱 애플리케이션 (v0.4.11)
+AI를 활용한 게임 아트 제작을 위한 데스크톱 애플리케이션 (v0.4.12)
 
 ## 주요 기능
 
@@ -94,9 +94,9 @@ npm run tauri:build
 2. `src-tauri/tauri.conf.json`의 `bundle.createUpdaterArtifacts`가 `true`인지 확인합니다 (기본 릴리스 빌드용).
 3. 커밋 후 버전 태그를 생성·푸시합니다. 예:
    ```bash
-   git tag v0.4.11
+   git tag v0.4.12
    git push origin main
-   git push origin v0.4.11
+   git push origin v0.4.12
    ```
 4. GitHub Actions가 macOS (Universal) / Windows 빌드 및 GitHub Releases 아티팩트를 생성합니다.
 5. 인앱 자동 업데이트는 설정된 업데이터·서명 키(`TAURI_SIGNING_PRIVATE_KEY` 등)와 롤링 릴리스 채널에 따라 제공됩니다.

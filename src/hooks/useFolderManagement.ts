@@ -267,8 +267,11 @@ export function useFolderManagement(): UseFolderManagementReturn {
 
   // 세션을 폴더로 이동
   const moveSessionToFolder = async (sessionId: string, folderId: string | null): Promise<void> => {
-    const updatedMap = { ...sessionFolderMap, [sessionId]: folderId };
-    setSessionFolderMap(updatedMap);
+    let updatedMap: Record<string, string | null> = sessionFolderMap;
+    setSessionFolderMap((prev) => {
+      updatedMap = { ...prev, [sessionId]: folderId };
+      return updatedMap;
+    });
 
     try {
       await saveFolderData({ folders, sessionFolderMap: updatedMap });
