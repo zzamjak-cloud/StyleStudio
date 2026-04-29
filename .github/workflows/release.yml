@@ -1,5 +1,7 @@
 # StyleStudio 릴리스 워크플로우
-# 버전 태그 푸시 시 macOS/Windows 빌드 및 GitHub Releases 업로드
+# - 태그 푸시 시: 그 태그가 가리키는 *커밋*의 이 파일이 실행됩니다 (main 최신과 무관할 수 있음).
+# - 서명/CI 수정만 반영해 재빌드하려면: main에 수정을 푸시한 뒤 (a) 새 패치 태그를 밀거나
+#   (b) Actions → 이 워크플로 → Run workflow에서 동일 태그로 수동 실행하세요.
 
 name: Release StyleStudio
 
@@ -7,9 +9,17 @@ on:
   push:
     tags:
       - 'v*'  # v1.0.0 형식의 태그에 반응
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '빌드할 릴리스 태그 (저장소에 이미 존재해야 함, 예 v0.4.11). 워크플로는 실행 시 브랜치(main)의 최신 YAML을 사용합니다.'
+        required: true
+        type: string
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # 태그 이벤트: ref 이름 / 수동 실행: 입력한 태그
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
   # 릴리스를 먼저 생성하여 병렬 빌드의 race condition 방지
@@ -24,13 +34,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ env.RELEASE_TAG }}
           sparse-checkout: CHANGELOG.md
           sparse-checkout-cone-mode: false
 
       - name: Extract changelog for current version
         id: changelog
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${RELEASE_TAG}"
           VERSION="${TAG#v}"
 
           # CHANGELOG.md에서 현재 버전 섹션 추출
@@ -64,7 +75,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHANGELOG_NOTES: ${{ steps.changelog.outputs.notes }}
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${RELEASE_TAG}"
           REPO="${{ github.repository }}"
 
           # 릴리즈 본문을 파일로 생성 (셸 해석 방지)
@@ -111,6 +122,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -196,7 +209,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: "-"
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          tagName: ${{ github.ref_name }}
+          tagName: ${{ env.RELEASE_TAG }}
           retryAttempts: 5
           args: ${{ matrix.args }}
 
@@ -208,7 +221,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.STYLESTUDIO_SIGNING_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          tagName: ${{ github.ref_name }}
+          tagName: ${{ env.RELEASE_TAG }}
           retryAttempts: 5
           args: ${{ matrix.args }}
 
@@ -225,7 +238,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # 버전 릴리스에서 latest.json 다운로드
-          gh release download "${{ github.ref_name }}" \
+          gh release download "${{ env.RELEASE_TAG }}" \
             --repo "${{ github.repository }}" \
             --pattern "latest.json" \
             --dir ./artifacts
@@ -246,6 +259,6 @@ jobs:
           gh release create latest \
             --repo "${{ github.repository }}" \
             --title "StyleStudio Latest (Auto-Update)" \
-            --notes "자동 업데이트용 릴리스입니다. 직접 다운로드하지 마세요. 최신 버전: ${{ github.ref_name }}" \
+            --notes "자동 업데이트용 릴리스입니다. 직접 다운로드하지 마세요. 최신 버전: ${{ env.RELEASE_TAG }}" \
             --prerelease \
             ./artifacts/latest.json

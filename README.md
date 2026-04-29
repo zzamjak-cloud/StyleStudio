@@ -101,4 +101,6 @@ npm run tauri:build
 4. GitHub Actions가 macOS (Universal) / Windows 빌드 및 GitHub Releases 아티팩트를 생성합니다.
 5. 인앱 자동 업데이트는 설정된 업데이터·서명 키(`TAURI_SIGNING_PRIVATE_KEY` 등)와 롤링 릴리스 채널에 따라 제공됩니다.
 
+**태그와 워크플로 버전:** 태그로 릴리스가 돌면 **그 태그가 가리키는 커밋에 포함된** `.github/workflows/release.yml`이 사용됩니다. `main`에서만 CI를 고치고 태그를 다시 밀지 않으면, 예전 태그로 재실행해도 **옛 YAML**(예: `TAURI_KEY_EOF`)이 그대로 실행됩니다. CI 수정 반영 후 같은 버전 번호로 다시 빌드하려면 (1) **패치 버전 올려 새 태그**를 푸시하거나 (2) GitHub **Actions → Release StyleStudio → Run workflow**에서 **브랜치는 `main`**, 입력 **태그는 기존 `v…`** 로 수동 실행하세요(실행 시점의 `main` 워크플로 정의가 적용됩니다).
+
 **참고:** 서명 키 없이 로컬에서 설치 파일만 검증할 때는 `npm run tauri:build:local`을 사용하세요.
