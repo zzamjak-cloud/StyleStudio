@@ -52,6 +52,24 @@ import {
 import { logger } from './lib/logger';
 import { exportFolderToFile, importFromFile } from './lib/storage';
 
+/**
+ * 신규 세션 생성 시 만들어 두는 빈 분석 플레이스홀더와 같은지 검사합니다.
+ * 이 객체가 analysisResult 상태로 들어가면 분석 패널 조건 분기만 만족하고
+ * 참조 이미지가 없어 AnalysisPanel이 null을 렌더 → 흰 화면이 됩니다.
+ * 플레이스홀더일 때는 UI 상태에서는 null로 두어 ImageUpload로 내려보냅니다.
+ */
+function isEmptyPlaceholderAnalysis(a: ImageAnalysisResult): boolean {
+  return (
+    a.style.art_style === '' &&
+    a.style.technique === '' &&
+    a.character.gender === '' &&
+    a.character.age_group === '' &&
+    a.composition.pose === '' &&
+    a.composition.angle === '' &&
+    a.negative_prompt === ''
+  );
+}
+
 function App() {
   const [showNewSession, setShowNewSession] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -362,14 +380,19 @@ function App() {
         return;
       }
       lastRestoredSessionIdRef.current = currentSession.id;
-      setUploadedImages(currentSession.referenceImages);
-      setAnalysisResult(currentSession.analysis);
+      const refs = currentSession.referenceImages ?? [];
+      setUploadedImages(refs);
+      const storedAnalysis = currentSession.analysis;
+      const omitPlaceholderForUi =
+        refs.length === 0 &&
+        (!storedAnalysis || isEmptyPlaceholderAnalysis(storedAnalysis));
+      setAnalysisResult(omitPlaceholderForUi ? null : storedAnalysis ?? null);
       logger.info('✅ 세션 데이터 복원:', currentSession.name);
-      logger.debug('   - 참조 이미지:', currentSession.referenceImages.length, '개');
-      logger.debug('   - 분석 결과:', currentSession.analysis ? '존재' : '없음');
+      logger.debug('   - 참조 이미지:', refs.length, '개');
+      logger.debug('   - 분석 결과:', storedAnalysis ? '존재' : '없음');
 
       // 참조 이미지 검증
-      if (currentSession.referenceImages.length === 0 && currentSession.imageCount > 0) {
+      if (refs.length === 0 && currentSession.imageCount > 0) {
         logger.warn('⚠️ 참조 이미지가 손상되었습니다. ImageKeys:', currentSession.imageKeys);
       }
     } else {
