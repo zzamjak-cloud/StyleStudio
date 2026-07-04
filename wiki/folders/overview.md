@@ -1,14 +1,14 @@
 # 폴더 계층 관리
 
-세션은 폴더 트리로 조직된다. 폴더의 **부모 관계는 `Folder.parentId`**(null=루트), **세션의 소속은 `session_folder_map`**(sessionId→folderId) 이 권위를 가진다(세션 객체의 `folderId` 필드는 레거시/보조). 폴더 상태·CRUD·이동은 `useFolderManagement` 훅이 담당하고, 폴더/세션 저장은 `saveFolderData`(폴더 배열 + 매핑을 함께 저장)로 이뤄진다. `Sidebar` 는 전체 폴더 트리를 평탄화한 `visibleItems`를 렌더하고, 폴더 아이콘 왼쪽 `>` 토글로 하위 폴더·세션을 펼친다. 커스텀 마우스 기반 **드래그앤드롭**(순서변경·폴더로 이동)과 인라인 rename 을 제공한다. 폴더 삭제는 백업을 떠 **Ctrl+Z 로 되돌릴 수 있다**(App.tsx). 폴더는 하위 폴더·세션을 통째로 파일로 내보내고 불러올 수 있다.
+세션은 폴더 트리로 조직된다. 폴더의 **부모 관계는 `Folder.parentId`**(null=루트), **세션의 소속은 `session_folder_map`**(sessionId→folderId) 이 권위를 가진다(세션 객체의 `folderId` 필드는 레거시/보조). 폴더 상태·CRUD·이동은 `useFolderManagement` 훅이 담당하고, 폴더/세션 저장은 `saveFolderData`(폴더 배열 + 매핑을 함께 저장)로 이뤄진다. `Sidebar` 는 전체 폴더 트리를 평탄화한 `visibleItems`를 렌더하고, 폴더 아이콘 왼쪽 `>` 토글로 하위 폴더·세션을 펼친다. 커스텀 마우스 기반 **드래그앤드롭**(순서변경·폴더로 이동)과 인라인 rename 을 제공한다. 폴더 삭제는 백업을 떠 **Ctrl+Z 로 되돌릴 수 있다**(App.tsx). 폴더 단위 export/import와 사이드바 전체 스냅샷 export/import를 지원한다.
 
 ## 관련 파일
 
-- `src/hooks/useFolderManagement.ts` — 폴더 상태(`folders`/`currentFolderId`/`sessionFolderMap`)·`folderPath` 계산·CRUD·이동·import/복원
+- `src/hooks/useFolderManagement.ts` — 폴더 상태(`folders`/`currentFolderId`/`sessionFolderMap`)·`folderPath` 계산·CRUD·이동·폴더/전체 스냅샷 import/복원
 - `src/components/common/Sidebar.tsx` — 폴더/세션 트리 UI. 드래그앤드롭(`handleMouseMove`/`handleMouseUp`), 인라인 rename, 컨텍스트 메뉴, 삭제 다이얼로그
-- `src/lib/storage.ts` — `saveFolders`/`loadFolders`/`saveSessionFolderMap`/`loadSessionFolderMap`/`saveFolderData`/`loadFolderData`, 폴더 내보내기/불러오기(`exportFolderToFile`/`importFolderFromFile`/`importFromFile`)
+- `src/lib/storage.ts` — `saveFolders`/`loadFolders`/`saveSessionFolderMap`/`loadSessionFolderMap`/`saveFolderData`/`loadFolderData`, 폴더/전체 스냅샷 내보내기·불러오기(`exportFolderToFile`/`exportWorkspaceSnapshotToFile`/`importFromFile`)
 - `src/types/folder.ts` — `Folder`/`FolderPath`/`FolderData`
-- `src/App.tsx` — 폴더 삭제 백업 + Ctrl+Z 복원(App.tsx:176), 폴더 내보내기/불러오기 오케스트레이션(App.tsx:593·613)
+- `src/App.tsx` — 폴더 삭제 백업 + Ctrl+Z 복원(App.tsx:176), 폴더/전체 스냅샷 내보내기·불러오기 오케스트레이션(App.tsx:637·657·671)
 
 ## 데이터 모델
 
@@ -28,10 +28,16 @@ FolderData = {
   sessionFolderMap: Record<sessionId, folderId|null>  // ★ 세션 소속의 권위
 }
 
-FolderExportData = {        // storage.ts:869, 폴더 파일 포맷
+FolderExportData = {        // storage.ts:903, 폴더 파일 포맷
   exportVersion: '1.0'; exportedAt: string
   folder: Folder; subfolders: Folder[]; sessions: Session[]
   folderHierarchy: Record<folderId, parentId|null>
+  sessionFolderMap: Record<sessionId, folderId|null>
+}
+
+WorkspaceSnapshotExportData = {  // storage.ts:915, 전체 사이드바 스냅샷 포맷
+  exportVersion: '1.0'; exportType: 'workspaceSnapshot'; exportedAt: string
+  folders: Folder[]; sessions: Session[]
   sessionFolderMap: Record<sessionId, folderId|null>
 }
 ```
@@ -67,9 +73,11 @@ HTML5 DnD 가 아닌 **마우스 이벤트 직접 처리**:
 
 ## 폴더 내보내기 / 불러오기
 
-- **export**(`exportFolderToFile`, storage.ts:883): 대상 폴더 + 재귀 하위 폴더(`collectSubfolders`) + 소속 세션 수집 → 세션 이미지·부가영역을 base64 로 복원 → `folderHierarchy`·`sessionFolderMap` 포함 `FolderExportData` 를 `folder_{name}.json` 으로 저장. Sidebar 컨텍스트 메뉴 "폴더 내보내기"(Sidebar.tsx:956).
-- **import**(`importFromFile` → `App.handleImport`, App.tsx:613): 파일이 폴더 타입이면 `importFolderData`(useFolderManagement.ts:347)로 **모든 폴더 ID 를 새로 발급**(기존→신 ID 매핑), 하위 폴더 `parentId` 재배선, 세션 매핑을 새 ID 로 갱신, 선택된 폴더가 있으면 그 아래에, 없으면 현재 폴더/루트에 배치. 세션 중복 ID 는 새로 발급.
-- 구버전 폴더 파일 보정: `sessionFolderMap` 없으면 `session.folderId` 또는 루트로 귀속(storage.ts:806).
+- **폴더 export**(`exportFolderToFile`, storage.ts:927): 대상 폴더 + 재귀 하위 폴더(`collectSubfolders`) + 소속 세션 수집 → 세션 이미지·부가영역을 base64 로 복원 → `folderHierarchy`·`sessionFolderMap` 포함 `FolderExportData` 를 `folder_{name}.json` 으로 저장. Sidebar 컨텍스트 메뉴 "폴더 내보내기".
+- **전체 스냅샷 export**(`exportWorkspaceSnapshotToFile`, storage.ts:1035): Sidebar 헤더의 `SaveAll` 버튼(`Sidebar.tsx:854`)에서 모든 폴더·세션·`session_folder_map` 을 `WorkspaceSnapshotExportData` 로 저장한다. 루트 세션의 매핑은 `null` 로 유지한다.
+- **폴더 import**(`importFromFile` → `App.handleImport`, App.tsx:671): 파일이 폴더 타입이면 `importFolderData`(useFolderManagement.ts:354)로 **모든 폴더 ID 를 새로 발급**(기존→신 ID 매핑), 하위 폴더 `parentId` 재배선, 세션 매핑을 새 ID 로 갱신, 선택된 폴더가 있으면 그 아래에, 없으면 현재 폴더/루트에 배치. 세션 중복 ID 는 import 전 새 ID 로 확정한 뒤 매핑한다.
+- **전체 스냅샷 import**(`importWorkspaceSnapshotData`, useFolderManagement.ts:423): 여러 루트 폴더를 단일 wrapper 없이 target 폴더 아래 같은 레벨로 복원하고, 루트 세션은 target 폴더(`null`이면 루트)에 둔다.
+- 구버전 폴더 파일 보정: `sessionFolderMap` 없으면 `session.folderId` 또는 루트로 귀속(storage.ts:836).
 
 ## 폴더 삭제 되돌리기 (Ctrl+Z)
 
@@ -87,7 +95,8 @@ HTML5 DnD 가 아닌 **마우스 이벤트 직접 처리**:
 | 증상 | 원인 |
 |------|------|
 | 폴더를 자기 하위로 드롭 시 트리 깨짐 | 사이클 → `moveFolderToFolder` 부모체인 검사로 차단(useFolderManagement.ts:290) |
-| import 한 폴더가 기존 폴더와 ID 충돌 | ID 재사용 → `importFolderData` 가 전 폴더 ID 재발급 + 매핑 재배선(useFolderManagement.ts:347) |
+| import 한 폴더가 기존 폴더와 ID 충돌 | ID 재사용 → `importFolderData` 가 전 폴더 ID 재발급 + 매핑 재배선(useFolderManagement.ts:354) |
+| 전체 스냅샷 import 후 기존 세션이 다른 폴더로 이동 | 중복 세션 ID 기준 매핑 선저장 → `App.handleImport` 가 import 전 새 세션 ID를 확정하고 그 ID로 `session_folder_map` 을 재작성(App.tsx:671) |
 | 앱 로드 직후 세션-폴더 매핑이 사라짐 | 세션 로드 전 빈 배열로 align 실행 → `hasHadSessionsRef` 가드(App.tsx:153) |
 | 폴더 삭제가 실수인데 복구 불가 | 백업/Undo 없음 → `deletedFolderBackup`+Ctrl+Z(App.tsx:176), 단 10초 내에만 |
 | 드래그가 클릭과 충돌 | 임계값 없이 즉시 드래그 → `DRAG_THRESHOLD=5px`(Sidebar.tsx:363), `isDragging` 시 클릭 무시 |

@@ -1,6 +1,6 @@
 # 세션 영속화 (storage.ts · imageStorage.ts)
 
-StyleStudio 는 Tauri `plugin-store` 의 **`settings.json`** 하나에 세션 배열·폴더·매핑·API 키·창 상태를 key-value 로 저장한다(`storage.ts`). 다만 세션 안의 **대용량 base64 이미지·thought_signature 문자열은 별도 저장소로 분리**해 `settings.json` 본체 크기를 압축한다: 실제 데이터는 `imageStorage.ts` 가 **AppData 파일 저장소**(`images/{key}.txt`)에 쓰고, 세션 객체에는 **키 문자열만** 남긴다(레거시는 IndexedDB `StyleStudioImages`). 저장 시 `migrateSessionsForStorage` 가 base64→키로 마이그레이션하고, 로드 시 참조 이미지는 즉시 복원, 히스토리/채팅/컨셉 이미지는 lazy(보일 때 디코딩)로 남긴다. 세션/폴더 파일 내보내기(export)는 키를 다시 base64 로 복원해 자기완결 JSON 으로 만든다.
+StyleStudio 는 Tauri `plugin-store` 의 **`settings.json`** 하나에 세션 배열·폴더·매핑·API 키·창 상태를 key-value 로 저장한다(`storage.ts`). 다만 세션 안의 **대용량 base64 이미지·thought_signature 문자열은 별도 저장소로 분리**해 `settings.json` 본체 크기를 압축한다: 실제 데이터는 `imageStorage.ts` 가 **AppData 파일 저장소**(`images/{key}.txt`)에 쓰고, 세션 객체에는 **키 문자열만** 남긴다(레거시는 IndexedDB `StyleStudioImages`). 저장 시 `migrateSessionsForStorage` 가 base64→키로 마이그레이션하고, 로드 시 참조 이미지는 즉시 복원, 히스토리/채팅/컨셉 이미지는 lazy(보일 때 디코딩)로 남긴다. 세션/폴더/전체 스냅샷 파일 내보내기(export)는 키를 다시 base64 로 복원해 자기완결 JSON 으로 만든다.
 
 ## 관련 파일
 
@@ -13,11 +13,11 @@ StyleStudio 는 Tauri `plugin-store` 의 **`settings.json`** 하나에 세션 �
 - 스토어 인스턴스: `Store.load('settings.json')` (storage.ts:19 `getStore`). Tauri AppConfig 디렉토리 하위.
 - key 목록:
   - `sessions` — `Session[]` (storage.ts:570)
-  - `folders` — `Folder[]` (storage.ts:1057)
-  - `session_folder_map` — `Record<sessionId, folderId|null>` (storage.ts:1087)
+  - `folders` — `Folder[]` (storage.ts:1166)
+  - `session_folder_map` — `Record<sessionId, folderId|null>` (storage.ts:1196)
   - `gemini_api_key` / `openai_api_key` (storage.ts:47·75)
-  - `window_state` — `{x,y,width,height,maximized}` (storage.ts:1037)
-  - `default_session_save_path` (storage.ts:1139)
+  - `window_state` — `{x,y,width,height,maximized}` (storage.ts:1154)
+  - `default_session_save_path` (storage.ts:1247)
 - 이미지 파일 저장소: `BaseDirectory.AppData` / `images/` 디렉토리, 파일명 `{key}.txt`(내용은 base64 data URL 문자열). 상수 `DB_NAME='StyleStudioImages'`, `STORE_NAME='images'`, `IMAGE_FS_DIR='images'`, `IMAGE_FS_EXT='.txt'`(imageStorage.ts:13~17).
 
 ## 이미지 저장소 키 네임스페이스
@@ -67,8 +67,9 @@ StyleStudio 는 Tauri `plugin-store` 의 **`settings.json`** 하나에 세션 �
 ## 세션 내보내기/불러오기 (파일)
 
 - **세션 export**(`exportSessionToFile`, storage.ts:698): 저장 다이얼로그(`{name}.stylestudio.json`) → `imageKeys` 를 `loadImages` 로 base64 복원 + `restoreSessionExtras`(히스토리/채팅/컨셉 키→base64) → `JSON.stringify(session, null, 2)` 파일 쓰기. **자기완결 파일**(다른 PC 에서도 이미지 포함).
-- **불러오기**(`importFromFile`, storage.ts:767): 다중 파일 선택. 첫 파일이 `exportVersion`+`folder`+`subfolders` 필드면 **폴더 파일**로 판정(→ `folders/overview.md`), 아니면 세션 파일. 각 파일을 `JSON.parse` 해 `Session` 으로. `importSessionFromFile`(storage.ts:761)은 세션만 반환하는 래퍼.
-- 중복 ID·손상 이미지 검증은 호출측(`useSessionManagement.handleImportSession` / `App.handleImport`)에서 수행 — 중복 시 새 ID 발급, `data:` 로 시작 안 하는데 `imageCount>0` 이면 "손상" 경고.
+- **전체 스냅샷 export**(`exportWorkspaceSnapshotToFile`, storage.ts:1035): 사이드바 헤더의 `SaveAll` 버튼(`Sidebar.tsx:854`) → 모든 `folders`·`sessions`·`session_folder_map` 을 `exportType:'workspaceSnapshot'` JSON 으로 저장. 세션 참조 이미지·히스토리·채팅·컨셉 부가 영역도 base64 로 복원한다.
+- **불러오기**(`importFromFile`, storage.ts:768): 다중 파일 선택. 첫 파일이 `exportType:'workspaceSnapshot'` 이면 전체 스냅샷, `exportVersion`+`folder`+`subfolders` 필드면 **폴더 파일**로 판정(→ `folders/overview.md`), 아니면 세션 파일. 각 파일을 `JSON.parse` 해 `Session` 으로. `importSessionFromFile`(storage.ts:763)은 세션만 반환하는 래퍼.
+- 중복 ID·손상 이미지 검증은 호출측(`useSessionManagement.handleImportSession` / `App.handleImport`)에서 수행 — 중복 시 새 ID 발급, 폴더/스냅샷 import 는 새 ID 기준으로 `session_folder_map` 을 먼저 재작성한다. `data:` 로 시작 안 하는데 `imageCount>0` 이면 "손상" 경고.
 
 ## 회귀 증상별 원인
 

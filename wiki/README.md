@@ -21,6 +21,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | import 세션 이미지 손상 / settings.json 비대 | `session/storage.md` |
 | dev·prod 전환 후 이미지 사라짐 / 이미지 키 정합 | `session/storage.md` |
 | 세션/폴더 내보내기·불러오기 파일 포맷 | `session/storage.md` |
+| 사이드바 전체 폴더·세션 스냅샷 저장/전달 | `session/storage.md` |
 | 세션 타입 추가 시 라벨·색상·아이콘 누락 | `session/session-config.md` |
 | 생성물 저장 경로(~/Downloads/AI_Gen) 문제 | `session/session-config.md` |
 | 폴더 드래그앤드롭·순서변경·이동 오동작 | `folders/overview.md` |

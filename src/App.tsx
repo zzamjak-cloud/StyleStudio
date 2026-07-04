@@ -50,7 +50,7 @@ import {
   flushPendingSessions as flushPersistedSessions,
 } from './utils/sessionHelpers';
 import { logger } from './lib/logger';
-import { exportFolderToFile, importFromFile } from './lib/storage';
+import { exportFolderToFile, exportWorkspaceSnapshotToFile, importFromFile } from './lib/storage';
 
 /**
  * 신규 세션 생성 시 만들어 두는 빈 분석 플레이스홀더와 같은지 검사합니다.
@@ -68,6 +68,49 @@ function isEmptyPlaceholderAnalysis(a: ImageAnalysisResult): boolean {
     a.composition.angle === '' &&
     a.negative_prompt === ''
   );
+}
+
+function createImportedSessionId(usedSessionIds: Set<string>): string {
+  let nextId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
+  while (usedSessionIds.has(nextId)) {
+    nextId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
+  }
+  return nextId;
+}
+
+function prepareImportedSessions(
+  importedSessions: Session[],
+  existingSessions: Session[]
+): { sessions: Session[]; sessionIdMap: Record<string, string> } {
+  const usedSessionIds = new Set(existingSessions.map((session) => session.id));
+  const sessionIdMap: Record<string, string> = {};
+
+  const sessions = importedSessions.map((session) => {
+    let nextId = session.id;
+    if (usedSessionIds.has(nextId)) {
+      nextId = createImportedSessionId(usedSessionIds);
+      logger.debug(`   - 중복 ID 감지, 새 ID 생성: ${session.id} → ${nextId}`);
+    }
+
+    usedSessionIds.add(nextId);
+    sessionIdMap[session.id] = nextId;
+    return nextId === session.id ? { ...session } : { ...session, id: nextId };
+  });
+
+  return { sessions, sessionIdMap };
+}
+
+function remapImportedSessionFolderMap(
+  importedSessionFolderMap: Record<string, string | null>,
+  sessionIdMap: Record<string, string>
+): Record<string, string | null> {
+  const remappedSessionFolderMap: Record<string, string | null> = {};
+  for (const [oldSessionId, folderId] of Object.entries(importedSessionFolderMap)) {
+    const newSessionId = sessionIdMap[oldSessionId];
+    if (!newSessionId) continue;
+    remappedSessionFolderMap[newSessionId] = folderId;
+  }
+  return remappedSessionFolderMap;
 }
 
 function App() {
@@ -145,6 +188,7 @@ function App() {
     reorderFolders,
     getCurrentFolderIdForNewSession,
     importFolderData,
+    importWorkspaceSnapshotData,
     restoreFolderData,
     alignSessionFolderMapWithSessions,
   } = useFolderManagement();
@@ -609,6 +653,20 @@ function App() {
     }
   }, [folders, sessions, sessionFolderMap]);
 
+  // 사이드바 전체 스냅샷 내보내기 핸들러
+  const handleExportWorkspaceSnapshot = useCallback(async () => {
+    try {
+      await exportWorkspaceSnapshotToFile(folders, sessions, sessionFolderMap);
+      logger.info('✅ 전체 스냅샷 저장 완료');
+    } catch (error) {
+      logger.error('❌ 전체 스냅샷 저장 오류:', error);
+      setErrorDialog({
+        title: '전체 스냅샷 저장 오류',
+        message: '전체 폴더 및 세션 스냅샷을 저장하는 중 오류가 발생했습니다.'
+      });
+    }
+  }, [folders, sessions, sessionFolderMap]);
+
   // 통합 불러오기 핸들러 (세션/폴더 모두 처리)
   const handleImport = useCallback(async () => {
     try {
@@ -624,7 +682,7 @@ function App() {
       const result = await importFromFile();
 
       // 취소된 경우
-      if (result.sessions.length === 0 && !result.folderData) {
+      if (result.sessions.length === 0 && !result.folderData && !result.workspaceSnapshotData) {
         logger.debug('❌ 불러오기 취소됨');
         setImportProgress({ stage: 'idle', message: '', percentage: 0, estimatedSecondsLeft: 0 });
         return;
@@ -633,6 +691,8 @@ function App() {
       // 폴더 파일인 경우
       if (result.type === 'folder' && result.folderData) {
         const folderData = result.folderData;
+        const { sessions: preparedSessions, sessionIdMap } = prepareImportedSessions(folderData.sessions, sessions);
+        const preparedSessionFolderMap = remapImportedSessionFolderMap(folderData.sessionFolderMap, sessionIdMap);
 
         setImportProgress({
           stage: 'translating',
@@ -642,21 +702,21 @@ function App() {
         });
 
         // 폴더 ID 매핑을 위해 importFolderData 호출
-        const { newFolderIdMap } = await importFolderData(
+        await importFolderData(
           folderData.folder,
           folderData.subfolders,
-          folderData.sessionFolderMap,
+          preparedSessionFolderMap,
           targetFolderId // 선택된 폴더가 있으면 그 아래에 배치
         );
 
         // 세션 추가 (새 폴더 ID로 매핑된 상태로)
-        if (folderData.sessions.length > 0) {
+        if (preparedSessions.length > 0) {
           let updatedSessions = [...sessions];
           let lastSession: Session | null = null;
-          const totalSessions = folderData.sessions.length;
+          const totalSessions = preparedSessions.length;
 
-          for (let i = 0; i < folderData.sessions.length; i++) {
-            const importedSession = folderData.sessions[i];
+          for (let i = 0; i < preparedSessions.length; i++) {
+            const importedSession = preparedSessions[i];
 
             // 진행 상태 업데이트
             setImportProgress({
@@ -665,27 +725,6 @@ function App() {
               percentage: 20 + Math.round((i / totalSessions) * 70),
               estimatedSecondsLeft: 0,
             });
-
-            // 중복 ID 처리
-            const isDuplicate = updatedSessions.some(s => s.id === importedSession.id);
-            if (isDuplicate) {
-              const newId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
-              logger.debug(`   - 중복 ID 감지, 새 ID 생성: ${importedSession.id} → ${newId}`);
-
-              // 세션-폴더 매핑도 새 ID로 업데이트
-              const oldFolderId = folderData.sessionFolderMap[importedSession.id];
-              if (oldFolderId && newFolderIdMap[oldFolderId]) {
-                await moveSessionToFolder(newId, newFolderIdMap[oldFolderId]);
-              }
-
-              importedSession.id = newId;
-            } else {
-              // 기존 ID 유지, 폴더 매핑만 업데이트
-              const oldFolderId = folderData.sessionFolderMap[importedSession.id];
-              if (oldFolderId && newFolderIdMap[oldFolderId]) {
-                await moveSessionToFolder(importedSession.id, newFolderIdMap[oldFolderId]);
-              }
-            }
 
             updatedSessions = addSessionToList(updatedSessions, importedSession);
             lastSession = importedSession;
@@ -708,7 +747,7 @@ function App() {
 
         logger.info(`✅ 폴더 불러오기 완료: ${folderData.folder.name}`);
         logger.info(`   - 하위 폴더: ${folderData.subfolders.length}개`);
-        logger.info(`   - 세션: ${folderData.sessions.length}개`);
+        logger.info(`   - 세션: ${preparedSessions.length}개`);
 
         // 완료 상태
         setImportProgress({
@@ -722,7 +761,81 @@ function App() {
           setImportProgress({ stage: 'idle', message: '', percentage: 0, estimatedSecondsLeft: 0 });
           setInfoDialog({
             title: '폴더 불러오기 완료',
-            message: `"${folderData.folder.name}" 폴더를 불러왔습니다.\n\n하위 폴더: ${folderData.subfolders.length}개\n세션: ${folderData.sessions.length}개`
+            message: `"${folderData.folder.name}" 폴더를 불러왔습니다.\n\n하위 폴더: ${folderData.subfolders.length}개\n세션: ${preparedSessions.length}개`
+          });
+        }, 1000);
+        return;
+      }
+
+      // 전체 스냅샷 파일인 경우
+      if (result.type === 'workspaceSnapshot' && result.workspaceSnapshotData) {
+        const snapshotData = result.workspaceSnapshotData;
+        const { sessions: preparedSessions, sessionIdMap } = prepareImportedSessions(snapshotData.sessions, sessions);
+        const preparedSessionFolderMap = remapImportedSessionFolderMap(snapshotData.sessionFolderMap, sessionIdMap);
+
+        setImportProgress({
+          stage: 'translating',
+          message: '전체 스냅샷 폴더 구조 복원 중...',
+          percentage: 20,
+          estimatedSecondsLeft: 0,
+        });
+
+        await importWorkspaceSnapshotData(
+          snapshotData.folders,
+          preparedSessionFolderMap,
+          targetFolderId
+        );
+
+        if (preparedSessions.length > 0) {
+          let updatedSessions = [...sessions];
+          let lastSession: Session | null = null;
+          const totalSessions = preparedSessions.length;
+
+          for (let i = 0; i < preparedSessions.length; i++) {
+            const importedSession = preparedSessions[i];
+
+            setImportProgress({
+              stage: 'saving',
+              message: `세션 복원 중... (${i + 1}/${totalSessions})`,
+              percentage: 20 + Math.round((i / totalSessions) * 70),
+              estimatedSecondsLeft: 0,
+            });
+
+            updatedSessions = addSessionToList(updatedSessions, importedSession);
+            lastSession = importedSession;
+          }
+
+          setImportProgress({
+            stage: 'saving',
+            message: '데이터 저장 중...',
+            percentage: 95,
+            estimatedSecondsLeft: 0,
+          });
+
+          setSessions(updatedSessions);
+          await persistSessions(updatedSessions);
+
+          if (lastSession) {
+            setCurrentSession(lastSession);
+          }
+        }
+
+        logger.info('✅ 전체 스냅샷 불러오기 완료');
+        logger.info(`   - 폴더: ${snapshotData.folders.length}개`);
+        logger.info(`   - 세션: ${preparedSessions.length}개`);
+
+        setImportProgress({
+          stage: 'complete',
+          message: '불러오기 완료!',
+          percentage: 100,
+          estimatedSecondsLeft: 0,
+        });
+
+        setTimeout(() => {
+          setImportProgress({ stage: 'idle', message: '', percentage: 0, estimatedSecondsLeft: 0 });
+          setInfoDialog({
+            title: '전체 스냅샷 불러오기 완료',
+            message: `전체 스냅샷을 불러왔습니다.\n\n폴더: ${snapshotData.folders.length}개\n세션: ${preparedSessions.length}개`
           });
         }, 1000);
         return;
@@ -841,7 +954,16 @@ function App() {
         message: '파일을 불러오는 중 오류가 발생했습니다.'
       });
     }
-  }, [currentFolderId, selectedFolderId, sessions, importFolderData, moveSessionToFolder, setSessions, setCurrentSession]);
+  }, [
+    currentFolderId,
+    selectedFolderId,
+    sessions,
+    importFolderData,
+    importWorkspaceSnapshotData,
+    moveSessionToFolder,
+    setSessions,
+    setCurrentSession,
+  ]);
 
   const handleReset = useCallback(() => {
     // 신규 세션 모달 표시
@@ -1075,6 +1197,7 @@ function App() {
           onRenameSession={handleRenameSession}
           onNewImage={handleReset}
           onImportSession={handleImport}
+          onExportWorkspaceSnapshot={handleExportWorkspaceSnapshot}
           onSettingsClick={handleSettingsClick}
           onReorderSessions={handleReorderSessions}
           disabled={currentView === 'generator'}

@@ -53,6 +53,13 @@ interface UseFolderManagementReturn {
     targetFolderId: string | null
   ) => Promise<{ newFolderIdMap: Record<string, string> }>;
 
+  // 전체 스냅샷 import (여러 루트 폴더와 루트 세션 유지)
+  importWorkspaceSnapshotData: (
+    importedFolders: Folder[],
+    importedSessionFolderMap: Record<string, string | null>,
+    targetFolderId: string | null
+  ) => Promise<{ newFolderIdMap: Record<string, string> }>;
+
   // 폴더 데이터 복원 (Undo용)
   restoreFolderData: (
     backupFolders: Folder[],
@@ -386,6 +393,8 @@ export function useFolderManagement(): UseFolderManagementReturn {
     for (const [sessionId, oldFolderId] of Object.entries(importedSessionFolderMap)) {
       if (oldFolderId && newFolderIdMap[oldFolderId]) {
         newSessionFolderMap[sessionId] = newFolderIdMap[oldFolderId];
+      } else if (oldFolderId === null) {
+        newSessionFolderMap[sessionId] = targetFolderId;
       }
     }
 
@@ -404,6 +413,67 @@ export function useFolderManagement(): UseFolderManagementReturn {
       logger.debug(`   - 하위 폴더: ${newSubfolders.length}개`);
     } catch (error) {
       logger.error('❌ 폴더 import 오류:', error);
+      throw error;
+    }
+
+    return { newFolderIdMap };
+  };
+
+  // 전체 스냅샷 import: 원래 루트 폴더들은 target 아래에 같은 레벨로 붙이고, 루트 세션도 target에 둔다.
+  const importWorkspaceSnapshotData = async (
+    importedFolders: Folder[],
+    importedSessionFolderMap: Record<string, string | null>,
+    targetFolderId: string | null
+  ): Promise<{ newFolderIdMap: Record<string, string> }> => {
+    const newFolderIdMap: Record<string, string> = {};
+    const now = new Date().toISOString();
+
+    for (const folder of importedFolders) {
+      newFolderIdMap[folder.id] =
+        Date.now().toString() +
+        Math.random().toString(36).substring(2, 9) +
+        Math.random().toString(36).substring(2, 5);
+    }
+
+    const rootOrderBase = folders.filter(f => f.parentId === targetFolderId).length;
+    const rootFolderIds = importedFolders
+      .filter(folder => folder.parentId === null)
+      .sort((a, b) => a.order - b.order)
+      .map(folder => folder.id);
+    const rootOrderById = new Map(
+      rootFolderIds.map((folderId, index) => [folderId, rootOrderBase + index])
+    );
+
+    const newFolders: Folder[] = importedFolders.map(folder => ({
+      ...folder,
+      id: newFolderIdMap[folder.id],
+      parentId: folder.parentId ? newFolderIdMap[folder.parentId] ?? targetFolderId : targetFolderId,
+      order: folder.parentId ? folder.order : rootOrderById.get(folder.id) ?? rootOrderBase,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+    const newSessionFolderMap: Record<string, string | null> = {};
+    for (const [sessionId, oldFolderId] of Object.entries(importedSessionFolderMap)) {
+      if (oldFolderId && newFolderIdMap[oldFolderId]) {
+        newSessionFolderMap[sessionId] = newFolderIdMap[oldFolderId];
+      } else {
+        newSessionFolderMap[sessionId] = targetFolderId;
+      }
+    }
+
+    const updatedFolders = [...folders, ...newFolders];
+    const updatedSessionFolderMap = { ...sessionFolderMap, ...newSessionFolderMap };
+
+    setFolders(updatedFolders);
+    setSessionFolderMap(updatedSessionFolderMap);
+
+    try {
+      await saveFolderData({ folders: updatedFolders, sessionFolderMap: updatedSessionFolderMap });
+      logger.info('✅ 전체 스냅샷 폴더 import 완료');
+      logger.debug(`   - 폴더: ${newFolders.length}개`);
+    } catch (error) {
+      logger.error('❌ 전체 스냅샷 폴더 import 오류:', error);
       throw error;
     }
 
@@ -458,6 +528,7 @@ export function useFolderManagement(): UseFolderManagementReturn {
     reorderFolders,
     getCurrentFolderIdForNewSession,
     importFolderData,
+    importWorkspaceSnapshotData,
     restoreFolderData,
     alignSessionFolderMapWithSessions,
   };

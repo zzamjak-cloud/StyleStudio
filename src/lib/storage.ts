@@ -752,9 +752,10 @@ export async function exportSessionToFile(session: Session): Promise<void> {
 
 // Import 결과 타입 (세션 또는 폴더)
 export interface ImportResult {
-  type: 'session' | 'folder';
+  type: 'session' | 'folder' | 'workspaceSnapshot';
   sessions: Session[];
   folderData?: FolderExportData;
+  workspaceSnapshotData?: WorkspaceSnapshotExportData;
 }
 
 // 파일에서 세션 또는 폴더 불러오기 (Import) - 다중 파일 지원
@@ -790,6 +791,39 @@ export async function importFromFile(): Promise<ImportResult> {
     const firstFilePath = filePaths[0];
     const firstContent = await readTextFile(firstFilePath);
     const firstData = JSON.parse(firstContent);
+
+    // 전체 스냅샷 파일인지 확인
+    if (
+      firstData.exportVersion &&
+      firstData.exportType === 'workspaceSnapshot' &&
+      Array.isArray(firstData.folders) &&
+      Array.isArray(firstData.sessions)
+    ) {
+      const sessions = firstData.sessions as Session[];
+      const legacyMap =
+        firstData.sessionFolderMap && typeof firstData.sessionFolderMap === 'object'
+          ? (firstData.sessionFolderMap as Record<string, string | null>)
+          : {};
+
+      const normalizedSessionFolderMap: Record<string, string | null> = { ...legacyMap };
+      for (const session of sessions) {
+        if (normalizedSessionFolderMap[session.id] !== undefined) continue;
+        normalizedSessionFolderMap[session.id] =
+          typeof session.folderId === 'string' ? session.folderId : null;
+      }
+
+      logger.debug('🗄️ 전체 스냅샷 파일 감지됨');
+      return {
+        type: 'workspaceSnapshot',
+        sessions,
+        workspaceSnapshotData: {
+          ...(firstData as WorkspaceSnapshotExportData),
+          folders: firstData.folders as Folder[],
+          sessions,
+          sessionFolderMap: normalizedSessionFolderMap,
+        },
+      };
+    }
 
     // 폴더 파일인지 확인 (exportVersion 필드로 판단)
     if (firstData.exportVersion && firstData.folder && firstData.subfolders) {
@@ -835,8 +869,8 @@ export async function importFromFile(): Promise<ImportResult> {
         const data = JSON.parse(fileContent);
 
         // 폴더 파일이면 건너뛰기
-        if (data.exportVersion && data.folder) {
-          logger.debug('   ⚠️ 폴더 파일은 단독으로 불러와주세요:', filePath);
+        if (data.exportVersion && (data.folder || data.exportType === 'workspaceSnapshot')) {
+          logger.debug('   ⚠️ 폴더/스냅샷 파일은 단독으로 불러와주세요:', filePath);
           continue;
         }
 
@@ -875,6 +909,16 @@ export interface FolderExportData {
   // 폴더 계층 구조 복원을 위한 정보
   folderHierarchy: Record<string, string | null>; // folderId -> parentId
   sessionFolderMap: Record<string, string | null>; // sessionId -> folderId
+}
+
+// 사이드바 전체 스냅샷 내보내기용 데이터 타입
+export interface WorkspaceSnapshotExportData {
+  exportVersion: '1.0';
+  exportType: 'workspaceSnapshot';
+  exportedAt: string;
+  folders: Folder[];
+  sessions: Session[];
+  sessionFolderMap: Record<string, string | null>;
 }
 
 /**
@@ -981,6 +1025,74 @@ export async function exportFolderToFile(
     logger.debug(`   - 세션: ${sessionsWithImages.length}개`);
   } catch (error) {
     logger.error('❌ 폴더 내보내기 오류:', error);
+    throw error;
+  }
+}
+
+/**
+ * 사이드바에 등록된 모든 폴더와 세션을 현재 상태 그대로 파일로 내보내기
+ */
+export async function exportWorkspaceSnapshotToFile(
+  allFolders: Folder[],
+  allSessions: Session[],
+  sessionFolderMap: Record<string, string | null>
+): Promise<void> {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filePath = await save({
+      defaultPath: `stylestudio_snapshot_${timestamp}.json`,
+      filters: [
+        {
+          name: 'StyleStudio Snapshot',
+          extensions: ['json'],
+        },
+      ],
+    });
+
+    if (!filePath) {
+      logger.debug('❌ 전체 스냅샷 저장 취소됨');
+      return;
+    }
+
+    logger.debug('💾 전체 스냅샷을 파일로 저장 중:', filePath);
+
+    const sessionsWithImages: Session[] = [];
+    for (const session of allSessions) {
+      let exportSession = session;
+      if (session.imageKeys && session.imageKeys.length > 0) {
+        const images = await loadImages(session.imageKeys);
+        if (images.length > 0) {
+          exportSession = {
+            ...session,
+            referenceImages: images,
+          };
+        }
+      }
+      exportSession = await restoreSessionExtras(exportSession);
+      sessionsWithImages.push(exportSession);
+    }
+
+    const exportSessionFolderMap: Record<string, string | null> = {};
+    for (const session of sessionsWithImages) {
+      exportSessionFolderMap[session.id] = sessionFolderMap[session.id] ?? null;
+    }
+
+    const exportData: WorkspaceSnapshotExportData = {
+      exportVersion: '1.0',
+      exportType: 'workspaceSnapshot',
+      exportedAt: new Date().toISOString(),
+      folders: allFolders,
+      sessions: sessionsWithImages,
+      sessionFolderMap: exportSessionFolderMap,
+    };
+
+    await writeTextFile(filePath, JSON.stringify(exportData, null, 2));
+
+    logger.debug('✅ 전체 스냅샷 저장 완료:', filePath);
+    logger.debug(`   - 폴더: ${allFolders.length}개`);
+    logger.debug(`   - 세션: ${sessionsWithImages.length}개`);
+  } catch (error) {
+    logger.error('❌ 전체 스냅샷 저장 오류:', error);
     throw error;
   }
 }

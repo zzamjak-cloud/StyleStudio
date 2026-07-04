@@ -1,6 +1,6 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import {
-  Palette, User, Trash2, ImagePlus, Download, FolderOpen, Settings,
+  Palette, User, Trash2, ImagePlus, Download, FolderOpen, Settings, SaveAll,
   Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award, Images,
   Folder, FolderPlus, ChevronRight, MoreVertical, Pencil, FolderDown,
   MessageCircle, Lightbulb,
@@ -312,6 +312,7 @@ interface SidebarProps {
   onRenameSession?: (sessionId: string, newName: string) => Promise<void>;
   onNewImage?: () => void;
   onImportSession?: () => void;
+  onExportWorkspaceSnapshot?: () => void | Promise<void>;
   onSettingsClick?: () => void;
   onReorderSessions?: (reorderedSessions: Session[]) => void;
   disabled?: boolean;
@@ -345,6 +346,7 @@ export function Sidebar({
   onRenameSession,
   onNewImage,
   onImportSession,
+  onExportWorkspaceSnapshot,
   onSettingsClick,
   onReorderSessions,
   disabled = false,
@@ -848,15 +850,29 @@ export function Sidebar({
       {/* 상단 헤더 */}
       <div className="p-3 border-b border-gray-700 flex items-center justify-between">
         <h2 className="text-base font-bold">세션</h2>
-        {onSettingsClick && (
-          <button
-            onClick={onSettingsClick}
-            className="p-1.5 text-white hover:bg-white/10 rounded-lg transition-colors"
-            title="설정"
-          >
-            <Settings size={18} />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {onExportWorkspaceSnapshot && (
+            <button
+              onClick={() => !disabled && onExportWorkspaceSnapshot()}
+              disabled={disabled}
+              className={`p-1.5 text-white rounded-lg transition-colors ${
+                disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'
+              }`}
+              title={disabled ? '이미지 생성 중에는 사용할 수 없습니다' : '전체 폴더 및 세션 저장하기'}
+            >
+              <SaveAll size={18} />
+            </button>
+          )}
+          {onSettingsClick && (
+            <button
+              onClick={onSettingsClick}
+              className="p-1.5 text-white hover:bg-white/10 rounded-lg transition-colors"
+              title="설정"
+            >
+              <Settings size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 상단 버튼 - 3개 */}
