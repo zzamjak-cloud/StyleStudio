@@ -1,12 +1,12 @@
 # 프롬프트 조립 (Prompts)
 
-이미지 생성에 쓰이는 최종 프롬프트를 만드는 로직. 흐름은 두 단계다. ① `promptBuilder`가 이미지 분석 결과를 영어 통합 프롬프트로 정규화하고, ② `sessionPrompts.buildPromptForSession`이 세션 타입·참조 이미지 유무·그리드·추론 모드에 따라 세션별 지시문으로 감싼다. 모든 최종 프롬프트는 영어이며, 사용자 한글 입력은 생성 직전 번역된다.
+이미지 생성에 쓰이는 최종 프롬프트를 만드는 로직. 흐름은 두 단계다. ① `promptBuilder`가 이미지 분석 결과를 영어 통합 프롬프트로 정규화하고, ② `sessionPrompts.buildPromptForSession`이 세션 타입·참조 이미지 유무·그리드에 따라 세션별 지시문으로 감싼다. 모든 최종 프롬프트는 영어이며, 사용자 한글 입력은 생성 직전 번역된다.
 
 ## 관련 파일
 
 - `src/lib/promptBuilder.ts` — 분석 결과→통합 프롬프트(`buildUnifiedPrompt`), 사용자 입력·구도 병합(`buildDynamicPrompt`).
 - `src/lib/prompts/sessionPrompts.ts` — 세션 타입별 프롬프트 빌더 맵과 진입점(`buildPromptForSession`), 캐릭터 상세 섹션(`buildCharacterDetailSection`).
-- `src/lib/prompts/thinkingPrefix.ts` — 세션별 단계적 사고 prefix(`buildThinkingPrefix`, `ThinkingSessionType`).
+- `src/lib/prompts/thinkingPrefix.ts` — 레거시 세션별 단계적 사고 prefix(`buildThinkingPrefix`, `ThinkingSessionType`). 현재 생성/채팅 설정 UI에서는 노출하지 않는다.
 - `src/components/generator/ImageGeneratorPanel.tsx` — `handleGenerate`에서 번역·카메라 병합 후 빌더 호출(`ImageGeneratorPanel.tsx:526`).
 - `src/hooks/api/useGeminiImageGenerator.ts` — 훅 내부에서 비-ILLUSTRATION 세션에 한해 `buildPromptForSession` 재적용(이중 안전장치).
 - `src/types/analysis.ts` — `ImageAnalysisResult`(style/character/pixelart_specific/negative_prompt).
@@ -19,7 +19,7 @@ PromptGenerationParams = {
   basePrompt, hasReferenceImages, sessionType?,
   pixelArtGrid?, analysis?, referenceDocuments?, illustrationData?,
   cameraSettings?,   // 카메라 앵글/렌즈 (ILLUSTRATION은 별도 섹션)
-  thinkingMode?
+  thinkingMode?       // 레거시 호환 필드. 현재 UI에서는 전달하지 않음
 }
 ThinkingSessionType = chat | illustration | background | character | icon
                     | logo | ui | style | concept | pixelart | generic
@@ -40,7 +40,7 @@ ThinkingSessionType = chat | illustration | background | character | icon
 
 - **참조 없음 또는 세션 타입 없음** → `basePrompt`를 그대로 body로 사용.
 - **참조 있음 + 세션 타입** → `promptGenerators[sessionType]` 실행.
-- 마지막에 `thinkingMode`면 세션 매핑(`THINKING_TYPE_BY_SESSION`)에 따른 prefix를 `\n\n`로 앞에 붙인다.
+- `thinkingMode`가 전달되면 세션 매핑(`THINKING_TYPE_BY_SESSION`)에 따른 prefix를 `\n\n`로 앞에 붙일 수 있지만, 현재 생성/채팅 설정 UI에서는 이 값을 전달하지 않는다.
 
 세션별 빌더 요지:
 
@@ -67,9 +67,9 @@ ThinkingSessionType = chat | illustration | background | character | icon
 - 참조 이미지의 **마지막 장이 구도 스케치**임을 명시(`conceptSketch.sketchPng`): "펜선·화풍을 베끼지 말고 배치 가이드로만 사용, 최종 화풍은 캐릭터 참조 기준". 스케치 분석(`conceptSketch.analysis`)이 있으면 `formatCompositionForPrompt`로 배치 규칙(좌우 스왑 금지 등) 삽입.
 - 패널에서 이미 완성된 프롬프트를 만들기 때문에, Gemini 훅은 `sessionType === 'ILLUSTRATION'`이면 재가공하지 않고 그대로 전송한다.
 
-## 추론 모드 prefix (thinkingPrefix)
+## 레거시 추론 prefix (thinkingPrefix)
 
-- API에 native thinking 파라미터가 없어 **prompt-prefix 방식**으로 단계적 사고를 유도한다.
+- API에 native thinking 파라미터가 없어 **prompt-prefix 방식**으로 단계적 사고를 유도하던 내부 경로다. 현재 사용자 설정 사이드바에서는 노출하지 않는다.
 - `PREFIXES[sessionType]`에 세션별 3~4단계 한글 체크리스트(`[Thinking Mode]` 헤더). 예: character는 종/신체비율/고유특징 → 의상 시대정합 → 표정·포즈 일관성 → 종합 렌더.
 - `buildPromptForSession`이 `thinkingMode`일 때 `THINKING_TYPE_BY_SESSION` 매핑으로 타입을 고르고(미매핑 시 `generic`) body 앞에 붙인다.
 
@@ -81,6 +81,6 @@ ThinkingSessionType = chat | illustration | background | character | icon
 | 분석 신체 비율이 프롬프트에 없음 | `buildCharacterDetailSection`은 CHARACTER/ILLUSTRATION 경로에서만 삽입. 다른 세션은 미포함 |
 | 그리드에 격자선이 그려짐 | "NO GRID LINES" 지시는 프롬프트 힌트일 뿐 — 모델이 무시할 수 있음. 후처리는 픽셀아트 그리드 분리 담당 |
 | 구도 스케치 화풍이 결과에 섞임 | 스케치는 "배치 가이드로만" 지시. 마지막 reference 순서·`sketchPreamble` 확인 |
-| 추론 모드 켰는데 prefix 없음 | `thinkingMode` 미전달 또는 `buildPromptForSession` 밖 경로. Gemini 훅 재적용 경로는 thinkingMode를 넘기지 않음 |
+| 레거시 thinking prefix가 붙지 않음 | 현재 생성/채팅 설정 UI는 `thinkingMode`를 전달하지 않는다. 레거시 호출에서만 `buildPromptForSession` 입력값을 확인 |
 | 픽셀 해상도가 항상 128 | `analysis.pixelart_specific.resolution_estimate` 미존재/형식 불일치 시 기본값 |
 | 한글이 그대로 프롬프트에 | 번역은 패널 `handleGenerate` 단계 — 빌더는 번역하지 않음 |

@@ -50,6 +50,7 @@ export function useChatSession(
       imageSize: '1K',
       pixelArtGrid: '1x1',
       ...chatData?.settings,
+      thinkingMode: false,
     }),
     [chatData?.settings]
   );
@@ -166,6 +167,7 @@ export function useChatSession(
       ...sessionRef.current.chatData?.settings,
     };
     const nextSettings = { ...latestSettings, ...newSettings };
+    delete nextSettings.thinkingMode;
     if (!isOpenAIModel(nextSettings.imageModel)) {
       delete nextSettings.imageQuality;
     } else if (!nextSettings.imageQuality) {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, AlertTriangle, Lightbulb } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { ChatGenerationSettings } from '../../types/chat';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { getAvailableImageModels } from '../../hooks/api/imageModels';
@@ -58,34 +58,62 @@ export function ChatAISettings({
 
   return (
     <div className="w-80 border-l border-gray-200 bg-white flex flex-col min-h-0 h-full">
-      {/* 헤더 */}
-      <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200">
-        <div className="flex items-center gap-2">
-          <Settings className="w-5 h-5 text-gray-600" />
-          <h3 className="font-semibold text-gray-800">AI 설정</h3>
-        </div>
-      </div>
-
       {/* 설정 영역 */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-6">
+        {/* 기획 문서 */}
+        <div>
+          <DocumentManager
+            documents={attachedDocuments}
+            apiKey={documentApiKey}
+            onAdd={onDocumentAdd}
+            onDelete={onDocumentDelete}
+            showPersistentBadge={true}
+            persistentBadgeText="대화 참조중"
+          />
+        </div>
+
+        {/* 그리드 설정 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-3">
+            그리드
+          </label>
+          <div className="grid grid-cols-4 gap-2">
+            {gridLayouts.map((grid) => (
+              <button
+                key={grid}
+                onClick={() => onSettingsChange({ pixelArtGrid: grid })}
+                className={`px-2 py-2 text-xs font-medium rounded-lg border transition-colors ${
+                  settings.pixelArtGrid === grid
+                    ? 'bg-purple-500 text-white border-purple-500'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+                }`}
+              >
+                {grid}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* 모델 선택 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            모델 선택
-          </label>
-          <select
-            value={settings.imageModel}
-            onChange={(e) =>
-              onSettingsChange({ imageModel: e.target.value as ChatGenerationSettings['imageModel'] })
-            }
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-          >
-            {availableModels.map(({ id, label }) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-3">
+            <label className="w-14 flex-shrink-0 text-sm font-medium text-gray-700">
+              모델
+            </label>
+            <select
+              value={settings.imageModel}
+              onChange={(e) =>
+                onSettingsChange({ imageModel: e.target.value as ChatGenerationSettings['imageModel'] })
+              }
+              className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              {availableModels.map(({ id, label }) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
           {!hasOpenAIApiKey && (
             <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
           )}
@@ -125,7 +153,7 @@ export function ChatAISettings({
         {/* 크기 선택 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            이미지 크기
+            이미지 크기(1K 권장)
           </label>
           <div className="grid grid-cols-3 gap-2">
             {imageSizes.map((size) => (
@@ -143,9 +171,6 @@ export function ChatAISettings({
               </button>
             ))}
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            <span className="text-green-600 font-medium">1K 권장</span> · 2K/4K는 비용이 크게 증가합니다
-          </p>
           {settings.imageModel === 'gpt-image-2' && (
             <p className="text-xs text-gray-500 mt-1">
               덕테이프는 내부적으로 1024x1024, 1792x1024, 1024x1792 규격으로 처리됩니다.
@@ -177,66 +202,6 @@ export function ChatAISettings({
             </p>
           </div>
         )}
-
-        {/* Thinking Mode 토글 (베타) */}
-        <div>
-          <label className="flex items-center justify-between gap-2 cursor-pointer">
-            <span className="flex items-center gap-2">
-              <Lightbulb className="w-4 h-4 text-amber-500" />
-              <span className="text-sm font-medium text-gray-700">추론 모드 (베타)</span>
-            </span>
-            <input
-              type="checkbox"
-              checked={!!settings.thinkingMode}
-              onChange={(e) => onSettingsChange({ thinkingMode: e.target.checked })}
-              className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
-            />
-          </label>
-          <p className="text-xs text-gray-500 mt-1">
-            ON 시 단계별 사고(고증·구도·일관성) prefix를 추가합니다. 토큰 사용량이 소폭 증가합니다.
-          </p>
-        </div>
-
-        {/* 그리드 설정 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            그리드 레이아웃
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            {gridLayouts.map((grid) => (
-              <button
-                key={grid}
-                onClick={() => onSettingsChange({ pixelArtGrid: grid })}
-                className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
-                  settings.pixelArtGrid === grid
-                    ? 'bg-purple-500 text-white border-purple-500'
-                    : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
-                }`}
-              >
-                {grid}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 기획 문서 (채팅 입력 영역 확보를 위해 사이드바 하단으로 배치) */}
-      <div className="flex-shrink-0 border-t border-gray-200 px-3 py-3 bg-gray-50 max-h-[42vh] min-h-0 overflow-y-auto">
-        <DocumentManager
-          documents={attachedDocuments}
-          apiKey={documentApiKey}
-          onAdd={onDocumentAdd}
-          onDelete={onDocumentDelete}
-          showPersistentBadge={true}
-          persistentBadgeText="대화 참조중"
-        />
-      </div>
-
-      {/* 하단 정보 */}
-      <div className="flex-shrink-0 px-4 py-3 border-t border-gray-200 bg-gray-50">
-        <p className="text-xs text-gray-500">
-          설정은 다음 이미지 생성부터 적용됩니다
-        </p>
       </div>
 
       {/* 비용 경고 팝업 (2K=amber, 4K=red 위험 등급 분리) */}

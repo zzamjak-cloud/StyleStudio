@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { Languages, Wand2, Dices, HelpCircle, X, Award, AlertTriangle, Camera, ChevronDown, Lightbulb } from 'lucide-react';
+import { Languages, Wand2, Dices, HelpCircle, X, Award, AlertTriangle, Camera, ChevronDown } from 'lucide-react';
 import { SessionType } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
@@ -15,9 +15,7 @@ import {
 } from '../../hooks/api/imageModels';
 import {
   getGridButtonStyle,
-  getGridDescription,
   getPromptPlaceholder,
-  getGridLabel,
   getGridSectionStyle,
 } from '../../lib/config/sessionConfig';
 
@@ -43,7 +41,6 @@ interface GeneratorSettingsProps {
   topP: number;
   imageModel: ImageGenerationModel;
   imageQuality: ImageQualityOption;
-  thinkingMode?: boolean;
   availableModels: ImageModelDefinition[];
   supportedAspectRatios: AspectRatioOption[];
   supportedImageSizes: ImageSizeOption[];
@@ -60,7 +57,6 @@ interface GeneratorSettingsProps {
   onAdditionalPromptChange: (value: string) => void;
   onAspectRatioChange: (value: AspectRatioOption) => void;
   onImageSizeChange: (value: ImageSizeOption) => void;
-  onThinkingModeChange?: (value: boolean) => void;
   onUseReferenceImagesChange: (value: boolean) => void;
   onPixelArtGridChange: (value: PixelArtGridLayout) => void;
   onShowAdvancedChange: (value: boolean) => void;
@@ -97,7 +93,6 @@ function GeneratorSettingsComponent({
   topP,
   imageModel,
   imageQuality,
-  thinkingMode,
   availableModels,
   supportedAspectRatios,
   supportedImageSizes,
@@ -118,7 +113,6 @@ function GeneratorSettingsComponent({
   onTopPChange,
   onImageModelChange,
   onImageQualityChange,
-  onThinkingModeChange,
   onCameraAngleChange,
   onCameraLensChange,
   onDocumentAdd,
@@ -160,13 +154,13 @@ function GeneratorSettingsComponent({
 
   return (
     <div className="w-96 bg-white border-l border-gray-200 flex flex-col">
-      {/* 고정 영역: 추가 프롬프트 + 생성 버튼 */}
+      {/* 고정 영역: 프롬프트 + 생성 버튼 */}
       <div className="p-6 pb-4 border-b border-gray-200 bg-white space-y-4">
-        {/* 추가 프롬프트 입력 (선택사항) - 고정 영역 */}
+        {/* 프롬프트 입력 - 고정 영역 */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-semibold text-gray-700">
-              추가 프롬프트 (선택)
+              프롬프트
             </label>
           </div>
           <textarea
@@ -178,9 +172,6 @@ function GeneratorSettingsComponent({
             className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none overflow-y-auto"
             style={{ minHeight: '72px', maxHeight: '200px' }}
           />
-          <p className="text-xs text-gray-500 mt-1">
-            한글/영어 모두 입력 가능 (한글은 생성 시 자동으로 영어 변환)
-          </p>
         </div>
 
 
@@ -228,7 +219,7 @@ function GeneratorSettingsComponent({
             sessionType === 'ILLUSTRATION') && (
             <div className={getGridSectionStyle(sessionType)}>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                {getGridLabel(sessionType)}
+                그리드
               </label>
               <div className="grid grid-cols-4 gap-2">
                 <button
@@ -272,15 +263,12 @@ function GeneratorSettingsComponent({
                   <div className="text-[10px] opacity-75">16개</div>
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-2">{getGridDescription(sessionType, pixelArtGrid)}</p>
             </div>
           )}
 
           {/* 카메라 앵글 선택 */}
-          {(sessionType === 'CHARACTER' ||
-            sessionType === 'BACKGROUND' ||
+          {(sessionType === 'BACKGROUND' ||
             sessionType === 'ILLUSTRATION' ||
-            sessionType === 'STYLE' ||
             sessionType === 'PIXELART_BACKGROUND') && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -310,10 +298,8 @@ function GeneratorSettingsComponent({
           )}
 
           {/* 카메라 렌즈/화각 선택 */}
-          {(sessionType === 'CHARACTER' ||
-            sessionType === 'BACKGROUND' ||
+          {(sessionType === 'BACKGROUND' ||
             sessionType === 'ILLUSTRATION' ||
-            sessionType === 'STYLE' ||
             sessionType === 'PIXELART_BACKGROUND') && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -344,23 +330,25 @@ function GeneratorSettingsComponent({
 
           {/* 모델 선택 */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">AI 이미지 생성 모델</label>
-            <div className="relative">
-              <select
-                value={imageModel}
-                onChange={(e) => onImageModelChange(e.target.value as ImageGenerationModel)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-transparent appearance-none cursor-pointer pr-10"
-              >
-                {availableModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                size={16}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
+            <div className="flex items-center gap-3">
+              <label className="w-20 flex-shrink-0 text-sm font-semibold text-gray-700">모델</label>
+              <div className="relative flex-1">
+                <select
+                  value={imageModel}
+                  onChange={(e) => onImageModelChange(e.target.value as ImageGenerationModel)}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-transparent appearance-none cursor-pointer pr-10"
+                >
+                  {availableModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={16}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                />
+              </div>
             </div>
             {!openaiApiKey.trim() && (
               <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
@@ -398,7 +386,7 @@ function GeneratorSettingsComponent({
 
           {/* 이미지 크기 선택 */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 크기</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 크기(1K 권장)</label>
             <div className="grid grid-cols-3 gap-2">
               {(['1K', '2K', '4K'] as const).map((size) => (
                 <button
@@ -415,9 +403,6 @@ function GeneratorSettingsComponent({
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              <span className="text-green-600 font-medium">1K 권장</span> · 2K/4K는 비용이 크게 증가합니다
-            </p>
           </div>
 
           {/* 이미지 품질 (덕테이프 전용) */}
@@ -441,27 +426,6 @@ function GeneratorSettingsComponent({
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 품질이 높을수록 처리 시간과 생성 비용이 증가할 수 있습니다.
-              </p>
-            </div>
-          )}
-
-          {/* Thinking Mode 토글 (베타) */}
-          {onThinkingModeChange && (
-            <div>
-              <label className="flex items-center justify-between gap-2 cursor-pointer">
-                <span className="flex items-center gap-2">
-                  <Lightbulb size={16} className="text-amber-500" />
-                  <span className="text-sm font-semibold text-gray-700">추론 모드 (베타)</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={!!thinkingMode}
-                  onChange={(e) => onThinkingModeChange(e.target.checked)}
-                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
-                />
-              </label>
-              <p className="text-xs text-gray-500 mt-1">
-                ON 시 단계별 사고(고증·구도·일관성) prefix를 추가합니다. 토큰 사용량이 소폭 증가합니다.
               </p>
             </div>
           )}

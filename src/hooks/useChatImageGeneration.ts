@@ -8,16 +8,11 @@ import { loadImage } from '../lib/imageStorage';
 import { CHAT_SIGNATURE_KEY_MARKER } from '../lib/storage';
 import { isOpenAIModel } from './api/imageModels';
 import { useOpenAIImageGenerator } from './api/useOpenAIImageGenerator';
-import { buildThinkingPrefix } from '../lib/prompts/thinkingPrefix';
 
-// 사용자 메시지 앞에 스타일·그리드·추론 힌트를 prefix로 결합해 모델이 반영하도록 유도
+// 사용자 메시지 앞에 그리드 힌트를 prefix로 결합해 모델이 반영하도록 유도
 function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): string {
   if (!settings) return '';
   const parts: string[] = [];
-
-  if (settings.thinkingMode) {
-    parts.push(buildThinkingPrefix('chat'));
-  }
 
   if (settings.pixelArtGrid && settings.pixelArtGrid !== '1x1') {
     const info = getPixelArtGridInfo(settings.pixelArtGrid);

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Wand2, ArrowLeft, ChevronDown, HelpCircle, X, FolderOpen, ZoomIn } from 'lucide-react';
+import { ArrowLeft, ChevronDown, HelpCircle, X, FolderOpen, ZoomIn } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { openPath } from '@tauri-apps/plugin-opener';
@@ -365,7 +365,6 @@ interface GeneratorState {
   historyHeight: number;
   imageModel: ImageGenerationModel;
   imageQuality: ImageQualityOption;
-  thinkingMode: boolean;
 }
 
 export function ImageGeneratorPanel({
@@ -420,7 +419,6 @@ export function ImageGeneratorPanel({
     historyHeight: HISTORY_PANEL.DEFAULT_HEIGHT,
     imageModel: DEFAULT_IMAGE_MODEL,
     imageQuality: 'medium',
-    thinkingMode: false,
   });
 
   // 상태 업데이트 헬퍼 함수 (useCallback으로 안정화하여 자식 메모이제이션 유지)
@@ -454,7 +452,6 @@ export function ImageGeneratorPanel({
     historyHeight,
     imageModel,
     imageQuality,
-    thinkingMode,
   } = state;
 
   const resolveStoredImage = useCallback(async (image: string): Promise<string> => {
@@ -487,7 +484,6 @@ export function ImageGeneratorPanel({
   const setTopP = useCallback((value: number) => updateState({ topP: value }), [updateState]);
   const setImageModel = useCallback((value: ImageGenerationModel) => updateState({ imageModel: value }), [updateState]);
   const setImageQuality = useCallback((value: ImageQualityOption) => updateState({ imageQuality: value }), [updateState]);
-  const setThinkingMode = useCallback((value: boolean) => updateState({ thinkingMode: value }), [updateState]);
 
   // 줌 메뉴 외부 클릭 시 닫기
   useEffect(() => {
@@ -583,7 +579,6 @@ export function ImageGeneratorPanel({
           illustrationData: illustrationData,
           pixelArtGrid: pixelArtGrid, // 그리드 레이아웃 전달
           cameraSettings: cameraSettingsStr || undefined, // 카메라 설정 별도 전달
-          thinkingMode,
         });
       } else {
         // 모든 세션 타입: buildPromptForSession으로 통합 처리
@@ -609,7 +604,6 @@ export function ImageGeneratorPanel({
           pixelArtGrid,
           analysis,
           referenceDocuments,
-          thinkingMode,
         });
       }
 
@@ -986,32 +980,6 @@ export function ImageGeneratorPanel({
                 <span className="text-sm font-medium">이미지 분석</span>
               </button>
             )}
-            <div className="p-2 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg">
-              <Wand2 size={24} className="text-white" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-gray-800">이미지 생성</h2>
-              <p className="text-sm text-gray-500">
-                {sessionType === 'CHARACTER'
-                  ? '캐릭터 세션'
-                  : sessionType === 'BACKGROUND'
-                  ? '배경 세션'
-                  : sessionType === 'ICON'
-                  ? '아이콘 세션'
-                  : sessionType === 'PIXELART_CHARACTER'
-                  ? '픽셀 캐릭터 세션'
-                  : sessionType === 'PIXELART_BACKGROUND'
-                  ? '픽셀 배경 세션'
-                  : sessionType === 'PIXELART_ICON'
-                  ? '픽셀 아이콘 세션'
-                  : sessionType === 'UI'
-                  ? 'UI 디자인 세션'
-                  : sessionType === 'LOGO'
-                  ? '로고 세션'
-                  : '스타일 세션'}{' '}
-                · {getImageModelDefinition(imageModel).label}
-              </p>
-            </div>
           </div>
           {/* 자동 저장 폴더 열기 버튼 (v0.4.4) */}
           <div className="flex items-center gap-3">
@@ -1161,7 +1129,6 @@ export function ImageGeneratorPanel({
           topP={topP}
           imageModel={imageModel}
           imageQuality={imageQuality}
-          thinkingMode={thinkingMode}
           availableModels={getAvailableImageModels(hasOpenAIApiKey)}
           supportedAspectRatios={getImageModelDefinition(imageModel).supports.aspectRatios}
           supportedImageSizes={getImageModelDefinition(imageModel).supports.imageSizes}
@@ -1182,7 +1149,6 @@ export function ImageGeneratorPanel({
           onTopPChange={setTopP}
           onImageModelChange={setImageModel}
           onImageQualityChange={setImageQuality}
-          onThinkingModeChange={setThinkingMode}
           onCameraAngleChange={setCameraAngle}
           onCameraLensChange={setCameraLens}
           onDocumentAdd={onDocumentAdd}

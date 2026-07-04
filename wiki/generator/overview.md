@@ -5,7 +5,7 @@
 ## 관련 파일
 
 - `src/components/generator/ImageGeneratorPanel.tsx` — 생성기 메인 패널. 통합 상태(`GeneratorState`)·생성 플로우(`handleGenerate`)·자동/수동 저장(`autoSaveImage`/`handleManualSave`)·히스토리 복원(`handleRestoreFromHistory`)·핀 토글(`handleTogglePin`) 소유. 흰 배경 제거 유틸(`removeWhiteBackground`)도 여기 정의(현재 대상 세션 없음).
-- `src/components/generator/GeneratorSettings.tsx` — 우측 설정 사이드바(모델·비율·해상도·품질·카메라·그리드·참조·고급 설정·추가 프롬프트·생성 버튼). 상세는 [settings.md](./settings.md).
+- `src/components/generator/GeneratorSettings.tsx` — 우측 설정 사이드바(프롬프트·생성 버튼·그리드·모델·비율·해상도·품질·카메라·참조·고급 설정). 상세는 [settings.md](./settings.md).
 - `src/components/generator/GeneratorPreview.tsx` — 중앙 결과 표시(로딩/이미지/빈 상태), 줌(fit/actual/%), 다운로드 버튼.
 - `src/components/generator/GeneratorHistory.tsx` — 하단 히스토리 그리드(썸네일·핀·복원·삭제·리사이즈). 상세는 [history.md](./history.md).
 - `src/components/generator/ImageUpload.tsx` — 참조 이미지 업로드 표면(Tauri 드래그드롭·파일선택·붙여넣기). 상세는 [image-generation-api.md](./image-generation-api.md).
@@ -14,7 +14,7 @@
 - `src/hooks/api/imageModels.ts` — 모델 정의(`IMAGE_MODELS`)·지원 옵션·`getImageModelDefinition`/`isOpenAIModel`/`getAvailableImageModels`.
 - `src/lib/promptBuilder.ts` — 분석 결과→통합 프롬프트 변환(`buildUnifiedPrompt`).
 - `src/lib/prompts/sessionPrompts.ts` — 세션 타입별 프롬프트 빌더(`buildPromptForSession`).
-- `src/lib/prompts/thinkingPrefix.ts` — 추론 모드 prefix(`buildThinkingPrefix`).
+- `src/lib/prompts/thinkingPrefix.ts` — 레거시 추론 prefix(`buildThinkingPrefix`). 현재 생성 설정 UI에서는 노출하지 않는다.
 - `src/types/cameraAngle.ts`, `src/types/cameraLens.ts` — 카메라 앵글/렌즈 프리셋.
 - `src/types/constants.ts` — 생성 기본값(`IMAGE_GENERATION_DEFAULTS`·`ADVANCED_SETTINGS_DEFAULTS`·`HISTORY_PANEL`).
 - `src/types/session.ts` — `SessionType`·`GenerationHistoryEntry`·`GenerationSettings`.
@@ -31,7 +31,7 @@ GeneratorState = {
   cameraAngle: string, cameraLens: string,          // 프리셋 ID, 기본 'none'
   zoomLevel: 'fit'|'actual'|number, showZoomMenu, showPathTooltip, showAdvanced, showHelp,
   seed?: number, temperature, topK, topP, referenceStrength,
-  historyHeight, imageModel: ImageGenerationModel, imageQuality: ImageQualityOption, thinkingMode
+  historyHeight, imageModel: ImageGenerationModel, imageQuality: ImageQualityOption
 }
 SessionType = BASIC | STYLE | CHARACTER | BACKGROUND | ICON
             | PIXELART_CHARACTER | PIXELART_BACKGROUND | PIXELART_ICON

@@ -1,6 +1,6 @@
 # 생성 설정 (GeneratorSettings)
 
-우측 설정 사이드바(`w-96`). 모델·비율·해상도·품질·카메라 앵글/렌즈·픽셀 그리드·참조 이미지 토글·추가 프롬프트·고급 설정(seed/temperature/top-K/top-P)·추론 모드·참조 문서를 입력받고 생성 버튼을 제공한다. 상태는 부모 `ImageGeneratorPanel`이 소유하고, 이 컴포넌트는 값+`on*Change` 콜백을 props로 받는 프레젠테이션 컴포넌트다(`React.memo`).
+우측 설정 사이드바(`w-96`). 프롬프트·생성 버튼을 상단 고정 영역에 두고, 스크롤 영역에서 참조 문서(UI 세션)·그리드·카메라 앵글/렌즈·모델·비율·해상도·품질·참조 이미지 토글·고급 설정(seed/temperature/top-K/top-P)을 입력받는다. 상태는 부모 `ImageGeneratorPanel`이 소유하고, 이 컴포넌트는 값+`on*Change` 콜백을 props로 받는 프레젠테이션 컴포넌트다(`React.memo`).
 
 ## 관련 파일
 
@@ -12,7 +12,7 @@
 
 ## 모델 선택
 
-`availableModels`(부모가 `getAvailableImageModels(hasOpenAIApiKey)` 전달)를 **단일 드롭다운**으로 렌더. ChatGPT 키가 없으면 gpt-image-2(덕테이프) 모델을 쓰라는 amber 힌트 표시.
+`availableModels`(부모가 `getAvailableImageModels(hasOpenAIApiKey)` 전달)를 `모델` 라벨과 같은 줄의 **단일 드롭다운**으로 렌더. ChatGPT 키가 없으면 gpt-image-2(덕테이프) 모델을 쓰라는 amber 힌트 표시.
 
 | id | 라벨 | provider | 비율 | 해상도 | 품질 | 고급 제어 |
 |------|------|----------|------|--------|------|-----------|
@@ -44,8 +44,8 @@
 
 ## 카메라 앵글 / 렌즈
 
-- 앵글·렌즈는 **인접한 두 개의 개별 `<select>`**(그룹 컨트롤 아님). 표시 조건 세션: `CHARACTER`, `BACKGROUND`, `ILLUSTRATION`, `STYLE`, `PIXELART_BACKGROUND`.
-- `ICON`·`PIXELART_ICON` 세션은 카메라 앵글/렌즈 메뉴를 숨긴다. 아이콘 생성에서는 피사체 시점보다 형태·스타일·그리드가 핵심이라 공간 효율을 우선한다.
+- 앵글·렌즈는 **인접한 두 개의 개별 `<select>`**(그룹 컨트롤 아님). 표시 조건 세션: `BACKGROUND`, `ILLUSTRATION`, `PIXELART_BACKGROUND`.
+- `CHARACTER`·`STYLE`·`ICON`·`PIXELART_ICON` 세션은 카메라 앵글/렌즈 메뉴를 숨긴다. 캐릭터/스타일/아이콘 생성에서는 시점보다 참조 복제·형태·스타일·그리드가 핵심이라 공간 효율을 우선한다.
 - 옵션 라벨: `'none'`은 라벨만, 그 외는 `"{label} : {description}"`.
 - **앵글 20종**(`CAMERA_ANGLES`): 눈높이/하이/로우/버드아이/개미시점/더치/측면/3-4뷰/후면/오버숄더/POV 등 시점 + 3분할/중앙/대칭/비대칭/황금비율/리딩라인/프레임속프레임/네거티브스페이스/프레임채우기 등 구도.
 - **렌즈**(`CAMERA_LENSES`, `category`로 그룹): 초광각(14/16/20mm)·광각(24/28/35mm)·표준(50mm)·망원(85/105/135/200mm)·특수(macro/fisheye/tilt-shift).
@@ -53,7 +53,7 @@
 
 ## 픽셀 그리드 레이아웃
 
-- 픽셀아트 및 일부 세션에서 1x1/2x2/3x3/4x4 버튼 렌더. 라벨·설명·스타일은 sessionConfig 헬퍼에서 결정.
+- 픽셀아트 및 일부 세션에서 1x1/2x2/3x3/4x4 버튼 렌더. 섹션 라벨은 세션별 명칭이 아니라 공통 `그리드`로 표시하고, 세션별 부가 설명은 렌더하지 않는다.
 - 그리드 개념·업스케일 상세는 픽셀아트 문서 참고(본 문서 범위 밖). 프롬프트에서의 그리드 처리(no grid lines 등)는 [프롬프트 개요](../prompts/overview.md).
 - 기본값 `IMAGE_GENERATION_DEFAULTS.PIXEL_ART_GRID`(`1x1`).
 
@@ -63,10 +63,10 @@
 - 기본값 `IMAGE_GENERATION_DEFAULTS.USE_REFERENCE_IMAGES`(`true`).
 - 켜져 있고 참조가 있으면 세션별 "참조 복제" 프롬프트 경로, 꺼져 있으면 분석 프롬프트(`positivePrompt`) 기반 텍스트 생성 경로.
 
-## 추가 프롬프트 (additionalPrompt)
+## 프롬프트 (additionalPrompt)
 
-- 자동 확장 textarea(72~200px 클램프). placeholder는 `getPromptPlaceholder(sessionType)`.
-- **번역 버튼 없음**: 한글을 넣으면 생성 시 자동으로 영어 번역(`useGeminiTranslator`). 번역 중 진행 상자에 `Languages` 아이콘.
+- 자동 확장 textarea(72~200px 클램프). 라벨은 `프롬프트`이고 placeholder는 `getPromptPlaceholder(sessionType)`.
+- **번역 버튼/설명 문구 없음**: 한글을 넣으면 생성 시 자동으로 영어 번역(`useGeminiTranslator`). 번역 중 진행 상자에 `Languages` 아이콘.
 
 ## 고급 설정 (showAdvanced)
 
@@ -84,11 +84,6 @@
 - **referenceStrength는 UI에만 존재**하고 Gemini API에 실제 전달되지 않는다(공식 미지원, `useGeminiImageGenerator.ts:245` 주석 처리).
 - Negative Prompt는 여기서 못 고친다 — 분석 패널의 "부정 프롬프트 카드"에서만 수정(고정 품질 유지 목적).
 
-## 추론 모드 (thinkingMode, 베타)
-
-- `onThinkingModeChange`가 있을 때만 체크박스 렌더.
-- 켜면 `buildPromptForSession`이 세션 타입에 맞는 단계적 사고 지시 prefix를 프롬프트 앞에 붙인다([thinkingPrefix](../prompts/overview.md#추론-모드-prefix)).
-
 ## 참조 문서 (UI 세션 전용)
 
 - `sessionType === 'UI'`에서만 `<DocumentManager>` 렌더(문서 관리는 별도 담당). 첨부된 `referenceDocuments`는 UI 프롬프트에 `REFERENCE DOCUMENTS` 섹션으로 삽입된다.
@@ -99,7 +94,7 @@
 | 증상 | 원인 |
 |------|------|
 | Reference Strength를 올려도 효과 없음 | Gemini API 미지원 — 값이 전달되지 않음(UI 표시만) |
-| 카메라 앵글/렌즈가 안 보임 | 현재 세션 타입이 표시 조건 목록에 없음(`LOGO`, `UI`, `ICON`, `PIXELART_CHARACTER`, `PIXELART_ICON`) |
+| 카메라 앵글/렌즈가 안 보임 | 현재 세션 타입이 표시 조건 목록에 없음(`CHARACTER`, `STYLE`, `LOGO`, `UI`, `ICON`, `PIXELART_CHARACTER`, `PIXELART_ICON`) |
 | 품질(low/high) 옵션이 없음 | Gemini 모델은 medium 고정 — gpt-image-2 선택 시에만 노출 |
 | 2K/4K 눌러도 안 바뀜 | 비용 확인 모달에서 미확인. 확인해야 적용 |
 | seed 고정했는데 모델 체크가 안 뜸 | seed가 있으면 첫 생성이 아니라고 보고 모델 가용성 체크 스킵 |

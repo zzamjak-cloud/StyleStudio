@@ -7,7 +7,7 @@
 - `src/components/chat/ChatPanel.tsx` — 채팅 패널 메인. `useChatSession`/`useChatImageGeneration` 결합, 전송(`handleSend`)·자동저장(`autoSaveImage`)·수동저장(`handleSaveImage`)·어노테이션 제출(`handleAnnotationSubmit`)·이미지 미리보기 모달. 좌측 대화 + 우측 `ChatAISettings` 레이아웃
 - `src/components/chat/ChatInput.tsx` — 하단 입력창(`ChatInput`). textarea 자동 높이, 이미지 첨부(붙여넣기·드래그드롭, 최대 `MAX_IMAGES=5`), Enter 전송/Shift+Enter 줄바꿈. 붙여넣기 이미지는 `downscaleImage(1280, 0.85)` 로 다운스케일
 - `src/components/chat/ChatMessage.tsx` — 개별 메시지 렌더(`ChatMessage`, memo). user/assistant/summary 3종, `LazyImage` 이미지, 요약 접기/펼치기, 생성 이미지 위 연필 버튼(어노테이션 진입)
-- `src/components/chat/ChatAISettings.tsx` — 우측 AI 설정 패널. 모델 드롭다운/한 줄 비율/크기/품질/추론모드/그리드 + 하단 기획문서(`DocumentManager`). 2K/4K 선택 시 비용 경고 팝업
+- `src/components/chat/ChatAISettings.tsx` — 우측 AI 설정 패널. 기획문서(`DocumentManager`)·그리드·모델 드롭다운·한 줄 비율·크기·품질 순서로 구성. 2K/4K 선택 시 비용 경고 팝업
 - `src/components/chat/ChatSettings.tsx` — 상단 설정 바(한 줄 비율·모델 드롭다운). 현재 레이아웃에서는 `ChatAISettings` 가 주 설정 UI
 - `src/hooks/useChatSession.ts` — `session.chatData` 파생/변경 훅. 메시지 CRUD·토큰 집계·요약·설정 업데이트. `ref` 기반으로 클로저 문제 회피
 - `src/hooks/useChatImageGeneration.ts` — 멀티턴 `contents` 구성(`buildContents`)·이미지 생성(`generateFromChat`)·요약(`summarizeMessages`). Gemini/OpenAI 분기
@@ -54,7 +54,7 @@ ChatGenerationSettings = {
 - 히스토리 이미지·signature 는 **IndexedDB 키일 수 있어** API 직전 `loadImage` 로 data URL 복원.
 - **signature 있는 Gemini 생성 이미지**: `model` 역할 + `inline_data` + `thought_signature` 로 전송.
 - **signature 없는 생성 이미지(OpenAI/어노테이션 결과)**: `model` 역할로 `inline_data` 를 보내면 Gemini 가 400 을 반환하므로, "직전 생성 이미지" 안내와 함께 **user 보조 턴**으로 분리하고 짧은 model ack 을 끼워 user→model 교차를 유지(`isOrphanGeneratedImage`, :96).
-- 프리셋/그리드/추론모드는 API 파라미터가 아니라 **프롬프트 prefix**(`buildSettingsPrefix`, :14)로 결합. 첨부 문서는 `summary`(없으면 content 1500자)만 주입해 토큰 절약, 문서 추출 이미지는 참조로 합산.
+- 그리드는 API 파라미터가 아니라 **프롬프트 prefix**(`buildSettingsPrefix`, :14)로 결합. 첨부 문서는 `summary`(없으면 content 1500자)만 주입해 토큰 절약, 문서 추출 이미지는 참조로 합산. `thinkingMode`는 레거시 저장값 호환용 필드이며 현재 우측 설정 UI와 프롬프트 prefix에는 노출하지 않는다.
 
 ## 모델 분기 (Gemini / OpenAI)
 

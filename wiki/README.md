@@ -48,7 +48,6 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | OpenAI "안전 시스템 차단" 오류 | `generator/image-generation-api.md` |
 | Ctrl+V가 텍스트만 붙고 이미지가 안 붙음 | `generator/image-generation-api.md` |
 | 캐릭터가 참조와 다르게 생성됨 | `prompts/overview.md` |
-| 추론 모드 켰는데 prefix가 안 붙음 | `prompts/overview.md` |
 | 생성 이미지 재편집 시 Gemini 400 / 이어지는 편집이 직전 이미지 반영 못 함 | `chat/overview.md` |
 | 대화 요약 후에도 토큰/저장용량 안 줄어듦 | `chat/overview.md` |
 | OpenAI Key 없이 gpt-image-2 선택, 극단 비율(1:3) 오류 | `chat/overview.md` |
