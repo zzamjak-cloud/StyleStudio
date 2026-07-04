@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { FileText, Plus, FileSearch, Trash2, X, Link } from 'lucide-react';
+import { FileText, Plus, FileSearch, Trash2, X, Link, HelpCircle } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { parseFile, SUPPORTED_FILE_TYPES } from '../../lib/utils/fileParser';
@@ -269,76 +269,84 @@ export function DocumentManager({
   };
 
   return (
-    <div className="relative border rounded-lg p-4 bg-gray-50">
-      {/* 헤더 */}
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-900">기획 문서</h3>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowUrlInput(true)}
-            disabled={isProcessing}
-            className="p-2 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="URL 추가"
-          >
-            <Link size={16} className="text-gray-700" />
-          </button>
-          <button
-            onClick={handleAddFile}
-            disabled={isProcessing}
-            className="p-2 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="파일 추가"
-          >
-            <Plus size={16} className="text-gray-700" />
-          </button>
+    <div className="relative">
+      <div
+        className={`flex min-h-[38px] items-center gap-2 rounded-lg border border-dashed px-2.5 py-1.5 transition-colors ${
+          isDragging
+            ? 'border-purple-500 bg-purple-50'
+            : 'border-gray-300 bg-white hover:border-purple-300'
+        }`}
+      >
+        <FileText size={15} className="shrink-0 text-gray-500" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-xs font-semibold text-gray-800">기획 문서</span>
+            <div className="group relative flex">
+              <button
+                type="button"
+                className="rounded-full p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="기획 문서 도움말"
+              >
+                <HelpCircle size={13} />
+              </button>
+              <div className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-64 rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white shadow-xl group-hover:block">
+                PDF, Excel, CSV, Markdown, Text 파일과 Google Sheets 또는 웹 페이지 URL을 참조 문서로 추가합니다. 요약 내용은 이미지 생성 프롬프트에 반영됩니다.
+              </div>
+            </div>
+          </div>
+          <p className="truncate text-[11px] text-gray-500">
+            {documents.length === 0
+              ? '파일을 이 줄에 드롭하거나 오른쪽 버튼으로 추가'
+              : `${documents.length}개 문서가 프롬프트에 반영됨`}
+          </p>
         </div>
+        <button
+          onClick={() => setShowUrlInput(true)}
+          disabled={isProcessing}
+          className="shrink-0 rounded-md p-1.5 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="URL 추가"
+        >
+          <Link size={14} className="text-gray-700" />
+        </button>
+        <button
+          onClick={handleAddFile}
+          disabled={isProcessing}
+          className="shrink-0 rounded-md p-1.5 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="파일 추가"
+        >
+          <Plus size={14} className="text-gray-700" />
+        </button>
       </div>
 
-      {/* 빈 상태 */}
-      {documents.length === 0 && (
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-          <p className="text-sm text-gray-500">
-            기획 문서를 드래그하여 첨부하거나
-            <br />🔗 버튼으로 URL, + 버튼으로 파일을 추가하세요
-          </p>
-          <p className="text-xs text-gray-400 mt-2">
-            파일: PDF, Excel, CSV, Markdown, Text<br />
-            URL: Google Sheets, 웹 페이지
-          </p>
-        </div>
-      )}
-
-      {/* 파일 리스트 */}
       {documents.length > 0 && (
-        <div className="space-y-2">
+        <div className="mt-2 flex flex-wrap gap-1.5">
           {documents.map((doc) => (
-            <div key={doc.id} className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200">
-              <FileText size={16} className="text-gray-500 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{doc.fileName}</p>
-                  {showPersistentBadge && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 rounded border border-blue-200 shrink-0">
-                      {persistentBadgeText}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 truncate">
-                  {doc.summary ? doc.summary.substring(0, 50) + (doc.summary.length > 50 ? '...' : '') : '요약 없음'}
-                </p>
-              </div>
+            <div
+              key={doc.id}
+              className="flex max-w-full items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 py-1 shadow-sm"
+            >
+              <FileText size={13} className="shrink-0 text-gray-500" />
+              <span className="max-w-[160px] truncate text-[11px] font-medium text-gray-800">
+                {doc.fileName}
+              </span>
+              {showPersistentBadge && (
+                <span className="shrink-0 rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[9px] font-medium text-blue-700">
+                  {persistentBadgeText}
+                </span>
+              )}
               <button
                 onClick={() => setViewingDocument(doc)}
-                className="p-1.5 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
+                className="shrink-0 rounded p-0.5 hover:bg-gray-100 transition-colors"
                 title="요약 보기"
               >
-                <FileSearch size={14} className="text-gray-600" />
+                <FileSearch size={12} className="text-gray-600" />
               </button>
               <button
                 onClick={() => setDeleteConfirm(doc.id)}
-                className="p-1.5 hover:bg-red-100 rounded transition-colors flex-shrink-0"
+                className="shrink-0 rounded p-0.5 hover:bg-red-100 transition-colors"
                 title="삭제"
               >
-                <Trash2 size={14} className="text-red-600" />
+                <Trash2 size={12} className="text-red-600" />
               </button>
             </div>
           ))}
@@ -347,12 +355,7 @@ export function DocumentManager({
 
       {/* 드래그 오버레이 */}
       {isDragging && (
-        <div className="absolute inset-0 flex items-center justify-center bg-purple-500/10 rounded-lg z-10 pointer-events-none border-2 border-purple-500 border-dashed">
-          <div className="bg-white border-2 border-purple-500 border-dashed rounded-lg px-6 py-4">
-            <p className="text-lg font-semibold text-purple-700">파일을 여기에 드롭하세요</p>
-            <p className="text-sm text-gray-600 mt-1">PDF, Excel, CSV, Markdown, Text 지원</p>
-          </div>
-        </div>
+        <div className="absolute inset-0 z-10 pointer-events-none rounded-lg border-2 border-dashed border-purple-500 bg-purple-500/10" />
       )}
 
       {/* 처리 중 오버레이 */}

@@ -159,7 +159,7 @@ function GeneratorSettingsComponent({
   };
 
   return (
-    <div className="w-96 bg-white border-r border-gray-200 flex flex-col">
+    <div className="w-96 bg-white border-l border-gray-200 flex flex-col">
       {/* 고정 영역: 추가 프롬프트 + 생성 버튼 */}
       <div className="p-6 pb-4 border-b border-gray-200 bg-white space-y-4">
         {/* 추가 프롬프트 입력 (선택사항) - 고정 영역 */}
@@ -205,19 +205,13 @@ function GeneratorSettingsComponent({
 
           {/* UI 세션 전용: 참조 문서 */}
           {sessionType === 'UI' && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                참조 문서 (UI 기획서 등)
-              </label>
+            <div className="space-y-2">
               <DocumentManager
                 documents={referenceDocuments}
                 apiKey={geminiApiKey}
                 onAdd={onDocumentAdd || (() => {})}
                 onDelete={onDocumentDelete || (() => {})}
               />
-              <p className="text-xs text-gray-500 mt-2">
-                UI 기획서나 설명 문서를 업로드하면 내용이 자동으로 프롬프트에 반영됩니다.
-              </p>
             </div>
           )}
 
@@ -287,9 +281,7 @@ function GeneratorSettingsComponent({
             sessionType === 'BACKGROUND' ||
             sessionType === 'ILLUSTRATION' ||
             sessionType === 'STYLE' ||
-            sessionType === 'ICON' ||
-            sessionType === 'PIXELART_BACKGROUND' ||
-            sessionType === 'PIXELART_ICON') && (
+            sessionType === 'PIXELART_BACKGROUND') && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 <div className="flex items-center gap-2">
@@ -322,9 +314,7 @@ function GeneratorSettingsComponent({
             sessionType === 'BACKGROUND' ||
             sessionType === 'ILLUSTRATION' ||
             sessionType === 'STYLE' ||
-            sessionType === 'ICON' ||
-            sessionType === 'PIXELART_BACKGROUND' ||
-            sessionType === 'PIXELART_ICON') && (
+            sessionType === 'PIXELART_BACKGROUND') && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 <div className="flex items-center gap-2">
@@ -354,21 +344,23 @@ function GeneratorSettingsComponent({
 
           {/* 모델 선택 */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">모델 선택</label>
-            <div className="grid grid-cols-1 gap-2">
-              {availableModels.map((model) => (
-                <button
-                  key={model.id}
-                  onClick={() => onImageModelChange(model.id)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition-all text-left ${
-                    imageModel === model.id
-                      ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
-                  }`}
-                >
-                  {model.label}
-                </button>
-              ))}
+            <label className="block text-sm font-semibold text-gray-700 mb-2">AI 이미지 생성 모델</label>
+            <div className="relative">
+              <select
+                value={imageModel}
+                onChange={(e) => onImageModelChange(e.target.value as ImageGenerationModel)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-transparent appearance-none cursor-pointer pr-10"
+              >
+                {availableModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={16}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+              />
             </div>
             {!openaiApiKey.trim() && (
               <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
@@ -378,15 +370,7 @@ function GeneratorSettingsComponent({
           {/* 이미지 비율 선택 */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 비율</label>
-            <div
-              className={`grid gap-2 ${
-                supportedAspectRatios.length <= 3
-                  ? 'grid-cols-3'
-                  : supportedAspectRatios.length <= 5
-                  ? 'grid-cols-5'
-                  : 'grid-cols-4'
-              }`}
-            >
+            <div className="flex flex-nowrap gap-1">
               {supportedAspectRatios.map((ratio) => {
                 const isExtreme = ratio === '1:3' || ratio === '3:1';
                 return (
@@ -394,9 +378,9 @@ function GeneratorSettingsComponent({
                     key={ratio}
                     onClick={() => onAspectRatioChange(ratio)}
                     title={isExtreme ? '극단적 비율(베타) — 배너/파노라마용' : undefined}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                    className={`min-w-0 flex-1 px-1 py-1.5 rounded-md text-[11px] font-medium border transition-all ${
                       aspectRatio === ratio
-                        ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
+                        ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
                         : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
                     }`}
                   >

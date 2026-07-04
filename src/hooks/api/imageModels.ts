@@ -5,11 +5,13 @@ export type ImageQualityOption = 'low' | 'medium' | 'high';
 export type ImageGenerationModel =
   | 'gemini-3-pro-image-preview'
   | 'gemini-3.1-flash-image-preview'
+  | 'gemini-3.1-flash-lite-image'
   | 'gpt-image-2';
 
 export type GeminiImageGenerationModel =
   | 'gemini-3-pro-image-preview'
-  | 'gemini-3.1-flash-image-preview';
+  | 'gemini-3.1-flash-image-preview'
+  | 'gemini-3.1-flash-lite-image';
 
 export interface ImageModelDefinition {
   id: ImageGenerationModel;
@@ -42,6 +44,17 @@ export const IMAGE_MODELS: ImageModelDefinition[] = [
   {
     id: 'gemini-3.1-flash-image-preview',
     label: '나노바나나2',
+    provider: 'gemini',
+    supports: {
+      aspectRatios: GEMINI_ASPECT_RATIOS,
+      imageSizes: ['1K', '2K', '4K'],
+      qualities: ['medium'],
+      geminiAdvancedControls: true,
+    },
+  },
+  {
+    id: 'gemini-3.1-flash-lite-image',
+    label: '나노바나나 2 라이트',
     provider: 'gemini',
     supports: {
       aspectRatios: GEMINI_ASPECT_RATIOS,

@@ -1117,7 +1117,30 @@ export function ImageGeneratorPanel({
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* 왼쪽: 설정 패널 */}
+        {/* 왼쪽: 결과 표시 및 히스토리 */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* 결과 표시 영역 */}
+          <GeneratorPreview
+            isGenerating={isGenerating}
+            progressMessage={progressMessage}
+            generatedImage={generatedImage}
+            zoomLevel={zoomLevel}
+            onManualSave={handleManualSave}
+          />
+
+          {/* 히스토리 섹션 */}
+          <GeneratorHistory
+            generationHistory={generationHistory}
+            historyHeight={historyHeight}
+            onHistoryResize={handleHistoryResize}
+            onRestoreFromHistory={handleRestoreFromHistory}
+            onTogglePin={handleTogglePin}
+            onDeleteHistory={onHistoryDelete}
+          />
+
+        </div>
+
+        {/* 오른쪽: 설정 패널 */}
         <GeneratorSettings
           geminiApiKey={geminiApiKey}
           openaiApiKey={openaiApiKey}
@@ -1165,30 +1188,6 @@ export function ImageGeneratorPanel({
           onDocumentAdd={onDocumentAdd}
           onDocumentDelete={onDocumentDelete}
         />
-
-
-      {/* 오른쪽: 결과 표시 및 히스토리 */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* 결과 표시 영역 */}
-          <GeneratorPreview
-            isGenerating={isGenerating}
-            progressMessage={progressMessage}
-            generatedImage={generatedImage}
-            zoomLevel={zoomLevel}
-            onManualSave={handleManualSave}
-          />
-
-          {/* 히스토리 섹션 */}
-          <GeneratorHistory
-            generationHistory={generationHistory}
-            historyHeight={historyHeight}
-            onHistoryResize={handleHistoryResize}
-            onRestoreFromHistory={handleRestoreFromHistory}
-            onTogglePin={handleTogglePin}
-            onDeleteHistory={onHistoryDelete}
-          />
-
-        </div>
       </div>
 
 

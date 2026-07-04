@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import { Copy, Check, Sparkles } from 'lucide-react';
+import { Copy, Check, Sparkles, Search } from 'lucide-react';
 import { ImageAnalysisResult } from '../../types/analysis';
 import { buildUnifiedPrompt } from '../../lib/promptBuilder';
 import { logger } from '../../lib/logger';
 
 interface UnifiedPromptCardProps {
   analysis: ImageAnalysisResult;
+  onDetailClick?: () => void;
 }
 
 export function UnifiedPromptCard({
   analysis,
+  onDetailClick,
 }: UnifiedPromptCardProps) {
   const [copiedPositive, setCopiedPositive] = useState(false);
   const [copiedNegative, setCopiedNegative] = useState(false);
@@ -33,16 +35,27 @@ export function UnifiedPromptCard({
   };
 
   return (
-    <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl shadow-lg p-6 border-2 border-purple-300">
+    <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl shadow-lg p-5 border-2 border-purple-300">
       {/* 헤더 */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 bg-purple-600 rounded-lg">
-          <Sparkles size={24} className="text-white" />
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 bg-purple-600 rounded-lg">
+            <Sparkles size={22} className="text-white" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-bold text-gray-800">통합 프롬프트</h3>
+            <p className="text-xs text-gray-600">분석 정보를 통합한 생성 프롬프트</p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-xl font-bold text-gray-800">통합 프롬프트</h3>
-          <p className="text-xs text-gray-600">모든 분석 카드의 정보를 통합한 프롬프트</p>
-        </div>
+        {onDetailClick && (
+          <button
+            onClick={onDetailClick}
+            className="shrink-0 rounded-lg p-2 text-purple-700 hover:bg-purple-100 transition-colors"
+            title="세부 분석 보기/수정"
+          >
+            <Search size={18} />
+          </button>
+        )}
       </div>
 
       {/* Positive Prompt */}
@@ -83,14 +96,9 @@ export function UnifiedPromptCard({
         </div>
       </div>
 
-      {/* 안내 메시지 */}
-      <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <p className="text-xs text-blue-800">
-          <strong>💡 사용법:</strong> 통합 프롬프트는 모든 분석 카드의 정보를 모아서 표시합니다.
-          <br />각 분석 카드를 수정하면 통합 프롬프트가 자동으로 갱신됩니다.
-          <br />복사 버튼을 클릭하면 영어 원본이 복사됩니다.
-        </p>
-      </div>
+      <p className="text-[11px] text-blue-800">
+        세부 분석을 수정하면 통합 프롬프트가 즉시 갱신됩니다.
+      </p>
     </div>
   );
 }

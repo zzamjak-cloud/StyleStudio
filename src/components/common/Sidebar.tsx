@@ -1,8 +1,8 @@
-import { memo, useCallback, useState, useRef, useEffect } from 'react';
+import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import {
   Palette, User, Trash2, ImagePlus, Download, FolderOpen, Settings,
   Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award, Images,
-  Folder, FolderPlus, ChevronLeft, MoreVertical, Pencil, FolderDown,
+  Folder, FolderPlus, ChevronRight, MoreVertical, Pencil, FolderDown,
   MessageCircle, Lightbulb,
 } from 'lucide-react';
 import { Session, SessionType } from '../../types/session';
@@ -43,6 +43,12 @@ function getSessionTypeInfo(type: SessionType) {
 
 // 드래그 타입 (Item 컴포넌트에서도 사용하기 위해 미리 선언)
 type DragItemType = 'session' | 'folder';
+type VisibleSidebarItem = {
+  type: DragItemType;
+  item: Session | FolderType;
+  depth: number;
+  parentFolderId: string | null;
+};
 
 /**
  * 세션 리스트 아이템 — React.memo 처리되어 부모 Sidebar 리렌더 시
@@ -54,6 +60,7 @@ type DragItemType = 'session' | 'folder';
 interface SessionListItemProps {
   session: Session;
   index: number;
+  depth: number;
   isActive: boolean;
   isBeingDragged: boolean;
   isDragOver: boolean;
@@ -75,6 +82,7 @@ interface SessionListItemProps {
 const SessionListItem = memo(function SessionListItem({
   session,
   index,
+  depth,
   isActive,
   isBeingDragged,
   isDragOver,
@@ -101,7 +109,8 @@ const SessionListItem = memo(function SessionListItem({
       data-item-id={session.id}
       onMouseDown={(e) => !isInlineEditing && onMouseDown(e, index, 'session')}
       onDoubleClick={() => !isInlineEditing && onDoubleClick(session.id)}
-      className={`group rounded-lg p-2 transition-all relative select-none ml-3 ${
+      style={{ paddingLeft: depth * 16 + 28 }}
+      className={`group rounded-lg p-2 transition-all relative select-none ${
         isActive
           ? 'bg-gray-800 border border-purple-500'
           : disabled
@@ -174,6 +183,9 @@ const SessionListItem = memo(function SessionListItem({
 interface FolderListItemProps {
   folder: FolderType;
   index: number;
+  depth: number;
+  isExpanded: boolean;
+  hasChildren: boolean;
   isDropTarget: boolean;
   isFolderSelected: boolean;
   isBeingDragged: boolean;
@@ -185,7 +197,7 @@ interface FolderListItemProps {
   disabled: boolean;
   onMouseDown: (e: React.MouseEvent, index: number, type: DragItemType) => void;
   onClickFolder: (folderId: string) => void;
-  onDoubleClickFolder: (folderId: string) => void;
+  onToggleFolder: (folderId: string) => void;
   onInlineRename: () => void;
   onInlineCancel: () => void;
   onInlineEditValueChange: (value: string) => void;
@@ -195,6 +207,9 @@ interface FolderListItemProps {
 const FolderListItem = memo(function FolderListItem({
   folder,
   index,
+  depth,
+  isExpanded,
+  hasChildren,
   isDropTarget,
   isFolderSelected,
   isBeingDragged,
@@ -206,7 +221,7 @@ const FolderListItem = memo(function FolderListItem({
   disabled,
   onMouseDown,
   onClickFolder,
-  onDoubleClickFolder,
+  onToggleFolder,
   onInlineRename,
   onInlineCancel,
   onInlineEditValueChange,
@@ -219,7 +234,7 @@ const FolderListItem = memo(function FolderListItem({
       data-item-id={folder.id}
       onMouseDown={(e) => !isInlineEditing && onMouseDown(e, index, 'folder')}
       onClick={() => !isDragging && !disabled && !isInlineEditing && onClickFolder(folder.id)}
-      onDoubleClick={() => !isInlineEditing && onDoubleClickFolder(folder.id)}
+      style={{ paddingLeft: depth * 16 + 8 }}
       className={`group rounded-lg p-2 transition-all relative select-none cursor-pointer ${
         isDropTarget
           ? 'ring-2 ring-purple-500 bg-purple-500/20'
@@ -233,6 +248,25 @@ const FolderListItem = memo(function FolderListItem({
       }`}
     >
       <div className="flex items-center gap-2">
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!disabled) onToggleFolder(folder.id);
+            }}
+            disabled={disabled}
+            className="p-0.5 hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
+            title={isExpanded ? '폴더 접기' : '폴더 펼치기'}
+          >
+            <ChevronRight
+              size={14}
+              className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+            />
+          </button>
+        ) : (
+          <span className="w-[18px] flex-shrink-0" />
+        )}
         <Folder size={16} className="text-yellow-400 flex-shrink-0" />
         {isInlineEditing ? (
           <input
@@ -284,6 +318,7 @@ interface SidebarProps {
 
   // 폴더 관련
   folders: FolderType[];
+  sessionFolderMap: Record<string, string | null>;
   currentFolderId: string | null;
   folderPath: FolderPath[];
   currentFolderSessions: Session[];
@@ -292,7 +327,7 @@ interface SidebarProps {
   onSelectFolder?: (folderId: string | null) => void;
   onNavigateToFolder: (folderId: string | null) => void;
   onNavigateBack: () => void;
-  onCreateFolder: (name: string) => Promise<void>;
+  onCreateFolder: (name: string, parentId?: string | null) => Promise<void>;
   onRenameFolder: (folderId: string, newName: string) => Promise<void>;
   onDeleteFolder: (folderId: string, deleteContents: boolean) => Promise<void>;
   onExportFolder?: (folderId: string) => Promise<void>;
@@ -315,14 +350,9 @@ export function Sidebar({
   disabled = false,
   // 폴더 관련
   folders,
-  currentFolderId,
-  folderPath,
+  sessionFolderMap,
   selectedFolderId,
   onSelectFolder,
-  currentFolderSessions,
-  currentFolderSubfolders,
-  onNavigateToFolder,
-  onNavigateBack,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -337,13 +367,12 @@ export function Sidebar({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragOverType, setDragOverType] = useState<DragItemType | null>(null);
   const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
-  const [dropOnBackButton, setDropOnBackButton] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
   const dragStartX = useRef<number>(0);
   const dragStartY = useRef<number>(0);
   const listRef = useRef<HTMLDivElement>(null);
-  const backButtonRef = useRef<HTMLDivElement>(null);
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(() => new Set());
 
   // 다이얼로그 상태
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -362,11 +391,46 @@ export function Sidebar({
   // 드래그 임계값
   const DRAG_THRESHOLD = 5;
 
-  // 합쳐진 아이템 목록 (폴더 먼저, 세션 나중)
-  const combinedItems = [
-    ...currentFolderSubfolders.map(f => ({ type: 'folder' as const, item: f })),
-    ...currentFolderSessions.map(s => ({ type: 'session' as const, item: s })),
-  ];
+  const getSessionFolderId = useCallback((session: Session): string | null => {
+    return sessionFolderMap[session.id] ?? null;
+  }, [sessionFolderMap]);
+
+  const visibleItems = useMemo<VisibleSidebarItem[]>(() => {
+    const buildItems = (parentFolderId: string | null, depth: number): VisibleSidebarItem[] => {
+      const childFolders = folders
+        .filter((folder) => folder.parentId === parentFolderId)
+        .sort((a, b) => a.order - b.order);
+      const childSessions = sessions.filter((session) => getSessionFolderId(session) === parentFolderId);
+      const items: VisibleSidebarItem[] = [];
+
+      for (const folder of childFolders) {
+        items.push({ type: 'folder', item: folder, depth, parentFolderId });
+        if (expandedFolderIds.has(folder.id)) {
+          items.push(...buildItems(folder.id, depth + 1));
+        }
+      }
+
+      for (const session of childSessions) {
+        items.push({ type: 'session', item: session, depth, parentFolderId });
+      }
+
+      return items;
+    };
+
+    return buildItems(null, 0);
+  }, [expandedFolderIds, folders, getSessionFolderId, sessions]);
+
+  const folderIdsWithChildren = useMemo(() => {
+    const ids = new Set<string>();
+    for (const folder of folders) {
+      if (folder.parentId) ids.add(folder.parentId);
+    }
+    for (const session of sessions) {
+      const folderId = getSessionFolderId(session);
+      if (folderId) ids.add(folderId);
+    }
+    return ids;
+  }, [folders, getSessionFolderId, sessions]);
 
   // 드래그 이벤트 핸들러
   useEffect(() => {
@@ -388,29 +452,13 @@ export function Sidebar({
 
       setDragPosition({ x: e.clientX, y: e.clientY });
 
-      // 뒤로가기 버튼 영역 감지
-      if (backButtonRef.current && currentFolderId) {
-        const backRect = backButtonRef.current.getBoundingClientRect();
-        if (
-          e.clientX >= backRect.left &&
-          e.clientX <= backRect.right &&
-          e.clientY >= backRect.top &&
-          e.clientY <= backRect.bottom
-        ) {
-          setDropOnBackButton(true);
-          setDropTargetFolderId(null);
-          setDragOverIndex(null);
-          setDragOverType(null);
-          return;
-        }
-      }
-      setDropOnBackButton(false);
-
       // 드래그 오버 위치 계산
       const items = listRef.current.querySelectorAll('[data-item-index]');
       let newDragOverIndex: number | null = null;
       let newDragOverType: DragItemType | null = null;
       let newDropTargetFolderId: string | null = null;
+      const draggedItem = visibleItems[draggedIndex];
+      const draggedItemId = draggedItem?.item.id ?? null;
 
       items.forEach((item) => {
         const rect = item.getBoundingClientRect();
@@ -423,7 +471,11 @@ export function Sidebar({
           const centerTop = rect.top + rect.height * 0.35;
           const centerBottom = rect.top + rect.height * 0.65;
 
-          if (e.clientY >= centerTop && e.clientY <= centerBottom) {
+          if (
+            e.clientY >= centerTop &&
+            e.clientY <= centerBottom &&
+            itemId !== draggedItemId
+          ) {
             // 폴더 내부로 드롭
             newDropTargetFolderId = itemId;
             newDragOverIndex = null;
@@ -458,10 +510,10 @@ export function Sidebar({
       const prevDraggedIndex = draggedIndex;
       const prevDraggedType = draggedType;
       const prevDropTargetFolderId = dropTargetFolderId;
-      const prevDropOnBackButton = dropOnBackButton;
       const prevDragOverIndex = dragOverIndex;
       const prevDragOverType = dragOverType;
-      const prevDraggedItem = prevDraggedIndex !== null ? combinedItems[prevDraggedIndex] : null;
+      const prevDraggedItem = prevDraggedIndex !== null ? visibleItems[prevDraggedIndex] : null;
+      const prevDropItem = prevDragOverIndex !== null ? visibleItems[prevDragOverIndex] : null;
 
       // 상태 즉시 초기화 (비동기 작업 전에)
       setIsDragging(false);
@@ -470,27 +522,13 @@ export function Sidebar({
       setDragOverIndex(null);
       setDragOverType(null);
       setDropTargetFolderId(null);
-      setDropOnBackButton(false);
       setDragPosition(null);
 
       // 비동기 작업 실행 (저장된 로컬 변수 사용)
       if (wasDragging && prevDraggedIndex !== null && prevDraggedType !== null && prevDraggedItem) {
-        // 뒤로가기 버튼에 드롭 - 상위 폴더로 이동
-        if (prevDropOnBackButton && currentFolderId) {
-          const currentFolder = folders.find(f => f.id === currentFolderId);
-          const parentFolderId = currentFolder?.parentId ?? null;
-
-          if (prevDraggedType === 'session') {
-            await onMoveSessionToFolder((prevDraggedItem.item as Session).id, parentFolderId);
-            logger.debug('✅ 세션을 상위 폴더로 이동:', (prevDraggedItem.item as Session).name);
-          } else if (prevDraggedType === 'folder') {
-            const movingFolderId = (prevDraggedItem.item as FolderType).id;
-            await onMoveFolderToFolder(movingFolderId, parentFolderId);
-            logger.debug('✅ 폴더를 상위 폴더로 이동:', (prevDraggedItem.item as FolderType).name);
-          }
-        }
         // 폴더로 드롭하는 경우
-        else if (prevDropTargetFolderId) {
+        if (prevDropTargetFolderId) {
+          setExpandedFolderIds((prev) => new Set(prev).add(prevDropTargetFolderId));
           if (prevDraggedType === 'session') {
             await onMoveSessionToFolder((prevDraggedItem.item as Session).id, prevDropTargetFolderId);
           } else if (prevDraggedType === 'folder') {
@@ -501,22 +539,45 @@ export function Sidebar({
           }
         }
         // 같은 타입 내에서 순서 변경
-        else if (prevDragOverIndex !== null && prevDragOverType === prevDraggedType && prevDraggedIndex !== prevDragOverIndex) {
-          if (prevDraggedType === 'session' && onReorderSessions) {
-            const reorderedSessions = [...currentFolderSessions];
-            const sessionDragIndex = prevDraggedIndex - currentFolderSubfolders.length;
-            const sessionDropIndex = prevDragOverIndex - currentFolderSubfolders.length;
+        else if (
+          prevDragOverIndex !== null &&
+          prevDragOverType === prevDraggedType &&
+          prevDraggedIndex !== prevDragOverIndex &&
+          prevDropItem
+        ) {
+          if (prevDraggedType === 'session' && onReorderSessions && prevDropItem.type === 'session') {
+            const draggedSession = prevDraggedItem.item as Session;
+            const targetSession = prevDropItem.item as Session;
+            const targetFolderId = prevDropItem.parentFolderId;
+            const nextSessions = sessions.filter((session) => session.id !== draggedSession.id);
+            const targetIndex = nextSessions.findIndex((session) => session.id === targetSession.id);
 
-            if (sessionDragIndex >= 0 && sessionDropIndex >= 0) {
-              const [draggedSession] = reorderedSessions.splice(sessionDragIndex, 1);
-              reorderedSessions.splice(sessionDropIndex, 0, draggedSession);
-              onReorderSessions(reorderedSessions);
+            if (targetIndex >= 0) {
+              nextSessions.splice(targetIndex, 0, draggedSession);
+              onReorderSessions(nextSessions);
+
+              if (prevDraggedItem.parentFolderId !== targetFolderId) {
+                await onMoveSessionToFolder(draggedSession.id, targetFolderId);
+              }
             }
-          } else if (prevDraggedType === 'folder') {
-            const reorderedFolders = [...currentFolderSubfolders];
-            const [draggedFolder] = reorderedFolders.splice(prevDraggedIndex, 1);
-            reorderedFolders.splice(prevDragOverIndex, 0, draggedFolder);
-            await onReorderFolders(reorderedFolders);
+          } else if (
+            prevDraggedType === 'folder' &&
+            prevDropItem.type === 'folder' &&
+            prevDraggedItem.parentFolderId === prevDropItem.parentFolderId
+          ) {
+            const draggedFolder = prevDraggedItem.item as FolderType;
+            const targetFolder = prevDropItem.item as FolderType;
+            const reorderedFolders = folders
+              .filter((folder) => folder.parentId === prevDraggedItem.parentFolderId)
+              .sort((a, b) => a.order - b.order);
+            const folderDragIndex = reorderedFolders.findIndex((folder) => folder.id === draggedFolder.id);
+            const folderDropIndex = reorderedFolders.findIndex((folder) => folder.id === targetFolder.id);
+
+            if (folderDragIndex >= 0 && folderDropIndex >= 0) {
+              const [movedFolder] = reorderedFolders.splice(folderDragIndex, 1);
+              reorderedFolders.splice(folderDropIndex, 0, movedFolder);
+              await onReorderFolders(reorderedFolders);
+            }
           }
         }
       }
@@ -531,7 +592,7 @@ export function Sidebar({
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isDragging, draggedIndex, draggedType, dragOverIndex, dragOverType, dropTargetFolderId, dropOnBackButton, currentFolderId, folders, combinedItems, currentFolderSubfolders, currentFolderSessions, onReorderSessions, onReorderFolders, onMoveSessionToFolder, onMoveFolderToFolder]);
+  }, [isDragging, draggedIndex, draggedType, dragOverIndex, dragOverType, dropTargetFolderId, visibleItems, folders, sessions, onReorderSessions, onReorderFolders, onMoveSessionToFolder, onMoveFolderToFolder]);
 
   // 컨텍스트 메뉴 외부 클릭 시 닫기
   useEffect(() => {
@@ -627,7 +688,7 @@ export function Sidebar({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [disabled, currentFolderSubfolders, currentSessionId, selectedFolderId, sessions, folders, onRenameSession, inlineEditFolderId, inlineEditSessionId]);
+  }, [disabled, currentSessionId, selectedFolderId, sessions, folders, onRenameSession, inlineEditFolderId, inlineEditSessionId]);
 
   // 인라인 편집 시 자동 포커스 및 선택
   useEffect(() => {
@@ -655,12 +716,18 @@ export function Sidebar({
     onSelectFolder?.(folderId);
   }, [disabled, onSelectFolder]);
 
-  // 폴더 더블클릭 → 폴더 내부 이동
-  const handleFolderDoubleClick = useCallback((folderId: string) => {
-    if (disabled) return;
-    onSelectFolder?.(null);
-    onNavigateToFolder(folderId);
-  }, [disabled, onSelectFolder, onNavigateToFolder]);
+  // 폴더 펼침/접힘 토글
+  const handleToggleFolder = useCallback((folderId: string) => {
+    setExpandedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  }, []);
 
   // 세션 더블클릭 → 인라인 이름 변경 모드
   const handleSessionDoubleClick = useCallback((sessionId: string) => {
@@ -716,9 +783,14 @@ export function Sidebar({
   const handleCreateFolderWithDefaultName = async () => {
     if (disabled) return;
 
+    // 선택된 폴더가 있으면 그 아래에, 아니면 루트에 만든다.
+    const targetFolderId = selectedFolderId ?? null;
+
     // 기존 폴더 이름 확인하여 중복 방지
     const baseName = '새 폴더';
-    const existingNames = currentFolderSubfolders.map(f => f.name);
+    const existingNames = folders
+      .filter((folder) => folder.parentId === targetFolderId)
+      .map((folder) => folder.name);
 
     let newName = baseName;
     let counter = 1;
@@ -727,12 +799,15 @@ export function Sidebar({
       counter++;
     }
 
-    await onCreateFolder(newName);
+    await onCreateFolder(newName, targetFolderId);
+    if (targetFolderId) {
+      setExpandedFolderIds((prev) => new Set(prev).add(targetFolderId));
+    }
     logger.debug('✅ 폴더 생성:', newName);
   };
 
   // 드래그 중인 아이템 정보
-  const draggedItem = draggedIndex !== null ? combinedItems[draggedIndex] : null;
+  const draggedItem = draggedIndex !== null ? visibleItems[draggedIndex] : null;
 
   return (
     <aside className="w-72 h-screen bg-gray-900 text-white flex flex-col relative overflow-hidden">
@@ -822,40 +897,12 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* 현재 폴더 경로 + 뒤로가기 (드롭 영역) */}
-      {currentFolderId && (
-        <div
-          ref={backButtonRef}
-          className={`px-3 py-2 border-b border-gray-700 flex items-center gap-2 transition-all ${
-            dropOnBackButton
-              ? 'bg-purple-500/30 ring-2 ring-purple-500'
-              : 'bg-gray-800/50'
-          }`}
-        >
-          <button
-            onClick={onNavigateBack}
-            disabled={disabled}
-            className="p-1 hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
-            title="뒤로가기 (드래그하여 상위 폴더로 이동)"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <div className="flex items-center gap-1 text-xs text-gray-400 truncate flex-1">
-            <Folder size={14} className="text-yellow-400 flex-shrink-0" />
-            <span className="truncate">{folderPath[folderPath.length - 1]?.name || ''}</span>
-          </div>
-          {dropOnBackButton && (
-            <span className="text-xs text-purple-300">상위로 이동</span>
-          )}
-        </div>
-      )}
-
       {/* 폴더 및 세션 목록 */}
       <div
         ref={listRef}
         className="flex-1 overflow-y-auto p-3 space-y-1.5"
       >
-        {combinedItems.length === 0 ? (
+        {visibleItems.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <div className="mb-4">
               <Palette size={40} className="mx-auto opacity-30" />
@@ -864,7 +911,7 @@ export function Sidebar({
             <p className="text-xs mt-1 text-gray-600">이미지를 업로드하여 시작하세요</p>
           </div>
         ) : (
-          combinedItems.map(({ type, item }, index) => {
+          visibleItems.map(({ type, item, depth }, index) => {
             const isBeingDragged = isDragging && draggedIndex === index;
             const isDragOver = dragOverIndex === index && !isBeingDragged;
             const isDropTarget = type === 'folder' && dropTargetFolderId === (item as FolderType).id;
@@ -879,6 +926,9 @@ export function Sidebar({
                   key={folder.id}
                   folder={folder}
                   index={index}
+                  depth={depth}
+                  isExpanded={expandedFolderIds.has(folder.id)}
+                  hasChildren={folderIdsWithChildren.has(folder.id)}
                   isDropTarget={isDropTarget}
                   isFolderSelected={isFolderSelected}
                   isBeingDragged={isBeingDragged}
@@ -890,7 +940,7 @@ export function Sidebar({
                   disabled={disabled}
                   onMouseDown={handleMouseDown}
                   onClickFolder={handleFolderClick}
-                  onDoubleClickFolder={handleFolderDoubleClick}
+                  onToggleFolder={handleToggleFolder}
                   onInlineRename={handleInlineFolderRename}
                   onInlineCancel={cancelInlineFolderEdit}
                   onInlineEditValueChange={setInlineEditValue}
@@ -909,6 +959,7 @@ export function Sidebar({
                 key={session.id}
                 session={session}
                 index={index}
+                depth={depth}
                 isActive={isActive}
                 isBeingDragged={isBeingDragged}
                 isDragOver={isDragOver}

@@ -96,15 +96,7 @@ export function ChatAISettings({
           <label className="block text-sm font-medium text-gray-700 mb-2">
             이미지 비율
           </label>
-          <div
-            className={`grid gap-1 ${
-              aspectRatios.length <= 3
-                ? 'grid-cols-3'
-                : aspectRatios.length <= 5
-                ? 'grid-cols-5'
-                : 'grid-cols-4'
-            }`}
-          >
+          <div className="flex flex-nowrap gap-1">
             {aspectRatios.map((ratio) => {
               const isExtreme = ratio === '1:3' || ratio === '3:1';
               return (
@@ -112,7 +104,7 @@ export function ChatAISettings({
                   key={ratio}
                   onClick={() => onSettingsChange({ aspectRatio: ratio })}
                   title={isExtreme ? '극단적 비율(베타) — 배너/파노라마용' : undefined}
-                  className={`px-1 py-1.5 text-xs rounded-md border transition-colors ${
+                  className={`min-w-0 flex-1 px-1 py-1.5 text-[11px] rounded-md border transition-colors ${
                     settings.aspectRatio === ratio
                       ? 'bg-purple-500 text-white border-purple-500'
                       : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'

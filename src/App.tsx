@@ -612,6 +612,7 @@ function App() {
   // 통합 불러오기 핸들러 (세션/폴더 모두 처리)
   const handleImport = useCallback(async () => {
     try {
+      const targetFolderId = selectedFolderId ?? currentFolderId;
       // 진행 상태 시작
       setImportProgress({
         stage: 'translating',
@@ -645,7 +646,7 @@ function App() {
           folderData.folder,
           folderData.subfolders,
           folderData.sessionFolderMap,
-          currentFolderId // 현재 폴더 아래에 배치
+          targetFolderId // 선택된 폴더가 있으면 그 아래에 배치
         );
 
         // 세션 추가 (새 폴더 ID로 매핑된 상태로)
@@ -778,8 +779,8 @@ function App() {
         }
 
         // 현재 폴더에 세션 추가
-        if (currentFolderId) {
-          await moveSessionToFolder(importedSession.id, currentFolderId);
+        if (targetFolderId) {
+          await moveSessionToFolder(importedSession.id, targetFolderId);
         }
 
         // 세션 추가
@@ -840,7 +841,7 @@ function App() {
         message: '파일을 불러오는 중 오류가 발생했습니다.'
       });
     }
-  }, [currentFolderId, sessions, importFolderData, moveSessionToFolder, setSessions, setCurrentSession]);
+  }, [currentFolderId, selectedFolderId, sessions, importFolderData, moveSessionToFolder, setSessions, setCurrentSession]);
 
   const handleReset = useCallback(() => {
     // 신규 세션 모달 표시
@@ -885,7 +886,7 @@ function App() {
     // 세션 이름 설정
     newSession.name = name;
     // 현재 폴더 ID 설정
-    newSession.folderId = getCurrentFolderIdForNewSession();
+    newSession.folderId = selectedFolderId ?? getCurrentFolderIdForNewSession();
 
     // ILLUSTRATION 세션인 경우 초기 데이터 설정
     if (type === 'ILLUSTRATION') {
@@ -940,7 +941,7 @@ function App() {
     setUploadedImages([]);
     setAnalysisResult(null);
     setCurrentView('analysis');
-  }, [sessions, setSessions, setCurrentSession, setUploadedImages, getCurrentFolderIdForNewSession, moveSessionToFolder]);
+  }, [selectedFolderId, sessions, setSessions, setCurrentSession, setUploadedImages, getCurrentFolderIdForNewSession, moveSessionToFolder]);
 
   // ILLUSTRATION 세션의 illustrationData 업데이트 핸들러
   const handleIllustrationDataChange = useCallback(async (illustrationData: IllustrationSessionData) => {
@@ -1079,6 +1080,7 @@ function App() {
           disabled={currentView === 'generator'}
           // 폴더 관련 props
           folders={folders}
+          sessionFolderMap={sessionFolderMap}
           currentFolderId={currentFolderId}
           folderPath={folderPath}
           currentFolderSessions={currentFolderSessions}
@@ -1087,7 +1089,7 @@ function App() {
           onSelectFolder={handleSelectFolder}
           onNavigateToFolder={handleNavigateToFolder}
           onNavigateBack={handleNavigateBack}
-          onCreateFolder={async (name) => { await createFolder(name); }}
+          onCreateFolder={async (name, parentId) => { await createFolder(name, parentId); }}
           onRenameFolder={renameFolder}
           onDeleteFolder={async (folderId, deleteContents) => {
             // 삭제 전 백업 저장 (Undo용)
@@ -1148,8 +1150,8 @@ function App() {
                 <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
                   <span className="text-lg">🖱️</span>
                   <div>
-                    <p className="font-semibold text-gray-800">더블 클릭</p>
-                    <p className="text-gray-600">폴더 안으로 이동</p>
+                    <p className="font-semibold text-gray-800">화살표 토글</p>
+                    <p className="text-gray-600">하위 폴더와 세션 펼치기</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">

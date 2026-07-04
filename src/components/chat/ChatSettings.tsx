@@ -1,11 +1,6 @@
 import type { ChatGenerationSettings } from '../../types/chat';
-import {
-  getAvailableImageModels,
-  type ImageGenerationModel,
-} from '../../hooks/api/imageModels';
-
-// 지원되는 화면비 목록
-const ASPECT_RATIOS: ChatGenerationSettings['aspectRatio'][] = ['1:1', '16:9', '9:16', '4:3', '3:4'];
+import { ChevronDown } from 'lucide-react';
+import { getAvailableImageModels, getImageModelDefinition, type ImageGenerationModel } from '../../hooks/api/imageModels';
 
 interface ChatSettingsProps {
   settings: ChatGenerationSettings;
@@ -16,18 +11,19 @@ interface ChatSettingsProps {
 /** 상단 설정 바 (화면비, 모델 선택) */
 export function ChatSettings({ settings, hasOpenAIApiKey, onSettingsChange }: ChatSettingsProps) {
   const models = getAvailableImageModels(hasOpenAIApiKey);
+  const aspectRatios = getImageModelDefinition(settings.imageModel).supports.aspectRatios as ChatGenerationSettings['aspectRatio'][];
   return (
     <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white gap-4">
       {/* 왼쪽: 화면비 선택 */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 min-w-0 flex-1">
         <span className="text-xs text-gray-500 mr-1">비율</span>
-        {ASPECT_RATIOS.map((ratio) => {
+        {aspectRatios.map((ratio) => {
           const isSelected = settings.aspectRatio === ratio;
           return (
             <button
               key={ratio}
               onClick={() => onSettingsChange({ aspectRatio: ratio })}
-              className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+              className={`min-w-0 flex-1 px-1.5 py-0.5 text-[11px] rounded-full border transition-colors ${
                 isSelected
                   ? 'bg-purple-100 text-purple-700 border-purple-300'
                   : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
@@ -42,22 +38,23 @@ export function ChatSettings({ settings, hasOpenAIApiKey, onSettingsChange }: Ch
       {/* 오른쪽: 모델 선택 */}
       <div className="flex items-center gap-1.5">
         <span className="text-xs text-gray-500 mr-1">모델</span>
-        {models.map((model) => {
-          const isSelected = settings.imageModel === model.id;
-          return (
-            <button
-              key={model.id}
-              onClick={() => onSettingsChange({ imageModel: model.id as ImageGenerationModel })}
-              className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
-                isSelected
-                  ? 'bg-purple-100 text-purple-700 border-purple-300'
-                  : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-              }`}
-            >
-              {model.label}
-            </button>
-          );
-        })}
+        <div className="relative">
+          <select
+            value={settings.imageModel}
+            onChange={(e) => onSettingsChange({ imageModel: e.target.value as ImageGenerationModel })}
+            className="w-44 appearance-none rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 pr-7 text-xs text-gray-700 focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-100"
+          >
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            size={14}
+            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+        </div>
       </div>
     </div>
   );

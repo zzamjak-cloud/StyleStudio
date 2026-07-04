@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, memo } from 'react';
 import { Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 import { ConceptSessionData } from '../../types/concept';
-import { getImageModelDefinition } from '../../hooks/api/imageModels';
+import { getAvailableImageModels, getImageModelDefinition } from '../../hooks/api/imageModels';
 
 interface ConceptRightPanelProps {
   settings: ConceptSessionData['generationSettings'];
@@ -27,8 +27,9 @@ export const ConceptRightPanel = memo(({
 }: ConceptRightPanelProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [costWarning, setCostWarning] = useState<{ size: '2k' | '3k' } | null>(null);
+  const availableModels = getAvailableImageModels(hasOpenAIApiKey);
   const modelDef = getImageModelDefinition(settings.model);
-  const supportedRatios = modelDef.supports.aspectRatios as Array<'1:1' | '16:9' | '9:16' | '4:3' | '3:4'>;
+  const supportedRatios = modelDef.supports.aspectRatios as ConceptSessionData['generationSettings']['ratio'][];
   const supportedSizes = modelDef.supports.imageSizes.map((size) => {
     if (size === '4K') return '3k';
     return size.toLowerCase();
@@ -64,6 +65,12 @@ export const ConceptRightPanel = memo(({
     textareaRef.current.value = promptValue;
     adjustTextareaHeight();
   }, [promptValue, adjustTextareaHeight]);
+
+  useEffect(() => {
+    if (!availableModels.some((model) => model.id === settings.model)) {
+      onSettingsChange({ ...settings, model: availableModels[0].id });
+    }
+  }, [availableModels, settings, onSettingsChange]);
 
   // 이미지 크기 변경 핸들러 (비용 경고 포함)
   const handleSizeClick = useCallback((size: '1k' | '2k' | '3k') => {
@@ -158,9 +165,11 @@ export const ConceptRightPanel = memo(({
               disabled={disabled}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-50"
             >
-              <option value="gemini-3-pro-image-preview">나노바나나 프로</option>
-              <option value="gemini-3.1-flash-image-preview">나노바나나 2</option>
-              {hasOpenAIApiKey && <option value="gpt-image-2">덕테이프</option>}
+              {availableModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label}
+                </option>
+              ))}
             </select>
             {!hasOpenAIApiKey && (
               <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
@@ -172,13 +181,13 @@ export const ConceptRightPanel = memo(({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               이미지 비율
             </label>
-            <div className={`grid gap-1 ${supportedRatios.length <= 3 ? 'grid-cols-3' : 'grid-cols-5'}`}>
+            <div className="flex flex-nowrap gap-1">
               {supportedRatios.map((ratio) => (
                 <button
                   key={ratio}
                   onClick={() => onSettingsChange({ ...settings, ratio: ratio as any })}
                   disabled={disabled}
-                  className={`px-1 py-1.5 text-xs rounded-md border transition-colors ${
+                  className={`min-w-0 flex-1 px-1 py-1.5 text-[11px] rounded-md border transition-colors ${
                     settings.ratio === ratio
                       ? 'bg-purple-500 text-white border-purple-500'
                       : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'

@@ -49,6 +49,7 @@ export function AnalysisPanel({
 }: AnalysisPanelProps) {
   const [deleteImageConfirm, setDeleteImageConfirm] = useState<number | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showAnalysisDetail, setShowAnalysisDetail] = useState(false);
 
   // 클립보드(Ctrl+V)에서 이미지 붙여넣기 지원
   const handlePastedImage = useCallback(
@@ -217,15 +218,51 @@ export function AnalysisPanel({
               )}
             </div>
 
-            {/* 스크롤 영역: 분석 결과 카드들 */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              {/* 1. 스타일 카드 */}
+            {/* 스크롤 영역: 통합 프롬프트 */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <UnifiedPromptCard
+                analysis={analysisResult}
+                onDetailClick={() => setShowAnalysisDetail(true)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 분석 상세 모달 */}
+      {showAnalysisDetail && analysisResult && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAnalysisDetail(false);
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[86vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">세부 분석</h3>
+                <p className="text-xs text-gray-500">카드 내용을 저장하면 통합 프롬프트가 바로 갱신됩니다.</p>
+              </div>
+              <button
+                onClick={() => setShowAnalysisDetail(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="닫기"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
               <StyleCard
                 style={analysisResult.style}
                 onUpdate={onStyleUpdate}
               />
 
-              {/* 2. UI 디자인 카드 (UI 타입에서만) */}
               {isUIType && analysisResult.ui_specific && (
                 <UICard
                   uiAnalysis={analysisResult.ui_specific}
@@ -233,7 +270,6 @@ export function AnalysisPanel({
                 />
               )}
 
-              {/* 3. 로고 특화 카드 (LOGO 타입에서만) */}
               {isLogoType && analysisResult.logo_specific && (
                 <LogoCard
                   logoAnalysis={analysisResult.logo_specific}
@@ -241,7 +277,6 @@ export function AnalysisPanel({
                 />
               )}
 
-              {/* 4. 캐릭터 카드 (배경, UI, LOGO 타입에서는 숨김) */}
               {!isBackgroundType && !isUIType && !isLogoType && (
                 <CharacterCard
                   character={analysisResult.character}
@@ -249,26 +284,19 @@ export function AnalysisPanel({
                 />
               )}
 
-              {/* 5. 구도 카드 */}
               <CompositionCard
                 composition={analysisResult.composition}
                 onUpdate={onCompositionUpdate}
               />
 
-              {/* 6. 부정 프롬프트 카드 */}
               <NegativePromptCard
                 negativePrompt={analysisResult.negative_prompt}
                 onUpdate={onNegativePromptUpdate}
               />
-
-              {/* 7. 통합 프롬프트 카드 (최하단) */}
-              <UnifiedPromptCard
-                analysis={analysisResult}
-              />
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* 이미지 삭제 확인 다이얼로그 */}
       {deleteImageConfirm !== null && (
