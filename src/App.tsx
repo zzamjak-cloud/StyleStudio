@@ -5,6 +5,7 @@ import { Sidebar } from './components/common/Sidebar';
 import { EmptyState } from './components/common/EmptyState';
 import { ImageUpload } from './components/generator/ImageUpload';
 import { AnalysisPanel } from './components/analysis/AnalysisPanel';
+import { ANALYSIS_MODELS, DEFAULT_ANALYSIS_MODEL, AnalysisModelId } from './types/constants';
 import { SettingsModal } from './components/common/SettingsModal';
 import { NewSessionModal } from './components/common/NewSessionModal';
 import { UpdateModal } from './components/common/UpdateModal';
@@ -123,6 +124,18 @@ function App() {
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
   const [infoDialog, setInfoDialog] = useState<{ title: string; message: string } | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+
+  // 분석에 사용할 Gemini 모델 (localStorage 유지)
+  const [analysisModel, setAnalysisModel] = useState<AnalysisModelId>(() => {
+    const stored = localStorage.getItem('analysisModel');
+    return ANALYSIS_MODELS.some((m) => m.id === stored)
+      ? (stored as AnalysisModelId)
+      : DEFAULT_ANALYSIS_MODEL;
+  });
+  const handleAnalysisModelChange = (model: AnalysisModelId) => {
+    setAnalysisModel(model);
+    localStorage.setItem('analysisModel', model);
+  };
 
   // Import 진행 상태
   const [importProgress, setImportProgress] = useState({
@@ -520,7 +533,9 @@ function App() {
         },
       },
       currentSession?.type, // sessionType 전달
-      isRefinementMode ? { previousAnalysis: analysisResult } : undefined
+      isRefinementMode
+        ? { previousAnalysis: analysisResult, model: analysisModel }
+        : { model: analysisModel }
     );
   };
 
@@ -1389,6 +1404,8 @@ function App() {
               onRemoveImage={handleRemoveImage}
               onGenerateImage={analysisResult ? handleGenerateImage : undefined}
               currentSession={currentSession}
+              analysisModel={analysisModel}
+              onAnalysisModelChange={handleAnalysisModelChange}
               onStyleUpdate={(style) => {
                 if (analysisResult) {
                   const updated = { ...analysisResult, style };

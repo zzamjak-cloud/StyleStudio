@@ -1,6 +1,6 @@
 # 참조 이미지 분석 (Analysis)
 
-참조 이미지를 Gemini Vision(`gemini-2.5-flash`)으로 분석해 화풍·캐릭터·구도·부정 프롬프트를 구조화한 **`ImageAnalysisResult`** 로 뽑아내고, 우측 패널에 통합 프롬프트를 표시하는 기능. 기본 화면은 **통합 프롬프트만 표시**하고, 통합 프롬프트 우측 상단의 돋보기 버튼으로 세부 분석 카드 모달을 열어 수정한다. 전체 흐름은 **이미지 업로드 → `analyzeImages` 호출(세션 타입별 프롬프트 선택) → Gemini 응답 JSON 파싱·검증 → `analysisResult` state 저장 → 통합 프롬프트 렌더 → 상세 카드 편집 시 state·세션 갱신 → 통합 프롬프트 즉시 갱신**이다. 분석 결과의 **권위는 `App.tsx` 의 `analysisResult` state**이며, 세션에 `analysis` 로 함께 저장된다(세션 복원 시 다시 로드). 프롬프트·JSON 스키마는 **세션 타입에 따라 완전히 달라진다**(캐릭터/배경/픽셀아트/UI/로고).
+참조 이미지를 Gemini Vision으로 분석해(모델은 분석 화면 드롭다운에서 선택: 기본 `gemini-3.6-flash` / 정밀 `gemini-3.1-pro-preview`, 목록은 `types/constants.ts`의 `ANALYSIS_MODELS`, 선택값은 localStorage `analysisModel` 유지) 화풍·캐릭터·구도·부정 프롬프트를 구조화한 **`ImageAnalysisResult`** 로 뽑아내고, 우측 패널에 통합 프롬프트를 표시하는 기능. 기본 화면은 **통합 프롬프트만 표시**하고, 통합 프롬프트 우측 상단의 돋보기 버튼으로 세부 분석 카드 모달을 열어 수정한다. 전체 흐름은 **이미지 업로드 → `analyzeImages` 호출(세션 타입별 프롬프트 선택) → Gemini 응답 JSON 파싱·검증 → `analysisResult` state 저장 → 통합 프롬프트 렌더 → 상세 카드 편집 시 state·세션 갱신 → 통합 프롬프트 즉시 갱신**이다. 분석 결과의 **권위는 `App.tsx` 의 `analysisResult` state**이며, 세션에 `analysis` 로 함께 저장된다(세션 복원 시 다시 로드). 프롬프트·JSON 스키마는 **세션 타입에 따라 완전히 달라진다**(캐릭터/배경/픽셀아트/UI/로고).
 
 ## 관련 파일
 

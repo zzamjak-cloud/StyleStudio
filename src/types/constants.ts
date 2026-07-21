@@ -232,6 +232,21 @@ export const GEMINI_API = {
 } as const;
 
 /**
+ * 참조 이미지 분석에 사용 가능한 Gemini 모델 목록
+ * - flash: 빠르고 저렴, 대부분의 분석에 충분
+ * - pro: 추론 깊이가 필요한 다중 이미지·복잡한 구조화 분석용 (고비용)
+ */
+export const ANALYSIS_MODELS = [
+  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', description: '빠름 · 저렴 (기본)' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', description: '정밀 분석 · 고비용' },
+] as const;
+
+export type AnalysisModelId = (typeof ANALYSIS_MODELS)[number]['id'];
+
+/** 기본 분석 모델 */
+export const DEFAULT_ANALYSIS_MODEL: AnalysisModelId = 'gemini-3.6-flash';
+
+/**
  * 에러 메시지
  */
 export const ERROR_MESSAGES = {

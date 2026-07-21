@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Added
+- 참조 이미지 분석 화면에 AI 모델 선택 드롭다운을 추가했습니다. (기본 `gemini-3.6-flash`, 정밀 분석용 `gemini-3.1-pro-preview`, 선택값은 로컬에 유지)
+
 ## [0.4.17] - 2026-07-22
 
 ### Changed

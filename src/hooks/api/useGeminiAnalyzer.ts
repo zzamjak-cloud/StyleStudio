@@ -11,6 +11,7 @@ import {
   ILLUSTRATION_BACKGROUND_ANALYZER_PROMPT,
 } from '../../lib/gemini/analysisPrompt';
 import { ImageAnalysisResult } from '../../types/analysis';
+import { DEFAULT_ANALYSIS_MODEL } from '../../types/constants';
 import { SessionType } from '../../types/session';
 import { IllustrationCharacterAnalysis, BackgroundAnalysisResult } from '../../types/illustration';
 import { logger } from '../../lib/logger';
@@ -23,6 +24,7 @@ interface AnalysisCallbacks {
 
 interface AnalysisOptions {
   previousAnalysis?: ImageAnalysisResult; // 기존 분석 결과 (분석 강화 모드용)
+  model?: string; // 분석에 사용할 Gemini 모델 (미지정 시 기본 모델)
 }
 
 export function useGeminiAnalyzer() {
@@ -118,12 +120,13 @@ export function useGeminiAnalyzer() {
         logger.debug('📋 프롬프트 선택:', promptType);
       }
 
-      // Gemini API 엔드포인트 (gemini-3.6-flash 사용)
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${cleanApiKey}`;
+      // Gemini API 엔드포인트 (사용자 선택 모델, 미지정 시 기본 모델)
+      const analysisModel = options?.model || DEFAULT_ANALYSIS_MODEL;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${analysisModel}:generateContent?key=${cleanApiKey}`;
 
       logger.debug('🌐 API 요청 정보:');
       logger.debug('   - URL:', url.replace(cleanApiKey, 'API_KEY_MASKED'));
-      logger.debug('   - 모델:', 'gemini-3.6-flash');
+      logger.debug('   - 모델:', analysisModel);
 
       callbacks.onProgress('Gemini가 이미지를 분석하고 있습니다...');
 

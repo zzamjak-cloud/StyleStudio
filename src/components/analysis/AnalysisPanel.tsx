@@ -11,6 +11,7 @@ import { UnifiedPromptCard } from './UnifiedPromptCard';
 import { UICard } from './UICard';
 import { LogoCard } from './LogoCard';
 import { Session } from '../../types/session';
+import { ANALYSIS_MODELS, AnalysisModelId } from '../../types/constants';
 
 import { StyleAnalysis, CharacterAnalysis, CompositionAnalysis, UISpecificAnalysis, LogoSpecificAnalysis } from '../../types/analysis';
 
@@ -29,6 +30,8 @@ interface AnalysisPanelProps {
   onNegativePromptUpdate?: (negativePrompt: string) => void;
   onUIAnalysisUpdate?: (uiAnalysis: UISpecificAnalysis) => void;
   onLogoAnalysisUpdate?: (logoAnalysis: LogoSpecificAnalysis) => void;
+  analysisModel?: AnalysisModelId;
+  onAnalysisModelChange?: (model: AnalysisModelId) => void;
 }
 
 export function AnalysisPanel({
@@ -46,6 +49,8 @@ export function AnalysisPanel({
   onNegativePromptUpdate,
   onUIAnalysisUpdate,
   onLogoAnalysisUpdate,
+  analysisModel,
+  onAnalysisModelChange,
 }: AnalysisPanelProps) {
   const [deleteImageConfirm, setDeleteImageConfirm] = useState<number | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -169,6 +174,24 @@ export function AnalysisPanel({
               AI가 이미지의 스타일, 캐릭터, 구도를 분석합니다.
             </p>
 
+            {/* AI 분석 모델 선택 */}
+            {analysisModel && onAnalysisModelChange && (
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">분석 모델</label>
+                <select
+                  value={analysisModel}
+                  onChange={(e) => onAnalysisModelChange(e.target.value as AnalysisModelId)}
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {ANALYSIS_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label} — {m.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <button
               onClick={onAnalyze}
               className="flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl"
@@ -192,7 +215,23 @@ export function AnalysisPanel({
         {analysisResult && !isAnalyzing && (
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* 상단 고정 액션 버튼 */}
-            <div className="sticky top-0 z-10 flex gap-2 px-6 py-2 bg-white border-b border-gray-200">
+            <div className="sticky top-0 z-10 px-6 py-2 bg-white border-b border-gray-200">
+              {/* AI 분석 모델 선택 (분석 강화 시 사용) */}
+              {analysisModel && onAnalysisModelChange && (
+                <select
+                  value={analysisModel}
+                  onChange={(e) => onAnalysisModelChange(e.target.value as AnalysisModelId)}
+                  className="w-full mb-2 px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  title="분석 모델 선택"
+                >
+                  {ANALYSIS_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label} — {m.description}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="flex gap-2">
               {/* 분석 강화 버튼 */}
               <button
                 onClick={onAnalyze}
@@ -216,6 +255,7 @@ export function AnalysisPanel({
                   <span className="text-xs font-semibold leading-tight">이미지 생성</span>
                 </button>
               )}
+              </div>
             </div>
 
             {/* 스크롤 영역: 통합 프롬프트 */}
