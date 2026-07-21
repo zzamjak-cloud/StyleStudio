@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.4.17] - 2026-07-22
+
 ### Changed
 - 텍스트 처리용 제미나이 모델을 `gemini-2.5-flash`에서 `gemini-3.6-flash`로 업데이트했습니다. (번역, 참조 분석, 스케치 분석, 문서 최적화, 대화 요약)
 - Gemini 3.x에서 지원 중단된 `temperature`/`topK`/`topP` 샘플링 파라미터를 제거했습니다.
