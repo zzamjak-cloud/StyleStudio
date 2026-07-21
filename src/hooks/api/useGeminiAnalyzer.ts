@@ -118,12 +118,12 @@ export function useGeminiAnalyzer() {
         logger.debug('📋 프롬프트 선택:', promptType);
       }
 
-      // Gemini API 엔드포인트 (gemini-2.5-flash 사용)
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${cleanApiKey}`;
+      // Gemini API 엔드포인트 (gemini-3.6-flash 사용)
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${cleanApiKey}`;
 
       logger.debug('🌐 API 요청 정보:');
       logger.debug('   - URL:', url.replace(cleanApiKey, 'API_KEY_MASKED'));
-      logger.debug('   - 모델:', 'gemini-2.5-flash');
+      logger.debug('   - 모델:', 'gemini-3.6-flash');
 
       callbacks.onProgress('Gemini가 이미지를 분석하고 있습니다...');
 
@@ -144,10 +144,8 @@ export function useGeminiAnalyzer() {
               parts: parts,
             },
           ],
+          // Gemini 3.x: temperature/topK/topP 지원 중단
           generationConfig: {
-            temperature: 0.4,
-            topK: 32,
-            topP: 0.95,
             maxOutputTokens: 8192, // JSON 응답 잘림 방지를 위해 증가
           },
         }),
@@ -410,7 +408,7 @@ export function useGeminiAnalyzer() {
       };
     });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${cleanApiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${cleanApiKey}`;
 
     const parts = [
       { text: ILLUSTRATION_CHARACTER_ANALYZER_PROMPT(characterName) },
@@ -422,10 +420,8 @@ export function useGeminiAnalyzer() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
+        // Gemini 3.x: temperature/topK/topP 지원 중단
         generationConfig: {
-          temperature: 0.4,
-          topK: 32,
-          topP: 0.95,
           maxOutputTokens: 8192,
         },
       }),
@@ -509,7 +505,7 @@ export function useGeminiAnalyzer() {
       };
     });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${cleanApiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${cleanApiKey}`;
 
     const parts = [
       { text: ILLUSTRATION_BACKGROUND_ANALYZER_PROMPT },
@@ -521,10 +517,8 @@ export function useGeminiAnalyzer() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
+        // Gemini 3.x: temperature/topK/topP 지원 중단
         generationConfig: {
-          temperature: 0.4,
-          topK: 32,
-          topP: 0.95,
           maxOutputTokens: 8192,
         },
       }),

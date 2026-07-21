@@ -36,7 +36,7 @@ export function useGeminiTranslator() {
       logger.debug('🌐 영어 → 한국어 번역 시작 (화면 표시용)');
 
       // Gemini 2.5 Flash API 사용 (더 높은 할당량)
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [
@@ -60,11 +60,7 @@ Korean translation:`,
             ],
           },
         ],
-        generationConfig: {
-          temperature: 0.3,
-          topK: 20,
-          topP: 0.8,
-        },
+        // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
       };
 
       const response = await fetch(url, {
@@ -113,7 +109,7 @@ Korean translation:`,
       logger.debug('🌐 한국어 → 영어 번역 시작:', koreanText);
 
       // Gemini 2.5 Flash API 사용 (더 높은 할당량)
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [
@@ -138,11 +134,7 @@ English translation:`,
             ],
           },
         ],
-        generationConfig: {
-          temperature: 0.3, // 낮은 temperature로 일관성 있는 번역
-          topK: 20,
-          topP: 0.8,
-        },
+        // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
       };
 
       const response = await fetch(url, {
@@ -192,7 +184,7 @@ English translation:`,
         .map((text, idx) => `[${idx + 1}] ${text}`)
         .join('\n');
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [
@@ -218,11 +210,7 @@ English translations (keep [number] prefix):`,
             ],
           },
         ],
-        generationConfig: {
-          temperature: 0.3,
-          topK: 20,
-          topP: 0.8,
-        },
+        // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
       };
 
       const response = await fetch(url, {
@@ -286,7 +274,7 @@ English translations (keep [number] prefix):`,
         .map((text, idx) => `[${idx + 1}] ${text}`)
         .join('\n');
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [
@@ -310,11 +298,7 @@ Korean translations (keep [number] prefix):`,
             ],
           },
         ],
-        generationConfig: {
-          temperature: 0.3,
-          topK: 20,
-          topP: 0.8,
-        },
+        // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
       };
 
       const response = await fetch(url, {

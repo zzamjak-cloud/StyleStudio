@@ -83,8 +83,8 @@ ${contentToSummarize}
 
     logger.debug('📄 파일 요약 생성 시작:', fileName);
 
-    // Gemini 2.5 Flash API 사용
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // Gemini 3.6 Flash API 사용
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
     const requestBody = {
       contents: [
@@ -96,11 +96,7 @@ ${contentToSummarize}
           ],
         },
       ],
-      generationConfig: {
-        temperature: 0.3,
-        topK: 20,
-        topP: 0.8,
-      },
+      // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
     };
 
     const response = await fetch(url, {

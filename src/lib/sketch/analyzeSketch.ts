@@ -4,7 +4,7 @@
 import { CompositionAnalysis, SketchLabel, IllustrationCharacter, CharacterPlacement } from '../../types/illustration';
 import { logger } from '../logger';
 
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-3.6-flash';
 
 interface AnalyzeParams {
   apiKey: string;
@@ -75,7 +75,8 @@ export async function analyzeCompositionSketch(params: AnalyzeParams): Promise<C
               ],
             },
           ],
-          generationConfig: { responseModalities: ['TEXT'], temperature: 0.3 },
+          // Gemini 3.x: temperature 지원 중단
+          generationConfig: { responseModalities: ['TEXT'] },
         }),
       }
     );
