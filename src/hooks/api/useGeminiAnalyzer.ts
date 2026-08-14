@@ -411,7 +411,7 @@ export function useGeminiAnalyzer() {
       };
     });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${cleanApiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_ANALYSIS_MODEL}:generateContent?key=${cleanApiKey}`;
 
     const parts = [
       { text: ILLUSTRATION_CHARACTER_ANALYZER_PROMPT(characterName) },
@@ -508,7 +508,7 @@ export function useGeminiAnalyzer() {
       };
     });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${cleanApiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_ANALYSIS_MODEL}:generateContent?key=${cleanApiKey}`;
 
     const parts = [
       { text: ILLUSTRATION_BACKGROUND_ANALYZER_PROMPT },

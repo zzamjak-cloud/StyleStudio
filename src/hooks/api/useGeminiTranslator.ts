@@ -1,4 +1,5 @@
 import { logger } from '../../lib/logger';
+import { GEMINI_FLASH_TEXT_MODEL } from '../../types/constants';
 
 /**
  * Gemini API를 사용한 한국어-영어 자동 번역 Hook
@@ -35,8 +36,8 @@ export function useGeminiTranslator() {
 
       logger.debug('🌐 영어 → 한국어 번역 시작 (화면 표시용)');
 
-      // Gemini 2.5 Flash API 사용 (더 높은 할당량)
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      // Gemini 3.7 Flash API 사용
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [
@@ -108,8 +109,8 @@ Korean translation:`,
 
       logger.debug('🌐 한국어 → 영어 번역 시작:', koreanText);
 
-      // Gemini 2.5 Flash API 사용 (더 높은 할당량)
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      // Gemini 3.7 Flash API 사용
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [
@@ -184,7 +185,7 @@ English translation:`,
         .map((text, idx) => `[${idx + 1}] ${text}`)
         .join('\n');
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [
@@ -274,7 +275,7 @@ English translations (keep [number] prefix):`,
         .map((text, idx) => `[${idx + 1}] ${text}`)
         .join('\n');
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [

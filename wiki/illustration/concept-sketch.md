@@ -5,7 +5,7 @@
 ## 관련 파일
 
 - `src/components/illustration/conceptSketch/ConceptSketchPanel.tsx` — 스케치 모달(`ConceptSketchPanel`). Konva `Stage`(2 Layer: 스케치/라벨), 펜·지우개·색상·굵기, 캐릭터 라벨(드래그 이동·✕ 제거), `handleAnalyze`(AI 분석)·`handleSave`
-- `src/lib/sketch/analyzeSketch.ts` — `analyzeCompositionSketch`(Gemini 로 스케치→`CompositionAnalysis`), `formatCompositionForPrompt`(분석 결과를 프롬프트용 텍스트로)
+- `src/lib/sketch/analyzeSketch.ts` — `analyzeCompositionSketch`(기본 분석 모델 `DEFAULT_ANALYSIS_MODEL` 로 스케치→`CompositionAnalysis`), `formatCompositionForPrompt`(분석 결과를 프롬프트용 텍스트로)
 - `src/lib/utils/annotationExport.ts` — `exportNodeToDataUrl`(Konva 노드→dataURL, 스케치 PNG 추출에 재사용)
 - `src/types/illustration.ts` — `ConceptSketch`/`SketchLabel`/`CompositionAnalysis`/`CharacterPlacement`
 - `src/components/illustration/IllustrationSetupPanel.tsx` — 스케치 섹션 UI + `handleSketchSave`/`handleSketchClear`(:37)

@@ -2,9 +2,10 @@
 // 일러스트 생성 프롬프트에 합성할 수 있는 구조화된 결과를 반환
 
 import { CompositionAnalysis, SketchLabel, IllustrationCharacter, CharacterPlacement } from '../../types/illustration';
+import { DEFAULT_ANALYSIS_MODEL } from '../../types/constants';
 import { logger } from '../logger';
 
-const MODEL = 'gemini-3.6-flash';
+const MODEL = DEFAULT_ANALYSIS_MODEL;
 
 interface AnalyzeParams {
   apiKey: string;

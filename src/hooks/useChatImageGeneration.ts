@@ -6,6 +6,7 @@ import { ReferenceDocument } from '../types/referenceDocument';
 import { logger } from '../lib/logger';
 import { loadImage } from '../lib/imageStorage';
 import { CHAT_SIGNATURE_KEY_MARKER } from '../lib/storage';
+import { GEMINI_FLASH_TEXT_MODEL } from '../types/constants';
 import { isOpenAIModel } from './api/imageModels';
 import { useOpenAIImageGenerator } from './api/useOpenAIImageGenerator';
 
@@ -342,7 +343,7 @@ export function useChatImageGeneration(
     throw lastError || new Error('이미지 생성에 실패했습니다.');
   }, [geminiApiKey, openaiApiKey, chatData, buildContents, generateOpenAIImage]);
 
-  // 메시지 요약 (Gemini 2.5 Flash 사용)
+  // 메시지 요약 (Gemini 3.7 Flash 사용)
   const summarizeMessages = useCallback(async (
     messagesToSummarize: ChatMessage[],
     existingSummary?: string
@@ -364,7 +365,7 @@ export function useChatImageGeneration(
 
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${geminiApiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -5,7 +5,12 @@ import { Sidebar } from './components/common/Sidebar';
 import { EmptyState } from './components/common/EmptyState';
 import { ImageUpload } from './components/generator/ImageUpload';
 import { AnalysisPanel } from './components/analysis/AnalysisPanel';
-import { ANALYSIS_MODELS, DEFAULT_ANALYSIS_MODEL, AnalysisModelId } from './types/constants';
+import {
+  ANALYSIS_MODELS,
+  DEFAULT_ANALYSIS_MODEL,
+  LEGACY_DEFAULT_ANALYSIS_MODEL,
+  AnalysisModelId,
+} from './types/constants';
 import { SettingsModal } from './components/common/SettingsModal';
 import { NewSessionModal } from './components/common/NewSessionModal';
 import { UpdateModal } from './components/common/UpdateModal';
@@ -128,13 +133,18 @@ function App() {
   // 분석에 사용할 Gemini 모델 (localStorage 유지)
   const [analysisModel, setAnalysisModel] = useState<AnalysisModelId>(() => {
     const stored = localStorage.getItem('analysisModel');
+    if (stored === LEGACY_DEFAULT_ANALYSIS_MODEL) {
+      return DEFAULT_ANALYSIS_MODEL;
+    }
     return ANALYSIS_MODELS.some((m) => m.id === stored)
       ? (stored as AnalysisModelId)
       : DEFAULT_ANALYSIS_MODEL;
   });
+  useEffect(() => {
+    localStorage.setItem('analysisModel', analysisModel);
+  }, [analysisModel]);
   const handleAnalysisModelChange = (model: AnalysisModelId) => {
     setAnalysisModel(model);
-    localStorage.setItem('analysisModel', model);
   };
 
   // Import 진행 상태

@@ -33,7 +33,7 @@ ApiError = { message: string, code?: string, status?: number, details?: unknown 
 
 ## 번역 (useGeminiTranslator.ts)
 
-이미지 생성 API 는 영어 프롬프트를 쓰지만 사용자는 한국어로 입력할 수 있다. 이 훅이 **Gemini 2.5 Flash** (`gemini-2.5-flash:generateContent`)로 상호 번역한다. 5개 함수 반환:
+이미지 생성 API 는 영어 프롬프트를 쓰지만 사용자는 한국어로 입력할 수 있다. 이 훅이 `GEMINI_FLASH_TEXT_MODEL`(**Gemini 3.7 Flash**, `gemini-3.7-flash:generateContent`)로 상호 번역한다. 5개 함수 반환:
 
 | 함수 | 방향 | 용도 |
 |------|------|------|

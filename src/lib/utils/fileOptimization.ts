@@ -1,6 +1,7 @@
 // 파일 최적화 유틸리티 함수
 
 import { logger } from '../logger';
+import { GEMINI_FLASH_TEXT_MODEL } from '../../types/constants';
 
 /**
  * 파일 크기 제한 상수 (토큰 기준으로 대략 계산)
@@ -83,8 +84,8 @@ ${contentToSummarize}
 
     logger.debug('📄 파일 요약 생성 시작:', fileName);
 
-    // Gemini 3.6 Flash API 사용
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+    // Gemini 3.7 Flash API 사용
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
 
     const requestBody = {
       contents: [

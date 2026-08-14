@@ -6,7 +6,7 @@ UI 디자인 세션에서 PDF·Excel·CSV·Markdown·Text·Google Sheets·웹페
 
 - `src/types/referenceDocument.ts` — `ReferenceDocument` 타입(파싱 결과 + 메타 + 요약 + 추출 이미지)
 - `src/lib/utils/fileParser.ts` — 형식별 파서. `parseFile`(디스패처)·`parsePDF`·`parseExcel`·`parseCSV`·`parseMarkdown`·`parseText`·`parseGoogleSpreadsheet`·`parseWebPage`·`getFileType`·`checkFileSize`·`SUPPORTED_FILE_TYPES`
-- `src/lib/utils/fileOptimization.ts` — 크기 제한·요약. `validateFileSize`(10만 자 상한)·`truncateFileContent`·`generateFileSummary`(gemini-2.5-flash, 500자)·`MAX_FILE_SIZE_CHARS`·`SUMMARY_MAX_LENGTH`
+- `src/lib/utils/fileOptimization.ts` — 크기 제한·요약. `validateFileSize`(10만 자 상한)·`truncateFileContent`·`generateFileSummary`(`GEMINI_FLASH_TEXT_MODEL`/`gemini-3.7-flash`, 500자)·`MAX_FILE_SIZE_CHARS`·`SUMMARY_MAX_LENGTH`
 - `src/components/generator/DocumentManager.tsx` — 문서 관리 UI. 한 줄 드롭 영역·파일 선택(`handleAddFile`)·URL 추가(`processUrl`)·문서 칩 리스트·요약 뷰·삭제. `processFiles`가 파싱→검증→요약→`ReferenceDocument` 생성→`onAdd`
 - `src/components/generator/GeneratorSettings.tsx` — `sessionType === 'UI'`일 때만 `DocumentManager` 렌더(`GeneratorSettings.tsx:206`)
 - `src/hooks/useSessionManagement.ts` — 세션에 문서 부착. `handleDocumentAdd`/`handleDocumentDelete`(`useSessionManagement.ts:321`)가 `session.referenceDocuments` 갱신 후 `persistSessions`
@@ -38,7 +38,7 @@ ParsedFileContent = {         // fileParser 반환형
 ```
 
 - `content`는 파싱 직후 `validateFileSize`로 검사 — 10만 자(`MAX_FILE_SIZE_CHARS`) 초과 시 `truncateFileContent`가 문장 경계에서 자르고 안내 문구를 덧붙인다.
-- `summary`는 별개 필드. `generateFileSummary`가 gemini-2.5-flash로 생성(내용 1000자 미만이면 원문 그대로, 5만 자 초과 입력은 중간 생략). 요약 실패 시 `content` 앞 500자로 대체(DocumentManager 예외 처리).
+- `summary`는 별개 필드. `generateFileSummary`가 `GEMINI_FLASH_TEXT_MODEL`(`gemini-3.7-flash`)로 생성(내용 1000자 미만이면 원문 그대로, 5만 자 초과 입력은 중간 생략). 요약 실패 시 `content` 앞 500자로 대체(DocumentManager 예외 처리).
 
 ## 파싱 파이프라인 (fileParser)
 
@@ -96,4 +96,4 @@ ParsedFileContent = {         // fileParser 반환형
 | 요약이 원문 그대로임 | 내용 1000자 미만이면 `generateFileSummary`가 요약 없이 원문 반환 |
 | Google Sheets가 빈 내용 | export CSV URL 변환 실패(비공개 시트·잘못된 gid) 또는 `/spreadsheets/d/` 패턴 불일치 |
 | 웹페이지 파싱이 지저분함 | `parseWebPage`는 정규식 태그 제거 방식(DOM 파서 아님) — 복잡한 SPA는 텍스트 부실 |
-| 요약에 API 키 오류 | `generateFileSummary`가 gemini-2.5-flash 호출 — 키 없으면 실패→앞 500자 fallback |
+| 요약에 API 키 오류 | `generateFileSummary`가 `GEMINI_FLASH_TEXT_MODEL` 호출 — 키 없으면 실패→앞 500자 fallback |
