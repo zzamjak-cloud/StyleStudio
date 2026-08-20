@@ -30,21 +30,30 @@ ANNOTATION_COLORS = 빨강 #ff3b30 / 노랑 #ffcc00 / 파랑 #0a84ff / 초록 #3
 
 ## 캔버스 구조 (Konva 3-Layer)
 
-`ImageAnnotator.tsx:314` Stage 내부:
-1. **원본 레이어**(`listening={false}`) — `KonvaImage` 로 배경 이미지. 이미지는 `MAX_CANVAS_DIM=1280` 기준으로 다운스케일해 stage 크기 결정(:51).
+`ImageAnnotator.tsx` Stage 내부:
+1. **원본 레이어**(`listening={false}`) — `KonvaImage` 로 배경 이미지. 이미지는 `MAX_CANVAS_DIM=1280` 기준으로 다운스케일해 **논리 좌표계(stageSize)** 결정.
 2. **펜 레이어**(`paintLayerRef`) — 사용자 stroke. 지우개는 `globalCompositeOperation='destination-out'`.
 3. **마스크 레이어**(`maskLayerRef`, `opacity=0.0001`) — `isMaskingStroke` 인 stroke 를 흰색으로 그림. OpenAI 정밀 편집(마스크 기반) 시 추출용. 화면엔 사실상 안 보임.
 
-- 색상은 항상 소문자 hex 로 비교/저장. `usedColors`(:36)는 지우개 제외 실제 사용 색 집합 → 해당 색만 지시문 textarea 활성화.
+- 색상은 항상 소문자 hex 로 비교/저장. `usedColors`는 지우개 제외 실제 사용 색 집합 → 해당 색만 지시문 textarea 활성화.
 - 단축키: Esc(닫기), Ctrl/Cmd+Z(마지막 stroke undo).
+
+### 논리 좌표계 / 표시 배율 분리 (화면 맞춤 + 줌)
+
+- **stageSize 는 논리 좌표계**(원본 해상도, 최대 1280 다운스케일)로 유지하고, 화면에는 `viewScale = fitScale × zoom` 배율로 표시.
+  - `fitScale`: 캔버스 컨테이너(ResizeObserver 추적) 안에 이미지 전체가 들어가는 최대 배율(1 초과 안 함) → **이미지가 항상 화면 안에 다 보임**.
+  - `zoom`: 사용자 줌(0.25x~4x). 우상단 오버레이 버튼(확대/축소/화면 맞춤) + Ctrl(Cmd)+휠. 휠 줌은 React `onWheel` 이 passive 라 네이티브 리스너(`{passive:false}`)로 등록.
+- Stage 는 `width/height = stageSize × viewScale` + `scaleX/scaleY = viewScale` 로 렌더. 포인터 좌표는 `stage.getRelativePointerPosition()` 으로 논리 좌표로 역변환해 stroke 저장 → `colorRegions` 정규화(÷stageSize)는 배율과 무관하게 정합.
+- **export 시 `pixelRatio = stageSize.width / 표시폭`** 을 넘겨 composite/마스크를 논리 해상도 그대로 추출 → `downscaledOriginal`(stageSize 크기)과 마스크 치수 일치 유지.
+- 캔버스 래퍼는 `flex 중앙정렬 + overflow` 조합이 아니라 **자식 `m-auto`** 방식 — 전자는 컨테이너보다 큰 자식의 위/왼쪽이 스크롤 불가로 잘리는 flexbox 함정.
 
 ## 제출 흐름 (handleSubmit)
 
-`ImageAnnotator.tsx:121`:
+`ImageAnnotator.tsx` `handleSubmit`:
 1. 검증: stroke 도 지시문도 없으면 alert 후 중단.
-2. `compositePng`(stage JPEG), `rawMask`(마스크 레이어) → `normalizeMaskToOpenAI` 로 흑백 binary 마스크.
-3. **깨끗한 원본** 다운스케일본 생성: stage 크기 canvas 에 흰 배경 + 원본 이미지만 그려 JPEG(0.9). 컬러 라인 없음.
-4. **색상별 bounding box 계산**: 각 펜 stroke 의 points 를 순회해 색상별 min/max → stage 크기로 나눠 0~1 `colorRegions` 로 정규화(:154).
+2. `compositePng`(stage JPEG), `rawMask`(마스크 레이어) → 역배율 `pixelRatio` 로 논리 해상도 추출 → `normalizeMaskToOpenAI` 로 흑백 binary 마스크.
+3. **깨끗한 원본** 다운스케일본 생성: stageSize 크기 canvas 에 흰 배경 + 원본 이미지만 그려 JPEG(0.9). 컬러 라인 없음.
+4. **색상별 bounding box 계산**: 각 펜 stroke 의 points(논리 좌표)를 순회해 색상별 min/max → stageSize 로 나눠 0~1 `colorRegions` 로 정규화.
 5. `AnnotationResult` 조립 후 `onSubmit`.
 
 ## 프롬프트 직렬화
@@ -71,3 +80,6 @@ ANNOTATION_COLORS = 빨강 #ff3b30 / 노랑 #ffcc00 / 파랑 #0a84ff / 초록 #3
 | 어노테이션 버튼(연필) 안 보임 | OpenAI Key 없음 또는 `isGeneratedImage=false`(user 첨부 이미지) |
 | OpenAI 마스크 편집이 반대로 적용 | 마스크 흑백 반전 → `normalizeMaskToOpenAI` 편집=흰색 규칙 확인 |
 | 큰 이미지에서 캔버스 느림/메모리 | `MAX_CANVAS_DIM=1280` 다운스케일 누락 |
+| 이미지가 모달 화면에 다 안 들어오고 잘림 | fit 배율(`fitScale`) 미적용 또는 캔버스 래퍼가 `flex 중앙정렬+overflow` 로 회귀(자식 `m-auto` 여야 함) |
+| 확대 상태에서 그린 선이 엉뚱한 위치에 찍힘 | 포인터 좌표를 `getPointerPosition`(화면 좌표)으로 저장 → `getRelativePointerPosition`(논리 좌표) 사용해야 함 |
+| 줌 후 마스크/composite 해상도가 달라짐 | export 시 역배율 `pixelRatio` 누락 → 논리 해상도(stageSize) 기준으로 추출해야 함 |

@@ -53,6 +53,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | OpenAI Key 없이 gpt-image-2 선택, 극단 비율(1:3) 오류 | `chat/overview.md` |
 | 결과 이미지에 어노테이션 컬러 라인/마커가 그대로 남음 | `chat/annotation.md` |
 | 부분 편집 영역이 엉뚱한 곳에 적용 / 편집 버튼 안 보임 | `chat/annotation.md` |
+| 어노테이션 캔버스에서 이미지가 잘림 / 확대·축소 안 됨 | `chat/annotation.md` |
 | 컨셉 3K 선택 시 크기 오류 / 게임 플레이 방식 생성에 반영 안 됨 | `concept/overview.md` |
 | 컨셉 히스토리 복원·커스텀 장르 유실·orphan 미정리 | `concept/overview.md` |
 | 일러스트 드롭했는데 이미지 안 들어감 / 여러 카드 동시 하이라이트 | `illustration/overview.md` |

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Stage, Layer, Image as KonvaImage, Line } from 'react-konva';
 import Konva from 'konva';
-import { X, Pencil, Eraser, Undo2, Send } from 'lucide-react';
+import { X, Pencil, Eraser, Undo2, Send, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { AnnotationResult, AnnotationStroke, ANNOTATION_COLORS, ColorRegion, getColorLabel } from '../../../types/annotation';
 import { exportNodeToDataUrl, normalizeMaskToOpenAI } from '../../../lib/utils/annotationExport';
 import { logger } from '../../../lib/logger';
@@ -16,13 +16,20 @@ interface ImageAnnotatorProps {
 
 const WIDTHS = [2, 4, 8, 16];
 const MAX_CANVAS_DIM = 1280;
+// 줌 배율 한계 (화면 맞춤 크기 기준 상대 배율)
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
 
 export function ImageAnnotator({ open, imageBase64, originalImageRef, onClose, onSubmit }: ImageAnnotatorProps) {
   const stageRef = useRef<Konva.Stage>(null);
   const paintLayerRef = useRef<Konva.Layer>(null);
   const maskLayerRef = useRef<Konva.Layer>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
+  // stageSize는 논리 좌표계(원본 해상도, 최대 1280 다운스케일). 화면 표시는 viewScale로 별도 배율 적용.
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [zoom, setZoom] = useState(1); // 화면 맞춤 크기 대비 사용자 줌 배율
   const [strokes, setStrokes] = useState<AnnotationStroke[]>([]);
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
   const [color, setColor] = useState(ANNOTATION_COLORS[0].hex);
@@ -63,7 +70,46 @@ export function ImageAnnotator({ open, imageBase64, originalImageRef, onClose, o
       setColorInstructions({});
       setGlobalInstructions('');
       setIsSubmitting(false);
+      setZoom(1);
     }
+  }, [open]);
+
+  // 캔버스 컨테이너 크기 추적 → 이미지가 항상 화면 안에 들어오도록 fit 배율 계산의 기준으로 사용
+  useEffect(() => {
+    if (!open) return;
+    const el = canvasWrapRef.current;
+    if (!el) return;
+    const update = () => setContainerSize({ width: el.clientWidth, height: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+
+  // 화면 맞춤 배율: 컨테이너(패딩 제외) 안에 이미지 전체가 들어가는 최대 배율 (원본보다 확대하지는 않음)
+  const fitScale = useMemo(() => {
+    if (!containerSize.width || !containerSize.height) return 1;
+    const availW = Math.max(50, containerSize.width - 32);
+    const availH = Math.max(50, containerSize.height - 32);
+    return Math.min(availW / stageSize.width, availH / stageSize.height, 1);
+  }, [containerSize, stageSize]);
+
+  // 실제 표시 배율 = 화면 맞춤 배율 × 사용자 줌
+  const viewScale = fitScale * zoom;
+
+  // Ctrl(또는 Cmd)+휠로 캔버스 확대/축소. React onWheel은 passive라 preventDefault가 안 먹혀 네이티브 리스너 사용
+  useEffect(() => {
+    if (!open) return;
+    const el = canvasWrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z * factor)));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, [open]);
 
   useEffect(() => {
@@ -83,7 +129,8 @@ export function ImageAnnotator({ open, imageBase64, originalImageRef, onClose, o
     (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       const stage = e.target.getStage();
       if (!stage) return;
-      const pos = stage.getPointerPosition();
+      // 스테이지에 표시 배율(scale)이 적용되어 있으므로 논리 좌표계로 역변환된 위치를 사용
+      const pos = stage.getRelativePointerPosition();
       if (!pos) return;
       const newStroke: AnnotationStroke = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -105,7 +152,7 @@ export function ImageAnnotator({ open, imageBase64, originalImageRef, onClose, o
       if (!isDrawing) return;
       const stage = e.target.getStage();
       if (!stage) return;
-      const pos = stage.getPointerPosition();
+      const pos = stage.getRelativePointerPosition();
       if (!pos) return;
       setStrokes((s) => {
         if (s.length === 0) return s;
@@ -126,11 +173,17 @@ export function ImageAnnotator({ open, imageBase64, originalImageRef, onClose, o
     }
     setIsSubmitting(true);
     try {
+      // 스테이지는 viewScale로 축소/확대 표시 중이므로, 역배율 pixelRatio로 논리 해상도(stageSize) 그대로 추출
+      const displayWidth = Math.max(1, Math.round(stageSize.width * viewScale));
+      const exportRatio = stageSize.width / displayWidth;
       const compositePng = exportNodeToDataUrl(
         stageRef.current as unknown as { toDataURL: Konva.Stage['toDataURL'] },
-        { mimeType: 'image/jpeg', quality: 0.85 }
+        { mimeType: 'image/jpeg', quality: 0.85, pixelRatio: exportRatio }
       );
-      const rawMask = exportNodeToDataUrl(maskLayerRef.current as unknown as { toDataURL: Konva.Layer['toDataURL'] });
+      const rawMask = exportNodeToDataUrl(
+        maskLayerRef.current as unknown as { toDataURL: Konva.Layer['toDataURL'] },
+        { pixelRatio: exportRatio }
+      );
       const maskPng = await normalizeMaskToOpenAI(rawMask);
 
       // OpenAI 전송용: stage 크기로 다운스케일된 깨끗한 원본
@@ -210,13 +263,14 @@ export function ImageAnnotator({ open, imageBase64, originalImageRef, onClose, o
     stageSize,
     strokes.length,
     usedColors,
+    viewScale,
   ]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[95vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full h-[95vh] flex flex-col overflow-hidden">
         <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <Pencil size={18} className="text-purple-600" />
@@ -309,56 +363,91 @@ export function ImageAnnotator({ open, imageBase64, originalImageRef, onClose, o
 
           {/* 캔버스 + 우측 색상별 지시문 */}
           <div className="flex-1 flex min-w-0">
-            <div className="flex-1 flex items-center justify-center bg-gray-100 p-4 overflow-auto">
-              {image && (
-                <Stage
-                  ref={stageRef}
-                  width={stageSize.width}
-                  height={stageSize.height}
-                  onMouseDown={handlePointerDown}
-                  onMouseMove={handlePointerMove}
-                  onMouseUp={handlePointerUp}
-                  onMouseLeave={handlePointerUp}
-                  onTouchStart={handlePointerDown}
-                  onTouchMove={handlePointerMove}
-                  onTouchEnd={handlePointerUp}
-                  style={{ cursor: tool === 'eraser' ? 'cell' : 'crosshair', backgroundColor: '#fff' }}
+            <div className="flex-1 relative min-w-0 bg-gray-100">
+              {/* 줌 컨트롤 (캔버스 위 오버레이) */}
+              <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-white/95 border border-gray-300 rounded-lg shadow-sm px-1.5 py-1">
+                <button
+                  onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.25))}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-700"
+                  title="축소 (Ctrl+휠 아래)"
                 >
-                  <Layer listening={false}>
-                    <KonvaImage image={image} width={stageSize.width} height={stageSize.height} />
-                  </Layer>
-                  <Layer ref={paintLayerRef}>
-                    {strokes.map((s) => (
-                      <Line
-                        key={s.id}
-                        points={s.points}
-                        stroke={s.color}
-                        strokeWidth={s.strokeWidth}
-                        lineCap="round"
-                        lineJoin="round"
-                        tension={0.3}
-                        globalCompositeOperation={s.tool === 'eraser' ? 'destination-out' : 'source-over'}
-                      />
-                    ))}
-                  </Layer>
-                  {/* 마스크 추출용 (OpenAI 정밀 편집 시 활용) */}
-                  <Layer ref={maskLayerRef} opacity={0.0001}>
-                    {strokes
-                      .filter((s) => s.isMaskingStroke)
-                      .map((s) => (
-                        <Line
-                          key={`mask-${s.id}`}
-                          points={s.points}
-                          stroke="#ffffff"
-                          strokeWidth={s.strokeWidth}
-                          lineCap="round"
-                          lineJoin="round"
-                          tension={0.3}
-                        />
-                      ))}
-                  </Layer>
-                </Stage>
-              )}
+                  <ZoomOut size={15} />
+                </button>
+                <span className="text-[11px] text-gray-600 w-11 text-center tabular-nums">
+                  {Math.round(viewScale * 100)}%
+                </span>
+                <button
+                  onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.25))}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-700"
+                  title="확대 (Ctrl+휠 위)"
+                >
+                  <ZoomIn size={15} />
+                </button>
+                <button
+                  onClick={() => setZoom(1)}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-700"
+                  title="화면 맞춤"
+                >
+                  <Maximize size={15} />
+                </button>
+              </div>
+              {/* 이미지 전체가 항상 보이도록 fit 배율로 표시. 확대 시에는 스크롤로 이동.
+                  (주의: flex 중앙정렬 + overflow 조합은 넘친 위/왼쪽이 잘려 스크롤 불가 → 자식 m-auto 방식 사용) */}
+              <div ref={canvasWrapRef} className="absolute inset-0 overflow-auto flex">
+                {image && (
+                  <div className="m-auto p-4">
+                    <Stage
+                      ref={stageRef}
+                      width={Math.max(1, Math.round(stageSize.width * viewScale))}
+                      height={Math.max(1, Math.round(stageSize.height * viewScale))}
+                      scaleX={viewScale}
+                      scaleY={viewScale}
+                      onMouseDown={handlePointerDown}
+                      onMouseMove={handlePointerMove}
+                      onMouseUp={handlePointerUp}
+                      onMouseLeave={handlePointerUp}
+                      onTouchStart={handlePointerDown}
+                      onTouchMove={handlePointerMove}
+                      onTouchEnd={handlePointerUp}
+                      style={{ cursor: tool === 'eraser' ? 'cell' : 'crosshair', backgroundColor: '#fff' }}
+                    >
+                      <Layer listening={false}>
+                        <KonvaImage image={image} width={stageSize.width} height={stageSize.height} />
+                      </Layer>
+                      <Layer ref={paintLayerRef}>
+                        {strokes.map((s) => (
+                          <Line
+                            key={s.id}
+                            points={s.points}
+                            stroke={s.color}
+                            strokeWidth={s.strokeWidth}
+                            lineCap="round"
+                            lineJoin="round"
+                            tension={0.3}
+                            globalCompositeOperation={s.tool === 'eraser' ? 'destination-out' : 'source-over'}
+                          />
+                        ))}
+                      </Layer>
+                      {/* 마스크 추출용 (OpenAI 정밀 편집 시 활용) */}
+                      <Layer ref={maskLayerRef} opacity={0.0001}>
+                        {strokes
+                          .filter((s) => s.isMaskingStroke)
+                          .map((s) => (
+                            <Line
+                              key={`mask-${s.id}`}
+                              points={s.points}
+                              stroke="#ffffff"
+                              strokeWidth={s.strokeWidth}
+                              lineCap="round"
+                              lineJoin="round"
+                              tension={0.3}
+                            />
+                          ))}
+                      </Layer>
+                    </Stage>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex-shrink-0 w-72 border-l border-gray-200 p-3 overflow-y-auto bg-white">
