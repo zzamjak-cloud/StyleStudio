@@ -1,6 +1,6 @@
 import { memo, useState, useEffect } from 'react';
-import { X, Key, FolderOpen, LogOut, User } from 'lucide-react';
-import { openPath } from '@tauri-apps/plugin-opener';
+import { X, Key, FolderOpen, LogOut, User, Info, ChevronDown, ChevronRight } from 'lucide-react';
+import { openPath, openUrl } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
 import { getAiGenRoot } from '../../lib/config/paths';
 import { useAuth } from '../../hooks/useAuth';
@@ -25,6 +25,7 @@ export const SettingsModal = memo(function SettingsModal({
   const [saveNotification, setSaveNotification] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [version, setVersion] = useState('');
+  const [showAbout, setShowAbout] = useState(false);
   const { user, logout } = useAuth();
 
   useEffect(() => {
@@ -76,6 +77,15 @@ export const SettingsModal = memo(function SettingsModal({
     }
   };
 
+  // 외부 링크를 기본 브라우저로 열기
+  const handleOpenUrl = async (url: string) => {
+    try {
+      await openUrl(url);
+    } catch (error) {
+      console.error('링크 열기 실패:', error);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -98,7 +108,7 @@ export const SettingsModal = memo(function SettingsModal({
         </div>
 
         {/* 본문 */}
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 max-h-[65vh] overflow-y-auto">
           {/* API Key 설정 */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -204,6 +214,58 @@ export const SettingsModal = memo(function SettingsModal({
                 {isLoggingOut ? '로그아웃 중...' : '로그아웃'}
               </button>
             </div>
+          </div>
+
+          {/* 정보 및 라이선스 (GPL-3.0 §5d 고지) */}
+          <div>
+            <button
+              onClick={() => setShowAbout((prev) => !prev)}
+              className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-purple-600 transition-colors"
+            >
+              <Info size={16} />
+              정보 및 라이선스
+              {showAbout ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+
+            {showAbout && (
+              <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+                <p className="text-sm font-medium text-gray-800">
+                  StyleStudio <span className="text-gray-500 font-normal">v{version}</span>
+                </p>
+                <p className="text-xs text-gray-600">
+                  Copyright &copy; 2026 최진평 (Jinpyoung Choi)
+                </p>
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  이 프로그램은 자유 소프트웨어이며 <strong>GNU General Public License v3.0 이상</strong>
+                  조건으로 배포됩니다. 이 프로그램에는 <strong>어떠한 보증도 없습니다.</strong> 라이선스
+                  조건에 따라 재배포하거나 수정할 수 있습니다.
+                </p>
+                <div className="flex flex-col gap-1 pt-1">
+                  <button
+                    onClick={() => handleOpenUrl('https://www.gnu.org/licenses/gpl-3.0.html')}
+                    className="text-xs text-purple-600 hover:underline text-left"
+                  >
+                    GNU GPL v3.0 전문 보기
+                  </button>
+                  <button
+                    onClick={() => handleOpenUrl('https://github.com/zzamjak-cloud/StyleStudio')}
+                    className="text-xs text-purple-600 hover:underline text-left"
+                  >
+                    소스 코드 (GitHub)
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleOpenUrl(
+                        'https://github.com/zzamjak-cloud/StyleStudio/blob/main/THIRD-PARTY-NOTICES.md'
+                      )
+                    }
+                    className="text-xs text-purple-600 hover:underline text-left"
+                  >
+                    서드파티 라이선스 고지
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

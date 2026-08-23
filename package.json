@@ -2,6 +2,17 @@
   "name": "stylestudio-tauri",
   "private": true,
   "version": "0.4.20",
+  "description": "AI 게임 아트 제작 데스크톱 애플리케이션",
+  "author": "최진평 (Jinpyoung Choi) <zzamjak@naver.com>",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zzamjak-cloud/StyleStudio.git"
+  },
+  "homepage": "https://github.com/zzamjak-cloud/StyleStudio",
+  "bugs": {
+    "url": "https://github.com/zzamjak-cloud/StyleStudio/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

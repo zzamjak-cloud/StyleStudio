@@ -106,3 +106,39 @@ npm run tauri:build
 **CI 서명 스크립트:** `scripts/ci/append_tauri_signing_env.py`는 릴리스 job에서 **저장소 기본 브랜치(보통 `main`)에서 가져옵니다.** 태그 시점에 그 파일이 없었어도, 앱 소스는 여전히 **지정한 태그 커밋**입니다.
 
 **참고:** 서명 키 없이 로컬에서 설치 파일만 검증할 때는 `npm run tauri:build:local`을 사용하세요.
+
+---
+
+## 라이선스 (License)
+
+Copyright (C) 2026 최진평 (Jinpyoung Choi)
+
+StyleStudio는 자유 소프트웨어입니다. **GNU General Public License v3.0 이상**
+(GPL-3.0-or-later) 조건에 따라 재배포하거나 수정할 수 있습니다.
+
+이 프로그램은 유용하게 쓰이기를 바라며 배포되지만, **어떠한 보증도 하지 않습니다.**
+상품성이나 특정 목적 적합성에 대한 묵시적 보증조차 없습니다.
+자세한 내용은 GNU 일반 공중 사용 허가서를 참고하세요.
+
+- 라이선스 전문: [LICENSE](LICENSE) · <https://www.gnu.org/licenses/gpl-3.0.html>
+- 저작자 및 기여자: [AUTHORS.md](AUTHORS.md)
+- 서드파티 라이선스: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+- 소스 코드: <https://github.com/zzamjak-cloud/StyleStudio>
+
+### GPL 준수 시 유의사항
+
+- 이 프로그램(또는 파생 저작물)을 **배포**하는 경우, 동일한 GPL-3.0-or-later 조건으로
+  **전체 소스 코드**를 함께 제공해야 합니다.
+- 소스 코드를 수정한 경우, 수정 사실과 날짜를 명시해야 합니다.
+- 저작권 표시와 라이선스 고지를 제거하거나 변경해서는 안 됩니다.
+
+### 기여
+
+Pull Request를 보내는 것은 해당 기여물을 GPL-3.0-or-later 조건으로
+배포하는 데 동의함을 의미합니다. 자세한 내용은 [AUTHORS.md](AUTHORS.md)를 참고하세요.
+
+### 생성 결과물의 권리
+
+GPL-3.0은 **이 프로그램의 소스 코드**에만 적용됩니다.
+프로그램을 사용해 생성한 이미지 등 결과물에는 적용되지 않으며,
+해당 결과물의 권리·이용 조건은 사용된 AI 제공자(Google Gemini)의 약관을 따릅니다.

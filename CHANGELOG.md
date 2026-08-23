@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Added
+- GNU General Public License v3.0 이상(GPL-3.0-or-later)을 프로젝트 라이선스로 명시하고 `LICENSE` 전문을 추가했습니다.
+- 저작권자·기여자 정보를 담은 `AUTHORS.md`, 서드파티 라이선스 고지를 담은 `THIRD-PARTY-NOTICES.md`를 추가했습니다.
+- 설정 모달에 "정보 및 라이선스" 섹션을 추가해 버전, 저작권, GPL 고지, 소스 코드 링크를 표시합니다. (GPL §5d)
+- 진입점 소스 파일(`src/main.tsx`, `src/App.tsx`, `src-tauri/src/main.rs`, `src-tauri/src/lib.rs`)에 GPL 라이선스 헤더를 추가했습니다.
+
+### Changed
+- `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`에 저작자·라이선스·저장소 메타데이터를 채웠습니다. (Cargo `authors = ["you"]`, `description = "A Tauri App"` 기본값 제거)
+- README에 라이선스·저작권·기여 조건·생성 결과물 권리 안내 섹션을 추가했습니다.
+
 ## [0.4.20] - 2026-08-20
 
 ### Fixed
