@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.4.21] - 2026-08-23
+
 ### Added
 - GNU General Public License v3.0 이상(GPL-3.0-or-later)을 프로젝트 라이선스로 명시하고 `LICENSE` 전문을 추가했습니다.
 - 저작권자·기여자 정보를 담은 `AUTHORS.md`, 서드파티 라이선스 고지를 담은 `THIRD-PARTY-NOTICES.md`를 추가했습니다.
