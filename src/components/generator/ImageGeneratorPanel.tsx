@@ -18,6 +18,7 @@ import { buildPromptForSession } from '../../lib/prompts/sessionPrompts';
 import { useGeminiImageGenerator } from '../../hooks/api/useGeminiImageGenerator';
 import { useOpenAIImageGenerator } from '../../hooks/api/useOpenAIImageGenerator';
 import { useGeminiTranslator } from '../../hooks/api/useGeminiTranslator';
+import { useTilemapProcessing } from '../../hooks/useTilemapProcessing';
 import { logger } from '../../lib/logger';
 import { loadImage } from '../../lib/imageStorage';
 import { GeneratorSettings } from './GeneratorSettings';
@@ -386,6 +387,8 @@ export function ImageGeneratorPanel({
   onDocumentAdd,
   onDocumentDelete,
   illustrationData,
+  tilemapData,
+  onTilemapDataChange,
 }: ImageGeneratorPanelProps) {
   const { positivePrompt, negativePrompt } = useMemo(
     () => buildUnifiedPrompt(analysis),
@@ -456,6 +459,14 @@ export function ImageGeneratorPanel({
     imageModel,
     imageQuality,
   } = state;
+
+  // 타일맵 생성 후처리 (TILEMAP 세션에서만 동작)
+  const tilemap = useTilemapProcessing({
+    enabled: sessionType === 'TILEMAP',
+    tilemapData,
+    onTilemapDataChange,
+    pixelArtGrid,
+  });
 
   const resolveStoredImage = useCallback(async (image: string): Promise<string> => {
     if (!image) return image;
@@ -711,6 +722,19 @@ export function ImageGeneratorPanel({
               };
               onHistoryAdd(historyEntry);
               logger.debug('📜 히스토리에 추가됨:', historyEntry.id);
+            }
+
+            // 타일맵 세션: 시트 분할·seam 검증·슬롯 할당 후처리
+            if (sessionType === 'TILEMAP') {
+              try {
+                setProgressMessage('타일 분할·검증 중...');
+                await tilemap.processNewSheet(dataUrl);
+              } catch (e) {
+                logger.error('❌ 타일맵 후처리 실패:', e);
+                alert('타일 분할에 실패했습니다. 시트는 히스토리에 남아 있으니 다시 생성해 주세요.');
+              } finally {
+                setProgressMessage('');
+              }
             }
           },
         onError: (error: Error) => {
