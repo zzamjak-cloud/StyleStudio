@@ -88,4 +88,5 @@ UpdateState = { status: UpdateStatus, update: Update | null, progress: number, e
 | 다운로드는 되나 재시작 안 됨 | `process` 플러그인 미등록/권한 없음(`relaunch`) |
 | 최신 버전인데 계속 알림 | `latest.json` 의 version ≤ 현재 버전이어야 무알림 — 3파일 버전 불일치 |
 | 릴리스 노트 안 보임 | `update.body` 비어있음(릴리스 본문/`latest.json` notes 누락) |
+| bump 후 CHANGELOG 이 안 바뀜 | `bump-version.sh` 의 `[Unreleased]` 치환 정규식이 LF 전제 — CHANGELOG.md 가 CRLF 이면 조용히 미매치(v0.4.22 에서 실제 발생, 수동 보완). 스크립트 수정 전까지 bump 후 CHANGELOG 반영 여부를 눈으로 확인할 것 |
 | 로컬 빌드가 업데이트 못 받음 | `tauri.local.conf.json` `createUpdaterArtifacts: false` |
