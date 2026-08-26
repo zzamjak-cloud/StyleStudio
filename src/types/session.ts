@@ -4,7 +4,8 @@ import { ReferenceDocument } from './referenceDocument';
 import { IllustrationSessionData } from './illustration';
 import { ChatSessionData } from './chat';
 import { ConceptSessionData } from './concept';
-export type SessionType = 'BASIC' | 'STYLE' | 'CHARACTER' | 'BACKGROUND' | 'ICON' | 'PIXELART_CHARACTER' | 'PIXELART_BACKGROUND' | 'PIXELART_ICON' | 'UI' | 'LOGO' | 'ILLUSTRATION' | 'CONCEPT';
+import { TilemapSessionData } from './tilemap';
+export type SessionType = 'BASIC' | 'STYLE' | 'CHARACTER' | 'BACKGROUND' | 'ICON' | 'PIXELART_CHARACTER' | 'PIXELART_BACKGROUND' | 'PIXELART_ICON' | 'UI' | 'LOGO' | 'ILLUSTRATION' | 'CONCEPT' | 'TILEMAP';
 
 export interface Session {
   id: string;
@@ -24,6 +25,7 @@ export interface Session {
   illustrationData?: IllustrationSessionData; // 일러스트 세션 전용 데이터
   chatData?: ChatSessionData; // BASIC 채팅 세션 전용 데이터
   conceptData?: ConceptSessionData; // CONCEPT 세션 전용 데이터
+  tilemapData?: TilemapSessionData; // TILEMAP 세션 전용 데이터
 }
 
 // 생성 히스토리 엔트리

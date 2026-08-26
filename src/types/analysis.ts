@@ -70,6 +70,17 @@ export interface LogoSpecificAnalysis {
   genre_hint: string;            // 장르 힌트 (예: "Match-3 Puzzle", "RPG/Strategy", "Endless Runner/Action")
 }
 
+// 타일맵(손맵 바닥타일) 특화 분석 결과 (TILEMAP 타입일 때만 사용)
+export interface TilemapSpecificAnalysis {
+  brush_style: string;         // 붓터치 스타일 (예: "visible soft brushwork", "layered opaque strokes")
+  color_palette: string;       // 주요 색·명도 범위 (예: "warm greens with ochre accents, mid-value")
+  texture_density: string;     // 디테일 밀도 (예: "sparse details, mostly flat base", "dense organic noise")
+  material_type: string;       // 재질 (예: "grass", "stone floor", "dirt path", "wooden planks", "sand")
+  perspective: string;         // 시점 (예: "top-down", "3/4 view")
+  edge_softness: string;       // 경계 붓터치 부드러움 (예: "soft blended edges", "crisp painterly edges")
+  lighting_direction: string;  // 광원 방향·색온도 (예: "top-left warm sunlight", "neutral ambient")
+}
+
 // 전체 분석 결과
 export interface ImageAnalysisResult {
   style: StyleAnalysis;
@@ -79,4 +90,5 @@ export interface ImageAnalysisResult {
   pixelart_specific?: PixelArtSpecificAnalysis; // 픽셀아트 타입일 때만 존재
   ui_specific?: UISpecificAnalysis; // UI 타입일 때만 존재
   logo_specific?: LogoSpecificAnalysis; // LOGO 타입일 때만 존재
+  tilemap_specific?: TilemapSpecificAnalysis; // TILEMAP 타입일 때만 존재
 }

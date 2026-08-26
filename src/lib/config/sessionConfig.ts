@@ -304,6 +304,28 @@ export const SESSION_CONFIG: Record<SessionType, SessionConfig> = {
     promptPlaceholder: '비워두면 입력된 정보를 기반으로 자동 생성합니다...',
     gridLabel: '🎨 컨셉 그리드',
   },
+
+  TILEMAP: {
+    label: '타일맵',
+    icon: '🧱',
+    description: '유니티 Tilemap용 손맵 스타일 바닥타일 세트를 생성합니다',
+    colors: {
+      selected: 'bg-lime-600 text-white border-lime-700 shadow-lg',
+      unselected: 'bg-white text-gray-700 border-lime-200 hover:border-lime-400',
+      background: 'bg-gradient-to-r from-lime-50 to-emerald-50',
+      border: 'border-lime-200',
+    },
+    grids: {
+      '1x1': '타일맵에서는 지원하지 않는 그리드입니다',
+      '2x2': '타일맵에서는 지원하지 않는 그리드입니다',
+      '3x3': '타일맵에서는 지원하지 않는 그리드입니다',
+      '4x4': '🧱 16개 타일 변형 세트를 생성합니다 (타일당 256px)',
+      '6x6': '타일맵에서는 지원하지 않는 그리드입니다',
+      '8x8': '🧱 64개 타일 변형 세트를 생성합니다 (타일당 128px)',
+    },
+    promptPlaceholder: '바닥 재질을 설명하세요 (예: 잔디, 흙길, 돌바닥 / grass, dirt path, stone floor)',
+    gridLabel: '🧱 타일맵 그리드',
+  },
 };
 
 /**

@@ -67,6 +67,7 @@ const promptGenerators: Record<SessionType, PromptGeneratorFunction> = {
   PIXELART_ICON: generatePixelArtIconPrompt,
   ILLUSTRATION: generateIllustrationPrompt,
   CONCEPT: generateConceptPrompt,
+  TILEMAP: generateTilemapPrompt,
 };
 
 /**
@@ -74,7 +75,10 @@ const promptGenerators: Record<SessionType, PromptGeneratorFunction> = {
  */
 export function buildPromptForSession(params: PromptGenerationParams): string {
   let body: string;
-  if (!params.hasReferenceImages || !params.sessionType) {
+  if (params.sessionType === 'TILEMAP') {
+    // 타일맵은 참조 유무와 무관하게 타일링 규칙 프롬프트를 항상 적용
+    body = generateTilemapPrompt(params);
+  } else if (!params.hasReferenceImages || !params.sessionType) {
     body = params.basePrompt;
   } else {
     const generator = promptGenerators[params.sessionType];
@@ -652,4 +656,52 @@ ${basePrompt}
 
 Focus on atmosphere, mood, and visual storytelling.
 Use high-quality rendering with attention to lighting and composition.`;
+}
+
+/**
+ * TILEMAP 세션 프롬프트 생성
+ * - 손맵(hand-painted) 변형 타일 세트: 모든 타일이 상호 seamless (임의 배치 호환)
+ * - 타일링 규칙 6조: 균질 베이스 · 조용한 경계 존 · 중앙 디테일 랜덤성 ·
+ *   NO GRID LINES · 일관 조명 · 손맵 채색 강제
+ */
+function generateTilemapPrompt(params: PromptGenerationParams): string {
+  const { basePrompt, pixelArtGrid, analysis } = params;
+
+  // 타일맵은 4x4/8x8만 지원 — 그 외 값이 들어오면 4x4로 강제
+  const grid = pixelArtGrid === '8x8' ? '8x8' : '4x4';
+  const gridInfo = getPixelArtGridInfo(grid);
+  const tileCount = gridInfo.totalFrames;
+  const gridLayout = `${gridInfo.rows}x${gridInfo.cols}`;
+
+  // 참조 분석(손맵 스타일 스펙)이 있으면 스펙 섹션 삽입
+  const t = analysis?.tilemap_specific;
+  const specLines: string[] = [];
+  if (t?.material_type) specLines.push(`- Material: ${t.material_type}`);
+  if (t?.brush_style) specLines.push(`- Brushwork: ${t.brush_style}`);
+  if (t?.color_palette) specLines.push(`- Color palette: ${t.color_palette}`);
+  if (t?.texture_density) specLines.push(`- Texture density: ${t.texture_density}`);
+  if (t?.perspective) specLines.push(`- Perspective: ${t.perspective}`);
+  if (t?.edge_softness) specLines.push(`- Edge softness: ${t.edge_softness}`);
+  if (t?.lighting_direction) specLines.push(`- Lighting: ${t.lighting_direction}`);
+  const styleSpec = specLines.length > 0
+    ? `\n🎨 HAND-PAINTED STYLE SPEC (from reference analysis - MUST match):\n${specLines.join('\n')}\n`
+    : '';
+
+  return `🎯 HAND-PAINTED TILEMAP VARIATION SET (${tileCount} ground tiles in ${gridLayout} grid, single 1024x1024 image)
+
+Create ${tileCount} mutually interchangeable ground tile variations of ONE terrain type, arranged in a ${gridLayout} grid. These tiles will be cut apart and placed in ANY random arrangement in a game engine (Unity Tilemap), so EVERY tile edge must blend seamlessly with EVERY other tile edge.
+${styleSpec}
+🧱 TILING RULES (CRITICAL - all 6 must hold):
+1. UNIFORM BASE: the entire canvas is ONE continuous, statistically uniform hand-painted texture of the same material - consistent hue, brightness, and brushstroke density everywhere.
+2. QUIET EDGE ZONES: the outer ~15% of every cell must stay low-contrast base texture only - no distinctive details, no strong shapes near any cell edge.
+3. CENTERED DETAIL VARIETY: distinctive details (flowers, pebbles, cracks, leaves) go ONLY near each cell's center, and every cell gets DIFFERENT details for natural variety.
+4. NO GRID LINES: do NOT draw any lines, borders, dividers, or separators between cells. The grid layout is purely conceptual - there must be NO visible grid structure in the final image.
+5. CONSISTENT LIGHTING: one light direction and color temperature across the whole canvas; all shadows fall the same way.
+6. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered.
+
+⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, seams, visible borders, vignette, tiling artifacts.
+
+🌿 TERRAIN: ${basePrompt || 'stylized grass ground'}
+
+Generate the ${tileCount}-tile hand-painted variation set in the ${gridLayout} grid now.`;
 }
