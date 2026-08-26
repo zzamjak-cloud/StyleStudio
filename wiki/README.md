@@ -64,6 +64,9 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 스프라이트 시트 프레임 수/해상도가 이상함 | `pixelart/overview.md` |
 | 픽셀 업스케일(pixelArtUpscaler) 동작 안 함 | `pixelart/overview.md` |
 | 그리드(1x1~8x8) 선택 UI가 안 보임 | `pixelart/overview.md` |
+| 타일이 서로 이어지지 않음/seam 경고 | `tilemap/overview.md` |
+| 선택 재생성·교체가 동작 안 함 | `tilemap/overview.md` |
+| 내보낸 시트에 교체 타일이 반영 안 됨 | `tilemap/overview.md` |
 | UI 세션에서 참조 문서 첨부가 안 보임 | `documents/overview.md` |
 | 참조 문서 드롭 영역이 커 보이거나 한 줄로 안 보임 | `documents/overview.md` |
 | PDF/Excel 파싱 결과가 프롬프트에 안 반영됨 | `documents/overview.md` |
@@ -142,6 +145,11 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 |------|------|
 | `overview.md` | 픽셀 세션 3종·그리드 레이아웃(1x1~8x8)·스프라이트 시트·업스케일 파이프라인 |
 
+### tilemap/ — 타일맵
+| 파일 | 내용 |
+|------|------|
+| `overview.md` | 손맵 변형 타일 세트(4x4/8x8, 1:1·1K 고정)·seam 점수·교체 재생성·유니티 내보내기 |
+
 ### documents/ — 참조 문서
 | 파일 | 내용 |
 |------|------|
@@ -196,6 +204,8 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 일러스트 위치 기반 드롭 판정 | `src/components/illustration/IllustrationSetupPanel.tsx` |
 | 구도 스케치(라벨 제외 export) | `src/components/illustration/conceptSketch/ConceptSketchPanel.tsx` |
 | 픽셀 그리드 정보(getPixelArtGridInfo) | `src/types/pixelart.ts` |
+| 타일맵 후처리 훅(저장·분할·seam·교체) | `src/hooks/useTilemapProcessing.ts` |
+| 타일맵 분할·seam 검증·유니티 내보내기 | `src/lib/tilemap/` (`tileSlicer.ts`·`seamValidator.ts`·`tilemapExporter.ts`) |
 | 참조 문서 파싱 디스패처(parseFile) | `src/lib/utils/fileParser.ts` |
 | 참조 문서 관리(processFiles) | `src/components/generator/DocumentManager.tsx` |
 | Tauri 플러그인·OAuth invoke | `src-tauri/src/lib.rs` |

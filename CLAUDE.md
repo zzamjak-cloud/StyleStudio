@@ -14,7 +14,7 @@ AI 게임 아트 제작 데스크톱 앱 (React 19 + TypeScript + Tauri v2 + Zus
 > 위키에 없는 영역을 새로 파악했거나, 위키 내용이 코드와 어긋나면 해당 위키 파일과 `README.md` 인덱스를 갱신한다.
 
 ### 카테고리 맵
-`session`(세션 코어) · `folders`(폴더) · `analysis`(참조 분석) · `generator`+`prompts`(이미지 생성) · `chat`(대화형) · `concept`(컨셉 아트) · `illustration`(다중 캐릭터) · `pixelart` · `documents`(참조 문서) · `infra`(Tauri) · `auth`(OAuth) · `api`(에러/번역) · `ui`(공통 컴포넌트)
+`session`(세션 코어) · `folders`(폴더) · `analysis`(참조 분석) · `generator`+`prompts`(이미지 생성) · `chat`(대화형) · `concept`(컨셉 아트) · `illustration`(다중 캐릭터) · `pixelart` · `tilemap`(타일맵) · `documents`(참조 문서) · `infra`(Tauri) · `auth`(OAuth) · `api`(에러/번역) · `ui`(공통 컴포넌트)
 
 ## 언어 규칙
 
