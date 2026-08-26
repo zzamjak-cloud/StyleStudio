@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image as ImageIcon, Download, Lock, LockOpen, Grid3x3, LayoutGrid, Eye, Upload } from 'lucide-react';
 import { LazyImage } from '../common/LazyImage';
 import { TilePreviewCanvas } from './TilePreviewCanvas';
@@ -45,6 +45,20 @@ function TilemapResultViewComponent({
   const [selectedSlots, setSelectedSlots] = useState<Set<number>>(new Set());
   const [showPreviewCanvas, setShowPreviewCanvas] = useState(false);
   const hasEmptySlot = currentTiles.some((t) => t === null);
+
+  // 첫 생성으로 타일 데이터가 생기는 전이 시점에만 타일 보기로 자동 전환 (이후 사용자가 시트 보기로 바꾼 것은 유지)
+  const prevHasTileDataRef = useRef(hasTileData);
+  useEffect(() => {
+    if (!prevHasTileDataRef.current && hasTileData) {
+      setViewMode('tiles');
+    }
+    prevHasTileDataRef.current = hasTileData;
+  }, [hasTileData]);
+
+  const previewTiles = useMemo(
+    () => currentTiles.filter((t): t is string => t !== null),
+    [currentTiles]
+  );
 
   const toggleSelect = (slotIndex: number) => {
     setSelectedSlots((prev) => {
@@ -283,7 +297,7 @@ function TilemapResultViewComponent({
 
       {showPreviewCanvas && (
         <TilePreviewCanvas
-          tiles={currentTiles.filter((t): t is string => t !== null)}
+          tiles={previewTiles}
           onClose={() => setShowPreviewCanvas(false)}
         />
       )}

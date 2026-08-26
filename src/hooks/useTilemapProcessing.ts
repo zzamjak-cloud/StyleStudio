@@ -44,6 +44,13 @@ export function useTilemapProcessing({
 
   const grid: TilemapGridLayout = isTilemapGridLayout(pixelArtGrid) ? pixelArtGrid : '4x4';
 
+  // 보유 타일의 실제 그리드 — 뷰·내보내기는 이 값을 쓴다 (다음 생성 목표 grid와 분리, 스펙 §8)
+  const displayGrid: TilemapGridLayout =
+    tilemapData && tilemapData.slotAssignments.length > 0 ? tilemapData.grid : grid;
+
+  // 세션 전환 감지를 위한 시트 정체성 (길이만으로는 다른 세션의 동일 개수 시트를 구분 못함)
+  const sheetIds = tilemapData?.sheets.map((s) => s.id).join(',') ?? '';
+
   // 세션 재진입 시: 저장된 시트를 로드해 캐시 복원
   useEffect(() => {
     if (!enabled || !tilemapData || tilemapData.sheets.length === 0) return;
@@ -63,15 +70,16 @@ export function useTilemapProcessing({
           logger.error('❌ 타일 시트 복원 실패:', sheet.id, e);
         }
       }
-      if (!cancelled && restored.size > 0) {
-        setTileCache((prev) => new Map([...prev, ...restored]));
+      // 세션 전환 시 이전 세션의 캐시가 남아있으면 안 되므로 병합이 아닌 교체
+      if (!cancelled) {
+        setTileCache(restored);
       }
     })();
 
     return () => { cancelled = true; };
-    // sheets 배열 길이 변화 시에만 재실행 (신규 시트는 processNewSheet가 즉시 캐시함)
+    // 시트 정체성(sheetIds) 변화 시에만 재실행 (신규 시트는 processNewSheet가 즉시 캐시함)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, tilemapData?.sheets.length, tilemapData?.grid]);
+  }, [enabled, sheetIds, tilemapData?.grid]);
 
   /** slotAssignments를 타일 dataURL 배열로 해석 */
   const currentTiles: (string | null)[] = (() => {
@@ -189,6 +197,7 @@ export function useTilemapProcessing({
 
   return {
     grid,
+    displayGrid,
     currentTiles,
     proposal,
     processNewSheet,

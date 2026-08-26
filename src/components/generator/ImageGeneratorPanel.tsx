@@ -411,7 +411,7 @@ export function ImageGeneratorPanel({
     isGenerating: false,
     progressMessage: '',
     generatedImage: null,
-    pixelArtGrid: sessionType === 'TILEMAP' ? '4x4' : IMAGE_GENERATION_DEFAULTS.PIXEL_ART_GRID,
+    pixelArtGrid: sessionType === 'TILEMAP' ? (tilemapData?.grid ?? '4x4') : IMAGE_GENERATION_DEFAULTS.PIXEL_ART_GRID,
     cameraAngle: 'none',  // 기본값: 선택 안함
     cameraLens: 'none',   // 기본값: 선택 안함
     zoomLevel: 'fit',
@@ -961,7 +961,7 @@ export function ImageGeneratorPanel({
     try {
       const folder = await exportTilemapForUnity({
         sessionName,
-        grid: tilemap.grid,
+        grid: tilemap.displayGrid,
         tiles: tiles as string[],
       });
       alert(`유니티용 타일맵을 내보냈습니다.\n\n${folder}`);
@@ -970,7 +970,7 @@ export function ImageGeneratorPanel({
       logger.error('❌ 타일맵 내보내기 실패:', error);
       alert('타일맵 내보내기에 실패했습니다.\n\n' + message);
     }
-  }, [tilemap.currentTiles, tilemap.grid, sessionName]);
+  }, [tilemap.currentTiles, tilemap.displayGrid, sessionName]);
 
   // 히스토리에서 설정 복원 (단일 setState + useCallback으로 자식 memo 유지)
   const handleRestoreFromHistory = useCallback(async (e: React.MouseEvent, entry: GenerationHistoryEntry) => {
@@ -1143,7 +1143,7 @@ export function ImageGeneratorPanel({
               isGenerating={isGenerating}
               progressMessage={progressMessage}
               generatedImage={generatedImage}
-              grid={tilemap.grid}
+              grid={tilemap.displayGrid}
               currentTiles={tilemap.currentTiles}
               slotAssignments={tilemapData?.slotAssignments ?? []}
               proposal={tilemap.proposal}
