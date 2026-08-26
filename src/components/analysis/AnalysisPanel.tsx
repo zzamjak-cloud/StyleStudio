@@ -10,10 +10,11 @@ import { NegativePromptCard } from './NegativePromptCard';
 import { UnifiedPromptCard } from './UnifiedPromptCard';
 import { UICard } from './UICard';
 import { LogoCard } from './LogoCard';
+import { TilemapCard } from './TilemapCard';
 import { Session } from '../../types/session';
 import { ANALYSIS_MODELS, AnalysisModelId } from '../../types/constants';
 
-import { StyleAnalysis, CharacterAnalysis, CompositionAnalysis, UISpecificAnalysis, LogoSpecificAnalysis } from '../../types/analysis';
+import { StyleAnalysis, CharacterAnalysis, CompositionAnalysis, UISpecificAnalysis, LogoSpecificAnalysis, TilemapSpecificAnalysis } from '../../types/analysis';
 
 interface AnalysisPanelProps {
   images: string[];
@@ -30,6 +31,7 @@ interface AnalysisPanelProps {
   onNegativePromptUpdate?: (negativePrompt: string) => void;
   onUIAnalysisUpdate?: (uiAnalysis: UISpecificAnalysis) => void;
   onLogoAnalysisUpdate?: (logoAnalysis: LogoSpecificAnalysis) => void;
+  onTilemapAnalysisUpdate?: (tilemapAnalysis: TilemapSpecificAnalysis) => void;
   analysisModel?: AnalysisModelId;
   onAnalysisModelChange?: (model: AnalysisModelId) => void;
 }
@@ -49,6 +51,7 @@ export function AnalysisPanel({
   onNegativePromptUpdate,
   onUIAnalysisUpdate,
   onLogoAnalysisUpdate,
+  onTilemapAnalysisUpdate,
   analysisModel,
   onAnalysisModelChange,
 }: AnalysisPanelProps) {
@@ -74,6 +77,8 @@ export function AnalysisPanel({
   const isUIType = currentSession?.type === 'UI';
   // LOGO 타입 체크
   const isLogoType = currentSession?.type === 'LOGO';
+  // TILEMAP 타입 체크
+  const isTilemapType = currentSession?.type === 'TILEMAP';
 
   if (images.length === 0) {
     return null;
@@ -317,7 +322,14 @@ export function AnalysisPanel({
                 />
               )}
 
-              {!isBackgroundType && !isUIType && !isLogoType && (
+              {isTilemapType && analysisResult.tilemap_specific && (
+                <TilemapCard
+                  tilemapAnalysis={analysisResult.tilemap_specific}
+                  onUpdate={onTilemapAnalysisUpdate}
+                />
+              )}
+
+              {!isBackgroundType && !isUIType && !isLogoType && !isTilemapType && (
                 <CharacterCard
                   character={analysisResult.character}
                   onUpdate={onCharacterUpdate}

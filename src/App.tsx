@@ -1479,6 +1479,13 @@ function App() {
                   saveSessionWithoutTranslation(updated);
                 }
               }}
+              onTilemapAnalysisUpdate={(tilemapAnalysis) => {
+                if (analysisResult) {
+                  const updated = { ...analysisResult, tilemap_specific: tilemapAnalysis };
+                  setAnalysisResult(updated);
+                  saveSessionWithoutTranslation(updated);
+                }
+              }}
             />
           ) : (
             analysisResult && (

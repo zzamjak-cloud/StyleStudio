@@ -5,6 +5,7 @@ import {
   PIXELART_ANALYZER_PROMPT,
   BACKGROUND_ANALYZER_PROMPT,
   PIXELART_BACKGROUND_ANALYZER_PROMPT,
+  TILEMAP_ANALYZER_PROMPT,
   UI_ANALYZER_PROMPT,
   LOGO_ANALYZER_PROMPT,
   ILLUSTRATION_CHARACTER_ANALYZER_PROMPT,
@@ -96,6 +97,10 @@ export function useGeminiAnalyzer() {
         analysisPrompt = BACKGROUND_ANALYZER_PROMPT;
         promptType = 'BACKGROUND';
         logger.debug('📋 프롬프트 선택: BACKGROUND (배경 전용, 캐릭터 제외)');
+      } else if (sessionType === 'TILEMAP') {
+        analysisPrompt = TILEMAP_ANALYZER_PROMPT;
+        promptType = 'TILEMAP';
+        logger.debug('📋 프롬프트 선택: TILEMAP (손맵 타일 전용, 캐릭터 제외)');
       } else if (sessionType === 'PIXELART_BACKGROUND') {
         analysisPrompt = PIXELART_BACKGROUND_ANALYZER_PROMPT;
         promptType = 'PIXELART_BACKGROUND';
