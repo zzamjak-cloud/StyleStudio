@@ -24,6 +24,7 @@ import { loadImage } from '../../lib/imageStorage';
 import { GeneratorSettings } from './GeneratorSettings';
 import { GeneratorPreview } from './GeneratorPreview';
 import { GeneratorHistory } from './GeneratorHistory';
+import { TilemapResultView } from '../tilemap/TilemapResultView';
 import {
   getAvailableImageModels,
   DEFAULT_IMAGE_MODEL,
@@ -949,6 +950,11 @@ export function ImageGeneratorPanel({
     }
   }, [generatedImage, sessionType, sessionName]);
 
+  // 유니티 내보내기 — Task 9에서 tilemapExporter 연결
+  const handleTilemapExport = useCallback(async () => {
+    alert('내보내기는 곧 지원됩니다.');
+  }, []);
+
   // 히스토리에서 설정 복원 (단일 setState + useCallback으로 자식 memo 유지)
   const handleRestoreFromHistory = useCallback(async (e: React.MouseEvent, entry: GenerationHistoryEntry) => {
     e.stopPropagation();
@@ -1115,13 +1121,34 @@ export function ImageGeneratorPanel({
         {/* 왼쪽: 결과 표시 및 히스토리 */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* 결과 표시 영역 */}
-          <GeneratorPreview
-            isGenerating={isGenerating}
-            progressMessage={progressMessage}
-            generatedImage={generatedImage}
-            zoomLevel={zoomLevel}
-            onManualSave={handleManualSave}
-          />
+          {sessionType === 'TILEMAP' ? (
+            <TilemapResultView
+              isGenerating={isGenerating}
+              progressMessage={progressMessage}
+              generatedImage={generatedImage}
+              grid={tilemap.grid}
+              currentTiles={tilemap.currentTiles}
+              slotAssignments={tilemapData?.slotAssignments ?? []}
+              proposal={tilemap.proposal}
+              onToggleLock={tilemap.toggleLock}
+              onRegenerateSelected={(slots) => {
+                tilemap.requestReplacement(slots);
+                handleGenerate();
+              }}
+              onConfirmProposal={tilemap.confirmProposal}
+              onDiscardProposal={tilemap.discardProposal}
+              onExport={handleTilemapExport}
+              onManualSave={handleManualSave}
+            />
+          ) : (
+            <GeneratorPreview
+              isGenerating={isGenerating}
+              progressMessage={progressMessage}
+              generatedImage={generatedImage}
+              zoomLevel={zoomLevel}
+              onManualSave={handleManualSave}
+            />
+          )}
 
           {/* 히스토리 섹션 */}
           <GeneratorHistory
