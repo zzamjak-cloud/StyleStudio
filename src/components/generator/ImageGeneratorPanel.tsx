@@ -406,7 +406,7 @@ export function ImageGeneratorPanel({
     isGenerating: false,
     progressMessage: '',
     generatedImage: null,
-    pixelArtGrid: IMAGE_GENERATION_DEFAULTS.PIXEL_ART_GRID,
+    pixelArtGrid: sessionType === 'TILEMAP' ? '4x4' : IMAGE_GENERATION_DEFAULTS.PIXEL_ART_GRID,
     cameraAngle: 'none',  // 기본값: 선택 안함
     cameraLens: 'none',   // 기본값: 선택 안함
     zoomLevel: 'fit',

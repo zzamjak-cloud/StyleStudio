@@ -5,6 +5,7 @@ import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { CAMERA_ANGLES } from '../../types/cameraAngle';
 import { CAMERA_LENSES } from '../../types/cameraLens';
+import { TILEMAP_GRID_LAYOUTS } from '../../types/tilemap';
 import { DocumentManager } from './DocumentManager';
 import {
   AspectRatioOption,
@@ -206,6 +207,35 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
+          {/* 타일맵 전용 그리드 (4x4/8x8만 지원) */}
+          {sessionType === 'TILEMAP' && (
+            <div className={getGridSectionStyle(sessionType)}>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                그리드
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {TILEMAP_GRID_LAYOUTS.map((grid) => (
+                  <button
+                    key={grid}
+                    onClick={() => onPixelArtGridChange(grid)}
+                    className={`p-2 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(
+                      sessionType,
+                      pixelArtGrid === grid
+                    )}`}
+                  >
+                    <div className="font-bold">{grid}</div>
+                    <div className="text-[10px] opacity-75">
+                      {grid === '4x4' ? '16타일 · 256px' : '64타일 · 128px'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-gray-500">
+                타일맵은 1:1 비율 · 1K 해상도로 고정됩니다
+              </p>
+            </div>
+          )}
+
           {/* 그리드 레이아웃 선택 */}
           {(sessionType === 'PIXELART_CHARACTER' ||
             sessionType === 'PIXELART_BACKGROUND' ||
@@ -356,54 +386,58 @@ function GeneratorSettingsComponent({
           </div>
 
           {/* 이미지 비율 선택 */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 비율</label>
-            <div className="flex flex-nowrap gap-1">
-              {supportedAspectRatios.map((ratio) => {
-                const isExtreme = ratio === '1:3' || ratio === '3:1';
-                return (
-                  <button
-                    key={ratio}
-                    onClick={() => onAspectRatioChange(ratio)}
-                    title={isExtreme ? '극단적 비율(베타) — 배너/파노라마용' : undefined}
-                    className={`min-w-0 flex-1 px-1 py-1.5 rounded-md text-[11px] font-medium border transition-all ${
-                      aspectRatio === ratio
-                        ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
-                        : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
-                    }`}
-                  >
-                    {ratio}
-                  </button>
-                );
-              })}
+          {sessionType !== 'TILEMAP' && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 비율</label>
+              <div className="flex flex-nowrap gap-1">
+                {supportedAspectRatios.map((ratio) => {
+                  const isExtreme = ratio === '1:3' || ratio === '3:1';
+                  return (
+                    <button
+                      key={ratio}
+                      onClick={() => onAspectRatioChange(ratio)}
+                      title={isExtreme ? '극단적 비율(베타) — 배너/파노라마용' : undefined}
+                      className={`min-w-0 flex-1 px-1 py-1.5 rounded-md text-[11px] font-medium border transition-all ${
+                        aspectRatio === ratio
+                          ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
+                      }`}
+                    >
+                      {ratio}
+                    </button>
+                  );
+                })}
+              </div>
+              {(aspectRatio === '1:3' || aspectRatio === '3:1') && (
+                <p className="text-xs text-amber-600 mt-1">
+                  극단적 비율(베타) — 배너/파노라마 전용 · Gemini 모델에서만 지원
+                </p>
+              )}
             </div>
-            {(aspectRatio === '1:3' || aspectRatio === '3:1') && (
-              <p className="text-xs text-amber-600 mt-1">
-                극단적 비율(베타) — 배너/파노라마 전용 · Gemini 모델에서만 지원
-              </p>
-            )}
-          </div>
+          )}
 
           {/* 이미지 크기 선택 */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 크기(1K 권장)</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['1K', '2K', '4K'] as const).map((size) => (
-                <button
-                  key={size}
-                  onClick={() => handleImageSizeClick(size)}
-                  disabled={!supportedImageSizes.includes(size)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
-                    imageSize === size
-                      ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
-                  } disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed`}
-                >
-                  {size}
-                </button>
-              ))}
+          {sessionType !== 'TILEMAP' && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 크기(1K 권장)</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['1K', '2K', '4K'] as const).map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => handleImageSizeClick(size)}
+                    disabled={!supportedImageSizes.includes(size)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                      imageSize === size
+                        ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
+                    } disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 이미지 품질 (덕테이프 전용) */}
           {imageModel === 'gpt-image-2' && (
