@@ -3,7 +3,7 @@ import {
   Palette, User, Trash2, ImagePlus, Download, FolderOpen, Settings, SaveAll,
   Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award, Images,
   Folder, FolderPlus, ChevronRight, MoreVertical, Pencil, FolderDown,
-  MessageCircle, Lightbulb,
+  MessageCircle, Lightbulb, LayoutGrid,
 } from 'lucide-react';
 import { Session, SessionType } from '../../types/session';
 import { Folder as FolderType, FolderPath } from '../../types/folder';
@@ -36,6 +36,8 @@ function getSessionTypeInfo(type: SessionType) {
       return { icon: Images, bgColor: 'bg-violet-600/20', textColor: 'text-violet-400' };
     case 'CONCEPT':
       return { icon: Lightbulb, bgColor: 'bg-orange-600/20', textColor: 'text-orange-400' };
+    case 'TILEMAP':
+      return { icon: LayoutGrid, bgColor: 'bg-lime-600/20', textColor: 'text-lime-400' };
     default:
       return { icon: Palette, bgColor: 'bg-purple-600/20', textColor: 'text-purple-400' };
   }

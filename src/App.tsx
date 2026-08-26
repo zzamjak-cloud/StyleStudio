@@ -65,6 +65,7 @@ import { ProgressIndicator } from './components/common/ProgressIndicator';
 import { ImageAnalysisResult } from './types/analysis';
 import { Session, SessionType } from './types/session';
 import { IllustrationSessionData } from './types/illustration';
+import { TilemapSessionData } from './types/tilemap';
 import { useImageHandling } from './hooks/useImageHandling';
 import { useSessionManagement } from './hooks/useSessionManagement';
 import { useFolderManagement } from './hooks/useFolderManagement';
@@ -1095,6 +1096,15 @@ function App() {
       };
     }
 
+    // TILEMAP 세션인 경우 초기 데이터 설정
+    if (type === 'TILEMAP') {
+      newSession.tilemapData = {
+        grid: '4x4',
+        sheets: [],
+        slotAssignments: [],
+      };
+    }
+
     const updatedSessions = addSessionToList(sessions, newSession);
     setSessions(updatedSessions);
     setCurrentSession(newSession);
@@ -1116,6 +1126,17 @@ function App() {
     if (!currentSession || currentSession.type !== 'ILLUSTRATION') return;
 
     const updatedSession = updateSession(currentSession, { illustrationData });
+    const updatedSessions = updateSessionInList(sessions, currentSession.id, updatedSession);
+    setSessions(updatedSessions);
+    setCurrentSession(updatedSession);
+    await persistSessions(updatedSessions);
+  }, [currentSession, sessions, setSessions, setCurrentSession]);
+
+  // TILEMAP 세션 전용 데이터 변경 → 세션 저장
+  const handleTilemapDataChange = useCallback(async (tilemapData: TilemapSessionData) => {
+    if (!currentSession || currentSession.type !== 'TILEMAP') return;
+
+    const updatedSession = updateSession(currentSession, { tilemapData });
     const updatedSessions = updateSessionInList(sessions, currentSession.id, updatedSession);
     setSessions(updatedSessions);
     setCurrentSession(updatedSession);
@@ -1504,6 +1525,8 @@ function App() {
                 referenceDocuments={currentSession?.referenceDocuments}
                 onDocumentAdd={handleDocumentAdd}
                 onDocumentDelete={handleDocumentDelete}
+                tilemapData={currentSession?.type === 'TILEMAP' ? currentSession.tilemapData : undefined}
+                onTilemapDataChange={handleTilemapDataChange}
               />
             )
           )

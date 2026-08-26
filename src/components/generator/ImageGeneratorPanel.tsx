@@ -10,6 +10,7 @@ import { SessionType, GenerationHistoryEntry } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { IllustrationSessionData, ILLUSTRATION_LIMITS } from '../../types/illustration';
+import { TilemapSessionData } from '../../types/tilemap';
 import { getCameraAnglePrompt } from '../../types/cameraAngle';
 import { getCameraLensPrompt } from '../../types/cameraLens';
 import { buildUnifiedPrompt } from '../../lib/promptBuilder';
@@ -337,6 +338,8 @@ interface ImageGeneratorPanelProps {
   onDocumentAdd?: (document: ReferenceDocument) => void;
   onDocumentDelete?: (documentId: string) => void;
   illustrationData?: IllustrationSessionData; // 일러스트 세션 전용 데이터
+  tilemapData?: TilemapSessionData; // TILEMAP 세션 전용 데이터
+  onTilemapDataChange?: (data: TilemapSessionData) => void; // TILEMAP 데이터 변경 콜백
 }
 
 // 통합 상태 타입 정의

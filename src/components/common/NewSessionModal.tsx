@@ -1,5 +1,5 @@
 import { memo, useState, useEffect } from 'react';
-import { X, Palette, User, Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award, Images, MessageCircle, Lightbulb } from 'lucide-react';
+import { X, Palette, User, Mountain, Box, Gamepad2, Grid3x3, Sparkles, Monitor, Award, Images, MessageCircle, Lightbulb, LayoutGrid } from 'lucide-react';
 import { Session, SessionType } from '../../types/session';
 import { SESSION_CONFIG } from '../../lib/config/sessionConfig';
 
@@ -190,6 +190,24 @@ export const NewSessionModal = memo(function NewSessionModal({ isOpen, onClose, 
                 </div>
                 <p className="text-xs text-left text-gray-600">
                   픽셀아트 아이콘을 학습하여 게임 UI 요소를 생성합니다
+                </p>
+              </button>
+
+              {/* TILEMAP */}
+              <button
+                onClick={() => setSessionType('TILEMAP')}
+                className={`flex flex-col items-start gap-2 p-4 rounded-lg font-semibold transition-all border-2 ${
+                  sessionType === 'TILEMAP'
+                    ? 'bg-lime-50 border-lime-600 shadow-lg'
+                    : 'bg-white border-gray-200 hover:border-lime-300 hover:bg-lime-50/50'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <LayoutGrid size={20} className={sessionType === 'TILEMAP' ? 'text-lime-600' : 'text-gray-600'} />
+                  <span className={sessionType === 'TILEMAP' ? 'text-lime-900' : 'text-gray-700'}>타일맵</span>
+                </div>
+                <p className="text-xs text-left text-gray-600">
+                  손맵 스타일 바닥타일 세트를 생성합니다 (유니티 Tilemap용)
                 </p>
               </button>
 
