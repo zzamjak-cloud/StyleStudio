@@ -21,6 +21,7 @@ import { useGeminiTranslator } from '../../hooks/api/useGeminiTranslator';
 import { useTilemapProcessing } from '../../hooks/useTilemapProcessing';
 import { logger } from '../../lib/logger';
 import { loadImage } from '../../lib/imageStorage';
+import { exportTilemapForUnity } from '../../lib/tilemap/tilemapExporter';
 import { GeneratorSettings } from './GeneratorSettings';
 import { GeneratorPreview } from './GeneratorPreview';
 import { GeneratorHistory } from './GeneratorHistory';
@@ -950,10 +951,26 @@ export function ImageGeneratorPanel({
     }
   }, [generatedImage, sessionType, sessionName]);
 
-  // 유니티 내보내기 — Task 9에서 tilemapExporter 연결
+  // 유니티용 내보내기: 교체 반영 시트 + 개별 타일 + 가이드
   const handleTilemapExport = useCallback(async () => {
-    alert('내보내기는 곧 지원됩니다.');
-  }, []);
+    const tiles = tilemap.currentTiles;
+    if (tiles.length === 0 || tiles.some((t) => t === null)) {
+      alert('내보낼 타일이 아직 없습니다. 먼저 타일 세트를 생성해 주세요.');
+      return;
+    }
+    try {
+      const folder = await exportTilemapForUnity({
+        sessionName,
+        grid: tilemap.grid,
+        tiles: tiles as string[],
+      });
+      alert(`유니티용 타일맵을 내보냈습니다.\n\n${folder}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('❌ 타일맵 내보내기 실패:', error);
+      alert('타일맵 내보내기에 실패했습니다.\n\n' + message);
+    }
+  }, [tilemap.currentTiles, tilemap.grid, sessionName]);
 
   // 히스토리에서 설정 복원 (단일 setState + useCallback으로 자식 memo 유지)
   const handleRestoreFromHistory = useCallback(async (e: React.MouseEvent, entry: GenerationHistoryEntry) => {
