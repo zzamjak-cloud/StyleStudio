@@ -1,6 +1,7 @@
 import { memo, useState } from 'react';
 import { Image as ImageIcon, Download, Lock, LockOpen, Grid3x3, LayoutGrid, Eye, Upload } from 'lucide-react';
 import { LazyImage } from '../common/LazyImage';
+import { TilePreviewCanvas } from './TilePreviewCanvas';
 import { TilemapGridLayout, TileSlotAssignment, TILEMAP_SEAM_WARNING_THRESHOLD } from '../../types/tilemap';
 import { TilemapReplacementProposal } from '../../hooks/useTilemapProcessing';
 
@@ -42,8 +43,8 @@ function TilemapResultViewComponent({
 
   const [viewMode, setViewMode] = useState<ViewMode>(hasTileData ? 'tiles' : 'sheet');
   const [selectedSlots, setSelectedSlots] = useState<Set<number>>(new Set());
-  // Task 8에서 미리보기 캔버스 렌더링에 사용 — 이 태스크에서는 버튼만 disabled로 노출
   const [showPreviewCanvas, setShowPreviewCanvas] = useState(false);
+  const hasEmptySlot = currentTiles.some((t) => t === null);
 
   const toggleSelect = (slotIndex: number) => {
     setSelectedSlots((prev) => {
@@ -119,11 +120,15 @@ function TilemapResultViewComponent({
 
         <div className="flex items-center gap-2">
           <button
-            disabled
+            disabled={hasEmptySlot}
             onClick={() => setShowPreviewCanvas(true)}
             aria-pressed={showPreviewCanvas}
-            title="미리보기 캔버스 (준비 중)"
-            className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-400 rounded-lg cursor-not-allowed"
+            title={hasEmptySlot ? '모든 슬롯이 채워져야 미리보기를 열 수 있습니다' : '미리보기 캔버스'}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-colors ${
+              hasEmptySlot
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
           >
             <Eye size={16} />
             <span className="text-sm font-medium">미리보기 캔버스</span>
@@ -275,6 +280,13 @@ function TilemapResultViewComponent({
           </button>
         </div>
       ) : null}
+
+      {showPreviewCanvas && (
+        <TilePreviewCanvas
+          tiles={currentTiles.filter((t): t is string => t !== null)}
+          onClose={() => setShowPreviewCanvas(false)}
+        />
+      )}
     </div>
   );
 }
