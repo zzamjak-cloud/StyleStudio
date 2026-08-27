@@ -1,9 +1,10 @@
 import { join } from '@tauri-apps/api/path';
 import { mkdir, writeFile, writeTextFile, exists } from '@tauri-apps/plugin-fs';
 import { getPixelArtGridInfo } from '../../types/pixelart';
-import { TilemapGridLayout } from '../../types/tilemap';
+import { TilemapGridLayout, TilemapMode } from '../../types/tilemap';
 import { getSessionImageFolder } from '../config/paths';
 import { loadImageElement } from './tileSlicer';
+import { getRuleTileRoles, RULE_TILE_ROLE_LABELS } from './ruleTileLayout';
 
 /** dataURL → PNG 바이트 배열 */
 function dataUrlToBytes(dataUrl: string): Uint8Array {
@@ -35,10 +36,24 @@ async function composeFinalSheet(tiles: string[], grid: TilemapGridLayout): Prom
   return canvas.toDataURL('image/png');
 }
 
+/** 룰타일 모드: (행,열)→역할 표 텍스트 생성 */
+function buildRoleTable(grid: TilemapGridLayout): string {
+  const { cols } = getPixelArtGridInfo(grid);
+  const roles = getRuleTileRoles(grid);
+  const lines: string[] = [];
+  for (let i = 0; i < roles.length; i++) {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const name = `tile_${String(i).padStart(2, '0')}`;
+    lines.push(`  (${r},${c}) ${name}.png → ${RULE_TILE_ROLE_LABELS[roles[i]]} (${roles[i]})`);
+  }
+  return lines.join('\n');
+}
+
 /** 유니티 임포트 안내 텍스트 */
-function buildImportGuide(grid: TilemapGridLayout): string {
+function buildImportGuide(grid: TilemapGridLayout, mode: TilemapMode): string {
   const { cellSize, totalFrames } = getPixelArtGridInfo(grid);
-  return `StyleStudio 타일맵 내보내기 — 유니티 임포트 가이드
+  const baseGuide = `StyleStudio 타일맵 내보내기 — 유니티 임포트 가이드
 =====================================================
 
 구성:
@@ -53,7 +68,36 @@ function buildImportGuide(grid: TilemapGridLayout): string {
    - Pixels Per Unit: ${cellSize}  (타일 1개 = 1유닛)
    - Filter Mode: Bilinear (손맵 스타일 권장)
 3. Sprite Editor 열기 → Slice → Type: Grid By Cell Size → X:${cellSize}, Y:${cellSize} → Slice → Apply
-4. Window > 2D > Tile Palette에서 새 팔레트 생성 후 슬라이스된 스프라이트를 드래그해 등록
+4. Window > 2D > Tile Palette에서 새 팔레트 생성 후 슬라이스된 스프라이트를 드래그해 등록`;
+
+  if (mode === 'ruletile') {
+    return `${baseGuide}
+5. 아래 "룰타일 설정"을 따라 지형 전환용 Rule Tile을 구성합니다
+
+개별 PNG(tiles/) 사용 시:
+- 폴더째 임포트 후 전체 선택 → 위와 동일한 Sprite 설정 (4단계까지)
+
+셀 역할 표 (행,열) — tile_NN.png → 역할:
+-----------------------------------------------------
+${buildRoleTable(grid)}
+
+룰타일 설정 (Rule Tile):
+1. Package Manager에서 "2D Tilemap Extras" 패키지를 설치합니다
+2. Project 창에서 우클릭 → Create > 2D > Tiles > Rule Tile 로 새 Rule Tile 애셋을 만듭니다
+3. Rule Tile의 Default Sprite에 "풀(fill)" 역할 스프라이트를 지정합니다 (베이스 지형이 그대로 이어지는 타일)
+4. Rules 목록에 역할별 스프라이트를 추가하고, 각 스프라이트마다 이웃 규칙을 3x3 화살표로 지정합니다:
+   - 화살표를 클릭할 때마다 This(이 타일과 같음) → Not This(이 타일과 다름/빈칸) → Any(무관) 순으로 전환됩니다
+   - 예) 엣지↑(edge_n) 타일: 위쪽 이웃 화살표만 Not This(오버레이 지형이 없음), 나머지 8방향은 This
+   - 예) 코너↖(corner_nw) 타일: 위쪽·왼쪽 이웃 화살표를 Not This, 나머지는 This
+   - 오목(concave) 역할은 대각선 이웃만 Not This이고 상하좌우 이웃은 This인 경우입니다 (셀 자신의 사분면에 베이스 지형이 살짝 보이는 안쪽 모서리)
+5. Tile Palette에는 개별 타일이 아닌 이 Rule Tile 애셋 1개만 등록한 뒤 칠하면, 주변 타일에 맞춰 자동으로 알맞은 스프라이트가 선택됩니다
+
+참고: 4x4 세트에는 오목(concave) 코너 역할이 없어 좁게 꺾인 길(오목 모서리가 필요한 지형)을 정확히 표현할 수 없습니다.
+이런 경우 오목 코너가 포함된 8x8 세트 사용을 권장합니다.
+`;
+  }
+
+  return `${baseGuide}
 5. Tilemap에 배치 — 모든 타일은 상호 호환 변형이므로 자유롭게 섞어 칠할 수 있습니다
 
 개별 PNG(tiles/) 사용 시:
@@ -70,8 +114,9 @@ export async function exportTilemapForUnity(params: {
   sessionName: string;
   grid: TilemapGridLayout;
   tiles: string[];
+  mode: TilemapMode;
 }): Promise<string> {
-  const { sessionName, grid, tiles } = params;
+  const { sessionName, grid, tiles, mode } = params;
   const { totalFrames } = getPixelArtGridInfo(grid);
   if (tiles.length !== totalFrames) {
     throw new Error(`타일 수가 그리드와 맞지 않습니다 (${tiles.length}/${totalFrames})`);
@@ -94,7 +139,7 @@ export async function exportTilemapForUnity(params: {
   }
 
   // 3) 임포트 가이드
-  await writeTextFile(await join(exportFolder, 'IMPORT_GUIDE.txt'), buildImportGuide(grid));
+  await writeTextFile(await join(exportFolder, 'IMPORT_GUIDE.txt'), buildImportGuide(grid, mode));
 
   return exportFolder;
 }

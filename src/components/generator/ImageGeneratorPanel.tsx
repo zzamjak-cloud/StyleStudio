@@ -1005,6 +1005,7 @@ export function ImageGeneratorPanel({
         sessionName,
         grid: tilemap.displayGrid,
         tiles: tiles as string[],
+        mode: tilemap.effectiveMode,
       });
       alert(`유니티용 타일맵을 내보냈습니다.\n\n${folder}`);
     } catch (error) {
