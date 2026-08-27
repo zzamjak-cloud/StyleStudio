@@ -10,7 +10,7 @@ import { SessionType, GenerationHistoryEntry } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { IllustrationSessionData, ILLUSTRATION_LIMITS } from '../../types/illustration';
-import { TilemapSessionData } from '../../types/tilemap';
+import { TilemapMode, TilemapSessionData } from '../../types/tilemap';
 import { getCameraAnglePrompt } from '../../types/cameraAngle';
 import { getCameraLensPrompt } from '../../types/cameraLens';
 import { buildUnifiedPrompt } from '../../lib/promptBuilder';
@@ -356,6 +356,9 @@ interface GeneratorState {
   progressMessage: string;
   generatedImage: string | null;
   pixelArtGrid: PixelArtGridLayout;
+  tilemapMode: TilemapMode; // 타일셋 모드 (변형/룰타일)
+  tilemapBaseTerrain: string; // 룰타일: 베이스 지형 (한국어 원문)
+  tilemapOverlayTerrain: string; // 룰타일: 오버레이 지형 (한국어 원문)
   cameraAngle: string;  // 카메라 앵글 프리셋 ID
   cameraLens: string;   // 카메라 렌즈/화각 프리셋 ID
   zoomLevel: 'fit' | 'actual' | number;
@@ -412,6 +415,9 @@ export function ImageGeneratorPanel({
     progressMessage: '',
     generatedImage: null,
     pixelArtGrid: sessionType === 'TILEMAP' ? (tilemapData?.grid ?? '4x4') : IMAGE_GENERATION_DEFAULTS.PIXEL_ART_GRID,
+    tilemapMode: (sessionType === 'TILEMAP' ? (tilemapData?.mode ?? 'variation') : 'variation') as TilemapMode,
+    tilemapBaseTerrain: tilemapData?.baseTerrain ?? '',
+    tilemapOverlayTerrain: tilemapData?.overlayTerrain ?? '',
     cameraAngle: 'none',  // 기본값: 선택 안함
     cameraLens: 'none',   // 기본값: 선택 안함
     zoomLevel: 'fit',
@@ -445,6 +451,9 @@ export function ImageGeneratorPanel({
     progressMessage,
     generatedImage,
     pixelArtGrid,
+    tilemapMode,
+    tilemapBaseTerrain,
+    tilemapOverlayTerrain,
     cameraAngle,
     cameraLens,
     zoomLevel,
@@ -468,6 +477,9 @@ export function ImageGeneratorPanel({
     tilemapData,
     onTilemapDataChange,
     pixelArtGrid,
+    mode: tilemapMode,
+    baseTerrain: tilemapBaseTerrain,
+    overlayTerrain: tilemapOverlayTerrain,
   });
 
   const resolveStoredImage = useCallback(async (image: string): Promise<string> => {
@@ -487,6 +499,9 @@ export function ImageGeneratorPanel({
   const setProgressMessage = useCallback((value: string) => updateState({ progressMessage: value }), [updateState]);
   const setGeneratedImage = useCallback((value: string | null) => updateState({ generatedImage: value }), [updateState]);
   const setPixelArtGrid = useCallback((value: PixelArtGridLayout) => updateState({ pixelArtGrid: value }), [updateState]);
+  const setTilemapMode = useCallback((value: TilemapMode) => updateState({ tilemapMode: value }), [updateState]);
+  const setTilemapBaseTerrain = useCallback((value: string) => updateState({ tilemapBaseTerrain: value }), [updateState]);
+  const setTilemapOverlayTerrain = useCallback((value: string) => updateState({ tilemapOverlayTerrain: value }), [updateState]);
   const setCameraAngle = useCallback((value: string) => updateState({ cameraAngle: value }), [updateState]);
   const setCameraLens = useCallback((value: string) => updateState({ cameraLens: value }), [updateState]);
   const setZoomLevel = useCallback((value: 'fit' | 'actual' | number) => updateState({ zoomLevel: value }), [updateState]);
@@ -549,6 +564,12 @@ export function ImageGeneratorPanel({
       return;
     }
 
+    const isRuletile = sessionType === 'TILEMAP' && tilemapMode === 'ruletile';
+    if (isRuletile && (!tilemapBaseTerrain.trim() || !tilemapOverlayTerrain.trim())) {
+      alert('베이스 지형과 오버레이 지형을 입력해주세요. (예: 잔디 / 흙길)');
+      return;
+    }
+
     setIsGenerating(true);
     setProgressMessage('이미지 생성 준비 중...');
     setGeneratedImage(null);
@@ -566,6 +587,18 @@ export function ImageGeneratorPanel({
           translatedAdditionalPrompt = await translateToEnglish(geminiApiKey, additionalPrompt.trim());
         } else {
           translatedAdditionalPrompt = additionalPrompt.trim();
+        }
+      }
+
+      // 룰타일 지형 필드: 한글이면 번역, 영어면 그대로 사용 (프롬프트에는 번역본, tilemapData 저장에는 원문)
+      let translatedBaseTerrain = tilemapBaseTerrain.trim();
+      let translatedOverlayTerrain = tilemapOverlayTerrain.trim();
+      if (isRuletile) {
+        if (containsKorean(translatedBaseTerrain)) {
+          translatedBaseTerrain = await translateToEnglish(geminiApiKey, translatedBaseTerrain);
+        }
+        if (containsKorean(translatedOverlayTerrain)) {
+          translatedOverlayTerrain = await translateToEnglish(geminiApiKey, translatedOverlayTerrain);
         }
       }
 
@@ -620,6 +653,15 @@ export function ImageGeneratorPanel({
           pixelArtGrid,
           analysis,
           referenceDocuments,
+          ...(sessionType === 'TILEMAP'
+            ? isRuletile
+              ? {
+                  tilemapMode: 'ruletile' as TilemapMode,
+                  tilemapBaseTerrain: translatedBaseTerrain,
+                  tilemapOverlayTerrain: translatedOverlayTerrain,
+                }
+              : { tilemapMode: 'variation' as TilemapMode }
+            : {}),
         });
       }
 
@@ -1192,6 +1234,9 @@ export function ImageGeneratorPanel({
           imageSize={imageSize}
           useReferenceImages={useReferenceImages}
           pixelArtGrid={pixelArtGrid}
+          tilemapMode={tilemapMode}
+          tilemapBaseTerrain={tilemapBaseTerrain}
+          tilemapOverlayTerrain={tilemapOverlayTerrain}
           showAdvanced={showAdvanced}
           showHelp={showHelp}
           seed={seed}
@@ -1212,6 +1257,9 @@ export function ImageGeneratorPanel({
           onImageSizeChange={setImageSize}
           onUseReferenceImagesChange={setUseReferenceImages}
           onPixelArtGridChange={setPixelArtGrid}
+          onTilemapModeChange={setTilemapMode}
+          onTilemapBaseTerrainChange={setTilemapBaseTerrain}
+          onTilemapOverlayTerrainChange={setTilemapOverlayTerrain}
           onShowAdvancedChange={setShowAdvanced}
           onShowHelpChange={setShowHelp}
           onSeedChange={setSeed}

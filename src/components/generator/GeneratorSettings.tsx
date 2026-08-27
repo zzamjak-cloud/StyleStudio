@@ -5,7 +5,7 @@ import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { CAMERA_ANGLES } from '../../types/cameraAngle';
 import { CAMERA_LENSES } from '../../types/cameraLens';
-import { TILEMAP_GRID_LAYOUTS } from '../../types/tilemap';
+import { TILEMAP_GRID_LAYOUTS, TilemapMode } from '../../types/tilemap';
 import { DocumentManager } from './DocumentManager';
 import {
   AspectRatioOption,
@@ -34,6 +34,9 @@ interface GeneratorSettingsProps {
   imageSize: ImageSizeOption;
   useReferenceImages: boolean;
   pixelArtGrid: PixelArtGridLayout;
+  tilemapMode: TilemapMode;
+  tilemapBaseTerrain: string;
+  tilemapOverlayTerrain: string;
   showAdvanced: boolean;
   showHelp: boolean;
   seed: number | undefined;
@@ -60,6 +63,9 @@ interface GeneratorSettingsProps {
   onImageSizeChange: (value: ImageSizeOption) => void;
   onUseReferenceImagesChange: (value: boolean) => void;
   onPixelArtGridChange: (value: PixelArtGridLayout) => void;
+  onTilemapModeChange: (value: TilemapMode) => void;
+  onTilemapBaseTerrainChange: (value: string) => void;
+  onTilemapOverlayTerrainChange: (value: string) => void;
   onShowAdvancedChange: (value: boolean) => void;
   onShowHelpChange: (value: boolean) => void;
   onSeedChange: (value: number | undefined) => void;
@@ -86,6 +92,9 @@ function GeneratorSettingsComponent({
   imageSize,
   useReferenceImages,
   pixelArtGrid,
+  tilemapMode,
+  tilemapBaseTerrain,
+  tilemapOverlayTerrain,
   showAdvanced,
   showHelp,
   seed,
@@ -106,6 +115,9 @@ function GeneratorSettingsComponent({
   onImageSizeChange,
   onUseReferenceImagesChange,
   onPixelArtGridChange,
+  onTilemapModeChange,
+  onTilemapBaseTerrainChange,
+  onTilemapOverlayTerrainChange,
   onShowAdvancedChange,
   onShowHelpChange,
   onSeedChange,
@@ -204,6 +216,34 @@ function GeneratorSettingsComponent({
                 onAdd={onDocumentAdd || (() => {})}
                 onDelete={onDocumentDelete || (() => {})}
               />
+            </div>
+          )}
+
+          {/* 타일맵 모드 선택 */}
+          {sessionType === 'TILEMAP' && (
+            <div className={getGridSectionStyle(sessionType)}>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">타일셋 모드</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => onTilemapModeChange('variation')} className={`p-2 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(sessionType, tilemapMode === 'variation')}`}>
+                  <div className="font-bold">변형 세트</div>
+                  <div className="text-[10px] opacity-75">한 지형의 다양한 바리에이션</div>
+                </button>
+                <button onClick={() => onTilemapModeChange('ruletile')} className={`p-2 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(sessionType, tilemapMode === 'ruletile')}`}>
+                  <div className="font-bold">룰타일 세트</div>
+                  <div className="text-[10px] opacity-75">지형 전환 (유니티 Rule Tile)</div>
+                </button>
+              </div>
+              {tilemapMode === 'ruletile' && (
+                <div className="mt-3 space-y-2">
+                  <input value={tilemapBaseTerrain} onChange={(e) => onTilemapBaseTerrainChange(e.target.value)} placeholder="베이스 지형 (예: 잔디)" className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                  <input value={tilemapOverlayTerrain} onChange={(e) => onTilemapOverlayTerrainChange(e.target.value)} placeholder="오버레이 지형 (예: 흙길)" className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                  <p className="text-[11px] text-gray-500">
+                    {pixelArtGrid === '8x8'
+                      ? '8x8: 오목 코너·순수 베이스까지 포함한 완전한 Rule Tile 세트'
+                      : '4x4: 코너·엣지·풀 16타일 (오목 코너 없음 — 넓은 영역용)'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

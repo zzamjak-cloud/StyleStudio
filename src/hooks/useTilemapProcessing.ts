@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PixelArtGridLayout } from '../types/pixelart';
 import {
   TilemapGridLayout,
+  TilemapMode,
   TilemapSessionData,
   TilemapSheet,
   isTilemapGridLayout,
@@ -23,6 +24,9 @@ interface UseTilemapProcessingOptions {
   tilemapData?: TilemapSessionData;
   onTilemapDataChange?: (data: TilemapSessionData) => void;
   pixelArtGrid: PixelArtGridLayout; // 패널의 현재 그리드 선택값
+  mode: TilemapMode; // 현재 선택된 타일셋 모드
+  baseTerrain?: string; // 룰타일: 베이스 지형 원문 (저장용)
+  overlayTerrain?: string; // 룰타일: 오버레이 지형 원문 (저장용)
 }
 
 /**
@@ -35,6 +39,9 @@ export function useTilemapProcessing({
   tilemapData,
   onTilemapDataChange,
   pixelArtGrid,
+  mode,
+  baseTerrain,
+  overlayTerrain,
 }: UseTilemapProcessingOptions) {
   // sheetId → 분할 타일 dataURL[] (휘발성 캐시, 저장 안 함)
   const [tileCache, setTileCache] = useState<Map<string, string[]>>(new Map());
@@ -47,6 +54,9 @@ export function useTilemapProcessing({
   // 보유 타일의 실제 그리드 — 뷰·내보내기는 이 값을 쓴다 (다음 생성 목표 grid와 분리, 스펙 §8)
   const displayGrid: TilemapGridLayout =
     tilemapData && tilemapData.slotAssignments.length > 0 ? tilemapData.grid : grid;
+
+  // 보유 세트의 모드 — displayGrid와 같은 원리로 보유 데이터 우선, 없으면 'variation' 폴백(v1 세션 호환)
+  const effectiveMode: TilemapMode = tilemapData?.mode ?? 'variation';
 
   // 세션 전환 감지를 위한 시트 정체성 (길이만으로는 다른 세션의 동일 개수 시트를 구분 못함)
   const sheetIds = tilemapData?.sheets.map((s) => s.id).join(',') ?? '';
@@ -90,17 +100,20 @@ export function useTilemapProcessing({
     });
   })();
 
-  /** 교체 재생성 예약: 다음 processNewSheet가 교체 제안 모드로 동작 */
+  /** 교체 재생성 예약: 다음 processNewSheet가 교체 제안 모드로 동작 (룰타일은 이중 방어로 no-op) */
   const requestReplacement = useCallback((slotIndexes: number[]) => {
+    if (mode === 'ruletile') return;
     pendingReplaceSlotsRef.current = slotIndexes;
-  }, []);
+  }, [mode]);
 
   /** 생성 완료된 시트를 후처리 (저장→분할→점수→할당/제안) */
   const processNewSheet = useCallback(async (sheetDataUrl: string) => {
     if (!enabled || !onTilemapDataChange) return;
 
     const tiles = await sliceTileSheet(sheetDataUrl, grid);
-    const scores = await computeSeamScores(tiles);
+    const isRuletile = mode === 'ruletile';
+    // 룰타일은 지형 전환용 역할 고정 세트이므로 이음새 점수가 의미 없다 — 계산 생략
+    const scores = isRuletile ? undefined : await computeSeamScores(tiles);
 
     const sheetId = `sheet-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const imageKey = `tilemap-sheet-${sheetId}`;
@@ -110,21 +123,26 @@ export function useTilemapProcessing({
     setTileCache((prev) => new Map(prev).set(sheetId, tiles));
 
     const prevData = tilemapData;
-    const gridChanged = !prevData || prevData.grid !== grid;
-    const pending = pendingReplaceSlotsRef.current;
+    // 모드 전환도 그리드 변경과 동일하게 풀 리셋 대상
+    const setChanged = !prevData || prevData.grid !== grid || (prevData.mode ?? 'variation') !== mode;
+    // 룰타일은 항상 전체 할당(교체 제안 없음) — pending 무시
+    const pending = isRuletile ? [] : pendingReplaceSlotsRef.current;
 
-    if (gridChanged || pending.length === 0 || !prevData || prevData.slotAssignments.length === 0) {
+    if (setChanged || pending.length === 0 || !prevData || prevData.slotAssignments.length === 0) {
       // 전체 할당: 새 시트가 슬롯 전체를 채움
-      // 그리드가 바뀌었으면 이전 시트 풀은 비운다 (스펙 §8 — 히스토리에는 잔존)
+      // 그리드/모드가 바뀌었으면 이전 시트 풀은 비운다 (스펙 §8 — 히스토리에는 잔존)
       pendingReplaceSlotsRef.current = [];
       onTilemapDataChange({
         grid,
-        sheets: gridChanged ? [sheet] : [...prevData.sheets, sheet],
+        mode,
+        baseTerrain,
+        overlayTerrain,
+        sheets: setChanged ? [sheet] : [...prevData.sheets, sheet],
         slotAssignments: tiles.map((_, i) => ({
           slotIndex: i,
           sheetId,
           cellIndex: i,
-          seamScore: scores[i],
+          seamScore: scores?.[i],
         })),
       });
       return;
@@ -135,7 +153,7 @@ export function useTilemapProcessing({
       prevData.slotAssignments.filter((a) => a.locked).map((a) => a.slotIndex)
     );
     const targets = pending.filter((s) => !lockedSlots.has(s));
-    const ranked = scores
+    const ranked = (scores ?? [])
       .map((score, cellIndex) => ({ cellIndex, score }))
       .sort((a, b) => b.score - a.score);
     setProposal({
@@ -147,10 +165,11 @@ export function useTilemapProcessing({
         seamScore: ranked[k % ranked.length].score,
       })),
     });
-  }, [enabled, onTilemapDataChange, grid, tilemapData]);
+  }, [enabled, onTilemapDataChange, grid, tilemapData, mode, baseTerrain, overlayTerrain]);
 
-  /** 교체 제안 확정: 해당 슬롯만 갱신 + 시트 풀에 추가 */
+  /** 교체 제안 확정: 해당 슬롯만 갱신 + 시트 풀에 추가 (룰타일은 이중 방어로 no-op) */
   const confirmProposal = useCallback(() => {
+    if (mode === 'ruletile') return;
     if (!proposal || !tilemapData || !onTilemapDataChange) return;
     const bySlot = new Map(proposal.replacements.map((r) => [r.slotIndex, r]));
     onTilemapDataChange({
@@ -165,10 +184,11 @@ export function useTilemapProcessing({
     });
     pendingReplaceSlotsRef.current = [];
     setProposal(null);
-  }, [proposal, tilemapData, onTilemapDataChange]);
+  }, [mode, proposal, tilemapData, onTilemapDataChange]);
 
-  /** 교체 제안 파기: 저장했던 시트 이미지도 정리 */
+  /** 교체 제안 파기: 저장했던 시트 이미지도 정리 (룰타일은 이중 방어로 no-op) */
   const discardProposal = useCallback(async () => {
+    if (mode === 'ruletile') return;
     if (!proposal) return;
     try {
       await deleteImage(proposal.sheet.imageKey);
@@ -182,10 +202,11 @@ export function useTilemapProcessing({
     });
     pendingReplaceSlotsRef.current = [];
     setProposal(null);
-  }, [proposal]);
+  }, [mode, proposal]);
 
-  /** 슬롯 락 토글 (교체 보호) */
+  /** 슬롯 락 토글 (교체 보호, 룰타일은 이중 방어로 no-op) */
   const toggleLock = useCallback((slotIndex: number) => {
+    if (mode === 'ruletile') return;
     if (!tilemapData || !onTilemapDataChange) return;
     onTilemapDataChange({
       ...tilemapData,
@@ -193,11 +214,12 @@ export function useTilemapProcessing({
         a.slotIndex === slotIndex ? { ...a, locked: !a.locked } : a
       ),
     });
-  }, [tilemapData, onTilemapDataChange]);
+  }, [mode, tilemapData, onTilemapDataChange]);
 
   return {
     grid,
     displayGrid,
+    effectiveMode,
     currentTiles,
     proposal,
     processNewSheet,
