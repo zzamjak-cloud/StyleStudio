@@ -713,7 +713,7 @@ ${styleSpec}
 3. SPARSE, SCATTERED DETAILS: roughly HALF of the cells must be PURE base texture with NO distinctive detail at all. In the remaining cells, place small details OFF-CENTER at a different position in every cell (anywhere within the inner 60% safe zone - never at the exact center), varying their size and count. NEVER repeat the same motif twice (each flower, pebble or tuft design appears only once in the whole sheet).
 4. NO GRID LINES: do NOT draw any lines, borders, dividers, or separators between cells. The grid layout is purely conceptual - there must be NO visible grid structure in the final image.
 5. CONSISTENT LIGHTING: one light direction and color temperature across the whole canvas; all shadows fall the same way.
-6. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered.
+6. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered. Render every cell in the same style.
 7. NO REPEATING PATTERN: when these tiles are shuffled and tiled, the result must look like ONE natural continuous ground - if a regular polka-dot pattern of centered details emerges, the sheet has FAILED.
 
 ⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, seams, visible borders, vignette, tiling artifacts.
@@ -724,20 +724,26 @@ Generate the ${tileCount}-tile hand-painted variation set in the ${gridLayout} g
 }
 
 /**
- * TILEMAP 룰타일(지형 전환) 프롬프트.
- * 셀별 역할을 지시하지 않고 거시 구도(4x4=패치, 8x8=도넛)를 그리게 한 뒤
- * 분할하면 ruleTileLayout의 역할 테이블과 맞아떨어진다 (스펙 §12.2).
+ * TILEMAP 룰타일 프롬프트 — **머티리얼 시트** 요청.
+ *
+ * v2는 큰 그림(패치/도넛)을 그리게 한 뒤 그리드로 잘라 역할을 붙였는데, 이 방식은
+ * 두 가지 이유로 룰타일이 될 수 없었다:
+ *  1) 잘라낸 타일은 "원래 붙어 있던 이웃"과만 이어진다 (엣지 계약이 없음)
+ *  2) 모델이 지시한 % 기하를 정확히 맞추지 못해 역할 라벨이 그림과 어긋난다
+ *
+ * v3는 AI에게 **재질과 화풍만** 받는다. 타일의 지형 경계는 코드가
+ * `edgeProfile.ts`의 계약에 따라 직접 그린다(`ruleTileComposer.ts`).
+ * 그래서 이 프롬프트에는 정밀한 기하 요구가 없고, 모델 편차에 둔감하다.
+ *
+ * 요청 레이아웃(합성기가 실측 비율로 해석):
+ *   - 좌상 사분면: 순수 베이스 지형 필드
+ *   - 우상 사분면: 순수 오버레이 지형 필드
+ *   - 하단 절반: 좌=베이스 / 우=오버레이, 수직 경계에 손맵 프린지 (붓결 추출용)
  */
 function generateTilemapRuleTilePrompt(params: PromptGenerationParams): string {
-  const { pixelArtGrid, analysis, basePrompt } = params;
-  const grid = pixelArtGrid === '8x8' ? '8x8' : '4x4';
+  const { analysis, basePrompt } = params;
   const base = params.tilemapBaseTerrain || 'grass';
   const overlay = params.tilemapOverlayTerrain || 'dirt path';
-
-  // 그리드별 패치 기하: 전환선은 외곽 링 셀의 중앙을 지나야 한다 (셀 폭의 절반 inset)
-  const inset = grid === '8x8' ? '6.25%' : '12.5%';
-  const outset = grid === '8x8' ? '93.75%' : '87.5%';
-  const bandHalf = grid === '8x8' ? '3%' : '6%';
 
   // 참조 분석 스펙 섹션 (변형 모드와 동일 로직 재사용)
   const t = analysis?.tilemap_specific;
@@ -751,33 +757,26 @@ function generateTilemapRuleTilePrompt(params: PromptGenerationParams): string {
     ? `\n🎨 HAND-PAINTED STYLE SPEC (from reference analysis - MUST match):\n${specLines.join('\n')}\n`
     : '';
 
-  const donutSection = grid === '8x8'
-    ? `
-🕳️ CENTER HOLE (donut composition): cut a square hole of ${base} in the middle of the ${overlay} area. The hole (including its painted transition band) extends from 31.25% to 68.75% of the canvas on both axes: the transition band is CENTERED on the 31.25% and 68.75% lines (same ${bandHalf} width rule), and the innermost region from 37.5% to 62.5% is PURE ${base} with no blending. So the final image is a ${overlay} ring (donut) sitting on ${base}.`
-    : '';
-
   const styleDirection = basePrompt && basePrompt.trim()
-    ? `\n🎨 ADDITIONAL STYLE DIRECTION (applies to both terrains, must NOT change the patch geometry): ${basePrompt.trim()}\n`
+    ? `\n🎨 ADDITIONAL STYLE DIRECTION (applies to both terrains, must NOT change the layout): ${basePrompt.trim()}\n`
     : '';
 
-  return `🎯 HAND-PAINTED TERRAIN TRANSITION TILESET (Unity Rule Tile source, single 1024x1024 image)
+  return `🎯 HAND-PAINTED TERRAIN MATERIAL SHEET (1024x1024, two swatches)
 
-Paint ONE picture: a field of ${base} covering the ENTIRE canvas, with ONE large organic patch of ${overlay} on top of it. This image will be sliced into a ${grid} grid to produce corner / edge / fill transition tiles, so the patch geometry must be EXACT:
+This is NOT a finished picture, NOT a landscape and NOT a tile sheet. It is a **material reference sheet**: two flat swatches of terrain material, side by side. Software will cut the actual game tiles from these materials, so follow the layout exactly.
 
-📐 PATCH GEOMETRY (critical):
-- The ${overlay} patch covers the square region from ${inset} to ${outset} of the canvas (both axes).
-- The painted transition between ${base} and ${overlay} must be a band CENTERED on that boundary line, no wider than ${bandHalf} of the canvas on each side.
-- Corners of the patch are gently rounded (radius about half a grid cell), staying within the corner cells.
-- Inside the patch: continuous ${overlay} texture. Outside: continuous ${base} texture.${donutSection}
+📐 LAYOUT (split the canvas straight down the middle, no border drawn between the halves):
+- LEFT HALF: a flat, even field of ${base}. Nothing else.
+- RIGHT HALF: a flat, even field of ${overlay}. Nothing else.
 ${styleSpec}
 🧱 RULES:
-1. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered.
-2. The transition band is hand-painted and organic (soft irregular brush edge, small overlaps like grass blades over the ${overlay}) but must NEVER wander outside its ${bandHalf} band.
-3. UNIFORM TEXTURES: both ${base} and ${overlay} areas are statistically uniform - consistent hue, brightness and stroke density. Sparse small details only, placed off-center and never repeated.
-4. NO GRID LINES: do NOT draw any lines, borders, dividers, or separators between grid cells. The grid is purely conceptual.
+1. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered. The same style applies to both halves.
+2. FLAT, EVEN FIELDS: each half must be statistically uniform all over - same hue, brightness and detail density from corner to corner. NO large shapes, NO paths, NO patches, NO objects, NO flowers, NO rocks, NO scattered focal details, NO vignette, NO lighting gradient across the panel. Think of a fabric swatch, not a landscape.
+3. CRISP TEXTURE: keep the brushwork sharp and well defined at full resolution - no blur, no soft haze, no washed-out low-contrast mush. The two materials must read as clearly different surfaces.
+4. NO GRID LINES, NO FRAMES, NO BLEND: do not draw any dividers, outlines, captions or panel borders. Do NOT paint a transition, gradient or blend where the two halves meet - they simply butt against each other.
 5. CONSISTENT LIGHTING: one light direction and color temperature across the whole canvas.
-${styleDirection}
-⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, seams, visible borders, vignette, text, objects, characters.
 
-Paint the ${base} field with the ${overlay} ${grid === '8x8' ? 'donut ring' : 'patch'} now.`;
+⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, panel borders, text, labels, objects, characters, vignette, dramatic lighting, large composed scenery, blurry, soft focus, gradient between the halves.
+${styleDirection}
+Paint the ${base} / ${overlay} material sheet now.`;
 }

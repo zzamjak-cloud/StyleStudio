@@ -5,7 +5,8 @@ import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { CAMERA_ANGLES } from '../../types/cameraAngle';
 import { CAMERA_LENSES } from '../../types/cameraLens';
-import { TILEMAP_GRID_LAYOUTS, TilemapMode } from '../../types/tilemap';
+import { TILEMAP_GRID_LAYOUTS, TilemapEdgeStyle, TilemapMode, TilemapOutline } from '../../types/tilemap';
+import { EdgeStylePicker } from '../tilemap/EdgeStylePicker';
 import { DocumentManager } from './DocumentManager';
 import {
   AspectRatioOption,
@@ -35,6 +36,8 @@ interface GeneratorSettingsProps {
   useReferenceImages: boolean;
   pixelArtGrid: PixelArtGridLayout;
   tilemapMode: TilemapMode;
+  tilemapEdgeStyle: TilemapEdgeStyle;
+  tilemapOutline: TilemapOutline;
   tilemapBaseTerrain: string;
   tilemapOverlayTerrain: string;
   showAdvanced: boolean;
@@ -64,6 +67,8 @@ interface GeneratorSettingsProps {
   onUseReferenceImagesChange: (value: boolean) => void;
   onPixelArtGridChange: (value: PixelArtGridLayout) => void;
   onTilemapModeChange: (value: TilemapMode) => void;
+  onTilemapEdgeStyleChange: (value: TilemapEdgeStyle) => void;
+  onTilemapOutlineChange: (value: TilemapOutline) => void;
   onTilemapBaseTerrainChange: (value: string) => void;
   onTilemapOverlayTerrainChange: (value: string) => void;
   onShowAdvancedChange: (value: boolean) => void;
@@ -93,6 +98,8 @@ function GeneratorSettingsComponent({
   useReferenceImages,
   pixelArtGrid,
   tilemapMode,
+  tilemapEdgeStyle,
+  tilemapOutline,
   tilemapBaseTerrain,
   tilemapOverlayTerrain,
   showAdvanced,
@@ -116,6 +123,8 @@ function GeneratorSettingsComponent({
   onUseReferenceImagesChange,
   onPixelArtGridChange,
   onTilemapModeChange,
+  onTilemapEdgeStyleChange,
+  onTilemapOutlineChange,
   onTilemapBaseTerrainChange,
   onTilemapOverlayTerrainChange,
   onShowAdvancedChange,
@@ -242,8 +251,23 @@ function GeneratorSettingsComponent({
                       ? '8x8: 오목 코너·순수 베이스까지 포함한 완전한 Rule Tile 세트'
                       : '4x4: 코너·엣지·풀 16타일 (오목 코너 없음 — 넓은 영역용)'}
                   </p>
+
+                  {/* 경계선 모양·아웃라인 — 지형 경계는 코드가 만들므로 재질과 독립적으로 고를 수 있다 */}
+                  <EdgeStylePicker
+                    value={tilemapEdgeStyle}
+                    outline={tilemapOutline}
+                    onChange={onTilemapEdgeStyleChange}
+                    onOutlineChange={onTilemapOutlineChange}
+                  />
                 </div>
               )}
+
+              {/* 화풍은 프리셋이 아니라 참조 이미지로 지정한다 — 프리셋은 재질 스와치에서
+                  형태 기반 스타일(벡터·셀 등)을 표현할 수 없어 제거했다 */}
+              <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
+                원하는 화풍은 <span className="font-medium text-gray-600">참조 이미지</span>로 지정하세요.
+                레퍼런스를 올리면 붓터치·팔레트·경계 부드러움·광원 방향을 분석해 프롬프트에 반영합니다.
+              </p>
             </div>
           )}
 
@@ -398,7 +422,26 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
-          {/* 모델 선택 */}
+          {/* 모델 — TILEMAP은 덕테이프 고정이라 선택지를 노출하지 않는다.
+              (나노바나나 계열은 타일맵이 요구하는 레이아웃을 지키지 못한다) */}
+          {sessionType === 'TILEMAP' ? (
+            <div>
+              <div className="flex items-center gap-3">
+                <label className="w-20 flex-shrink-0 text-sm font-semibold text-gray-700">모델</label>
+                <div className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700">
+                  덕테이프 <span className="text-xs text-gray-500">(타일맵 고정)</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">
+                타일맵은 프롬프트가 지정한 시트 레이아웃을 정확히 지켜야 하므로 덕테이프로 고정됩니다.
+              </p>
+              {!openaiApiKey.trim() && (
+                <p className="text-xs text-amber-600 mt-1">
+                  타일맵 생성에는 ChatGPT API Key가 필요합니다. 헤더의 설정 아이콘에서 입력해 주세요.
+                </p>
+              )}
+            </div>
+          ) : (
           <div>
             <div className="flex items-center gap-3">
               <label className="w-20 flex-shrink-0 text-sm font-semibold text-gray-700">모델</label>
@@ -424,6 +467,7 @@ function GeneratorSettingsComponent({
               <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
             )}
           </div>
+          )}
 
           {/* 이미지 비율 선택 */}
           {sessionType !== 'TILEMAP' && (
@@ -522,7 +566,8 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
-          {/* 고급 설정 */}
+          {/* 고급 설정 — 덕테이프 고정인 TILEMAP에서는 지원 옵션이 없어 아예 숨긴다 */}
+          {sessionType !== 'TILEMAP' && (
           <div>
             <div className="flex items-center gap-2">
               <button
@@ -635,6 +680,7 @@ function GeneratorSettingsComponent({
               </div>
             )}
           </div>
+          )}
 
           {/* 진행 상태 */}
           {progressMessage && (

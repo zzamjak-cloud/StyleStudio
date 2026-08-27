@@ -4,7 +4,29 @@ import { getPixelArtGridInfo } from '../../types/pixelart';
 import { TilemapGridLayout, TilemapMode } from '../../types/tilemap';
 import { getSessionImageFolder } from '../config/paths';
 import { loadImageElement } from './tileSlicer';
-import { getRuleTileRoles, RULE_TILE_ROLE_LABELS } from './ruleTileLayout';
+import { BASE_TILE_FILENAME, buildSlotTable, describeSlot } from './autotileSignature';
+import { NEIGHBOR } from './edgeProfile';
+
+/**
+ * 유니티 임포트 시 권장 Pixels Per Unit.
+ * 8x8 그리드(셀 128px)에서 타일 1개 = 1유닛이 되는 값이며, 이를 프로젝트 표준으로 삼는다.
+ * 4x4 그리드(셀 256px)에서는 타일 1개가 2x2유닛이 되므로 가이드에 함께 명시한다.
+ */
+const UNITY_PIXELS_PER_UNIT = 128;
+
+/**
+ * 내보내기 폴더명용 타임스탬프 — 로컬 시각 기준 `yymmdd_HHMMSS`.
+ * 예) 2026년 8월 27일 13시 44분 55초 → `260827_134455`
+ * (epoch 밀리초는 사람이 읽을 수 없어 폴더 정렬·식별이 어려웠다)
+ */
+export function formatExportStamp(date: Date = new Date()): string {
+  const p2 = (n: number) => String(n).padStart(2, '0');
+  const yy = p2(date.getFullYear() % 100);
+  return (
+    `${yy}${p2(date.getMonth() + 1)}${p2(date.getDate())}_` +
+    `${p2(date.getHours())}${p2(date.getMinutes())}${p2(date.getSeconds())}`
+  );
+}
 
 /** dataURL → PNG 바이트 배열 */
 function dataUrlToBytes(dataUrl: string): Uint8Array {
@@ -18,8 +40,14 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   return bytes;
 }
 
-/** 교체 반영된 최종 타일들로 1024 시트를 재합성 */
-async function composeFinalSheet(tiles: string[], grid: TilemapGridLayout): Promise<string> {
+/**
+ * 교체 반영된 최종 타일들로 1024 시트를 재합성.
+ *
+ * 내보내는 `tilesheet.png`가 바로 이 결과다. 결과 뷰의 "시트 보기"도 같은 함수를 써서
+ * **내보내기 결과와 동일한 이미지**를 보여준다 — AI 원본 시트(룰타일에서는 머티리얼 시트)를
+ * 그대로 띄우면 실제 산출물과 달라 혼란을 준다.
+ */
+export async function composeFinalSheet(tiles: string[], grid: TilemapGridLayout): Promise<string> {
   const { rows, cols, cellSize } = getPixelArtGridInfo(grid);
   const canvas = document.createElement('canvas');
   canvas.width = cellSize * cols;  // 4x4=1024, 8x8=1024
@@ -36,16 +64,43 @@ async function composeFinalSheet(tiles: string[], grid: TilemapGridLayout): Prom
   return canvas.toDataURL('image/png');
 }
 
-/** 룰타일 모드: (행,열)→역할 표 텍스트 생성 */
+/** signature 비트에서 유니티 Rule Tile 3x3 규칙 문자열을 만든다 */
+function buildRuleGrid(signature: number): string {
+  // 대각은 인접 두 변이 모두 오버레이일 때만 의미가 있다 → 그 외는 Any(비워둠)
+  const has = (b: number) => (signature & b) !== 0;
+  const cell = (b: number, meaningful: boolean): string => {
+    if (!meaningful) return 'Any';
+    return has(b) ? 'This' : 'Not';
+  };
+  const nw = cell(NEIGHBOR.NW, has(NEIGHBOR.N) && has(NEIGHBOR.W));
+  const ne = cell(NEIGHBOR.NE, has(NEIGHBOR.N) && has(NEIGHBOR.E));
+  const sw = cell(NEIGHBOR.SW, has(NEIGHBOR.S) && has(NEIGHBOR.W));
+  const se = cell(NEIGHBOR.SE, has(NEIGHBOR.S) && has(NEIGHBOR.E));
+  const n = cell(NEIGHBOR.N, true);
+  const e = cell(NEIGHBOR.E, true);
+  const sth = cell(NEIGHBOR.S, true);
+  const w = cell(NEIGHBOR.W, true);
+  const pad = (v: string) => v.padEnd(4);
+  return `${pad(nw)}${pad(n)}${pad(ne)}| ${pad(w)}[본체]${pad(e)}| ${pad(sw)}${pad(sth)}${pad(se)}`;
+}
+
+/**
+ * 룰타일 모드: 슬롯별 (행,열) → signature/규칙 표.
+ * 표의 규칙 칸이 곧 유니티 Rule Tile 편집기의 3x3 화살표 설정이다
+ * (This=이 타일과 같음, Not=다름/빈칸, Any=무관 — 화살표를 누르지 않은 상태).
+ */
 function buildRoleTable(grid: TilemapGridLayout): string {
   const { cols } = getPixelArtGridInfo(grid);
-  const roles = getRuleTileRoles(grid);
+  const slots = buildSlotTable(grid);
   const lines: string[] = [];
-  for (let i = 0; i < roles.length; i++) {
+  for (let i = 0; i < slots.length; i++) {
     const r = Math.floor(i / cols);
     const c = i % cols;
     const name = `tile_${String(i).padStart(2, '0')}`;
-    lines.push(`  (${r},${c}) ${name}.png → ${RULE_TILE_ROLE_LABELS[roles[i]]} (${roles[i]})`);
+    lines.push(
+      `  (${r},${c}) ${name}.png  ${describeSlot(slots[i]).padEnd(12)}` +
+      `sig=${String(slots[i].signature).padStart(3)}  ${buildRuleGrid(slots[i].signature)}`
+    );
   }
   return lines.join('\n');
 }
@@ -65,37 +120,49 @@ function buildImportGuide(grid: TilemapGridLayout, mode: TilemapMode): string {
 2. Inspector에서:
    - Texture Type: Sprite (2D and UI)
    - Sprite Mode: Multiple
-   - Pixels Per Unit: ${cellSize}  (타일 1개 = 1유닛)
+   - Pixels Per Unit: ${UNITY_PIXELS_PER_UNIT}  (타일 1개 = ${cellSize / UNITY_PIXELS_PER_UNIT}x${cellSize / UNITY_PIXELS_PER_UNIT}유닛)
    - Filter Mode: Bilinear (손맵 스타일 권장)
 3. Sprite Editor 열기 → Slice → Type: Grid By Cell Size → X:${cellSize}, Y:${cellSize} → Slice → Apply
 4. Window > 2D > Tile Palette에서 새 팔레트 생성 후 슬라이스된 스프라이트를 드래그해 등록`;
 
   if (mode === 'ruletile') {
+    const isBlob = grid === '8x8';
     return `${baseGuide}
 5. 아래 "룰타일 설정"을 따라 지형 전환용 Rule Tile을 구성합니다
 
 개별 PNG(tiles/) 사용 시:
 - 폴더째 임포트 후 전체 선택 → 위와 동일한 Sprite 설정 (4단계까지)
+- ${BASE_TILE_FILENAME} : 순수 베이스 지형 타일. 그리드 슬롯 밖의 별도 타일이며
+  Rule Tile 규칙에는 넣지 않고, 바닥 전체를 칠하는 일반 Tile로 팔레트에 등록합니다.
 
-셀 역할 표 (행,열) — tile_NN.png → 역할:
------------------------------------------------------
+이 세트는 ${isBlob
+  ? '대각까지 구분하는 blob 47종 + 자주 쓰이는 조합의 변형 17종'
+  : '상하좌우만 구분하는 4비트 16종'} 입니다.
+${isBlob
+  ? '오목 코너를 포함하므로 좁게 꺾인 길과 안쪽 모서리까지 정확히 표현됩니다.'
+  : '대각을 구분하지 않아 오목 코너가 없습니다. 좁게 꺾인 길이 필요하면 8x8 세트를 쓰세요.'}
+
+슬롯 표 (행,열) — 파일명 · 역할 · signature · 유니티 3x3 규칙:
+-----------------------------------------------------------------------
+규칙 표기: This=이 타일과 같음 / Not=다름(빈칸) / Any=무관(화살표를 누르지 않은 상태)
+배치 순서: 좌상 좌 우상 | 좌 [본체] 우 | 좌하 하 우하
+-----------------------------------------------------------------------
 ${buildRoleTable(grid)}
 
 룰타일 설정 (Rule Tile):
 1. Package Manager에서 "2D Tilemap Extras" 패키지를 설치합니다
 2. Project 창에서 우클릭 → Create > 2D > Tiles > Rule Tile 로 새 Rule Tile 애셋을 만듭니다
-3. Rule Tile의 Default Sprite에 "풀(fill)" 역할 스프라이트를 지정합니다 (베이스 지형이 그대로 이어지는 타일)
-4. Rules 목록에 역할별 스프라이트를 추가하고, 각 스프라이트마다 이웃 규칙을 3x3 화살표로 지정합니다:
-   - 화살표를 클릭할 때마다 This(이 타일과 같음) → Not This(이 타일과 다름/빈칸) → Any(무관) 순으로 전환됩니다
-   예) 엣지↑(edge_n): 위(N)=Not This, 아래(S)·좌(W)·우(E)=This, 위쪽 대각(NE·NW)=Any(비워둠), 아래 대각(SE·SW)=This
-   예) 코너↖(corner_nw): 위(N)·좌(W)·좌상(NW)=Not This, 아래(S)·우(E)·우하(SE)=This, 나머지 대각(NE·SW)=Any(비워둠)
-   ※ Rule Tile 편집기에서 화살표를 클릭하지 않고 비워두면 Any(무관)입니다. 대각선을 This로 고정하면 코너 인접에서 규칙이 매칭되지 않으니 주의.
-   - 오목(concave) 역할은 대각선 이웃만 Not This이고 상하좌우 이웃은 This인 경우입니다 (셀 자신의 사분면에 베이스 지형이 살짝 보이는 안쪽 모서리)
-5. Tile Palette에는 개별 타일이 아닌 이 Rule Tile 애셋 1개만 등록한 뒤 칠하면, 주변 타일에 맞춰 자동으로 알맞은 스프라이트가 선택됩니다
-6. 8x8 세트의 "베이스" 타일 4장은 Rule Tile 규칙에 넣지 말고, 바닥 전체를 채우는 일반 Tile(또는 별도 Rule Tile 없이 팔레트에 직접 등록)로 사용하세요.
+3. Default Sprite에는 "채움" 역할 스프라이트를 지정합니다 (사방이 모두 오버레이인 타일)
+4. 위 표의 각 행마다 Rules 항목을 하나 추가하고, 표의 규칙 칸을 그대로 3x3 화살표에 옮깁니다.
+   ※ Any는 화살표를 **누르지 않은** 상태입니다. 의미 없는 대각(인접 두 변 중 하나라도
+     베이스인 경우)을 This/Not으로 고정하면 매칭이 실패하므로 반드시 비워두세요.
+5. "변형" 이 붙은 슬롯들은 같은 규칙의 다른 그림입니다. 해당 Rule 하나에 묶어
+   Output: Random 으로 지정하고 스프라이트를 모두 넣으면 반복 무늬가 완화됩니다.
+6. Tile Palette에는 개별 타일이 아닌 이 Rule Tile 애셋 1개만 등록한 뒤 칠합니다.
+   바닥은 ${BASE_TILE_FILENAME}로 먼저 채우고, 그 위에 Rule Tile로 지형을 그리면 됩니다.
 
-참고: 4x4 세트에는 오목(concave) 코너 역할이 없어 좁게 꺾인 길(오목 모서리가 필요한 지형)을 정확히 표현할 수 없습니다.
-이런 경우 오목 코너가 포함된 8x8 세트 사용을 권장합니다.
+이 타일들은 그림을 잘라 만든 것이 아니라 공통 재질에서 절차적으로 합성된 것이라,
+어떤 순서로 배치해도 경계가 어긋나지 않습니다.
 `;
   }
 
@@ -117,15 +184,17 @@ export async function exportTilemapForUnity(params: {
   grid: TilemapGridLayout;
   tiles: string[];
   mode: TilemapMode;
+  /** 룰타일: 순수 베이스 지형 타일 (그리드 슬롯 밖의 별도 타일) */
+  baseTile?: string | null;
 }): Promise<string> {
-  const { sessionName, grid, tiles, mode } = params;
+  const { sessionName, grid, tiles, mode, baseTile } = params;
   const { totalFrames } = getPixelArtGridInfo(grid);
   if (tiles.length !== totalFrames) {
     throw new Error(`타일 수가 그리드와 맞지 않습니다 (${tiles.length}/${totalFrames})`);
   }
 
   const sessionFolder = await getSessionImageFolder(sessionName);
-  const exportFolder = await join(sessionFolder, `tilemap_${Date.now()}`);
+  const exportFolder = await join(sessionFolder, `tilemap_${formatExportStamp()}`);
   const tilesFolder = await join(exportFolder, 'tiles');
   if (!(await exists(exportFolder))) await mkdir(exportFolder, { recursive: true });
   if (!(await exists(tilesFolder))) await mkdir(tilesFolder, { recursive: true });
@@ -140,7 +209,12 @@ export async function exportTilemapForUnity(params: {
     await writeFile(await join(tilesFolder, name), dataUrlToBytes(tiles[i]));
   }
 
-  // 3) 임포트 가이드
+  // 3) 룰타일 전용: 순수 베이스 지형 타일 (그리드 밖의 별도 타일)
+  if (mode === 'ruletile' && baseTile) {
+    await writeFile(await join(tilesFolder, BASE_TILE_FILENAME), dataUrlToBytes(baseTile));
+  }
+
+  // 4) 임포트 가이드
   await writeTextFile(await join(exportFolder, 'IMPORT_GUIDE.txt'), buildImportGuide(grid, mode));
 
   return exportFolder;

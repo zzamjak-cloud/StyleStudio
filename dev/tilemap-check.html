@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>타일맵 파이프라인 self-check</title>
+    <style>
+      body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 24px; background: #0f172a; color: #e2e8f0; }
+      h1 { font-size: 18px; }
+      #summary { padding: 10px 14px; border-radius: 6px; margin-bottom: 20px; font-weight: bold; }
+      .ok { background: #14532d; color: #bbf7d0; }
+      .bad { background: #7f1d1d; color: #fecaca; }
+      .case { border: 1px solid #334155; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; }
+      .case h2 { font-size: 14px; margin: 0 0 6px; }
+      .badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; margin-right: 8px; }
+      pre { margin: 6px 0 10px; font-size: 12px; color: #94a3b8; white-space: pre-wrap; }
+      .shots { display: flex; gap: 14px; flex-wrap: wrap; }
+      .shot { font-size: 11px; color: #94a3b8; }
+      .shot canvas { display: block; image-rendering: pixelated; border: 1px solid #475569; max-width: 256px; height: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>타일맵 룰타일 v3 — 파이프라인 self-check</h1>
+    <div id="summary">실행 중…</div>
+    <div id="results"></div>
+    <script type="module">
+      import { runAllTilemapChecks } from '/src/lib/tilemap/tilemapSelfCheck.ts';
+
+      const summary = document.getElementById('summary');
+      const results = document.getElementById('results');
+
+      let checks;
+      try {
+        checks = await runAllTilemapChecks((label) => {
+          summary.textContent = '실행 중… ' + label;
+        });
+      } catch (e) {
+        summary.className = 'bad';
+        summary.textContent = '실행 중 예외: ' + (e && e.stack ? e.stack : e);
+        throw e;
+      }
+
+      const failed = checks.filter((c) => !c.passed);
+      summary.className = failed.length === 0 ? 'ok' : 'bad';
+      summary.textContent =
+        failed.length === 0
+          ? `PASS — ${checks.length}건 전부 통과`
+          : `FAIL — ${failed.length}/${checks.length}건 실패: ${failed.map((c) => c.name).join(', ')}`;
+
+      for (const check of checks) {
+        const box = document.createElement('div');
+        box.className = 'case';
+
+        const title = document.createElement('h2');
+        const badge = document.createElement('span');
+        badge.className = 'badge ' + (check.passed ? 'ok' : 'bad');
+        badge.textContent = check.passed ? 'PASS' : 'FAIL';
+        title.append(badge, document.createTextNode(check.name));
+        box.append(title);
+
+        const detail = document.createElement('pre');
+        detail.textContent = check.detail;
+        box.append(detail);
+
+        if (check.canvases?.length) {
+          const shots = document.createElement('div');
+          shots.className = 'shots';
+          for (const { label, canvas } of check.canvases) {
+            const cell = document.createElement('div');
+            cell.className = 'shot';
+            const caption = document.createElement('div');
+            caption.textContent = label;
+            cell.append(canvas, caption);
+            shots.append(cell);
+          }
+          box.append(shots);
+        }
+
+        results.append(box);
+      }
+
+      // 자동화 판독용 (Chrome MCP / 콘솔에서 읽음)
+      window.__tilemapCheckSummary = {
+        total: checks.length,
+        failed: failed.length,
+        cases: checks.map((c) => ({ name: c.name, passed: c.passed, detail: c.detail })),
+      };
+      console.log('[tilemap-check]', JSON.stringify(window.__tilemapCheckSummary, null, 2));
+    </script>
+  </body>
+</html>

@@ -1,19 +1,29 @@
-import { memo, useEffect, useRef, useState, useCallback, MouseEvent } from 'react';
-import { X, Stamp, Eraser, Shuffle, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
+import { memo, useEffect, useMemo, useRef, useState, useCallback, MouseEvent } from 'react';
+import { X, Stamp, Eraser, Shuffle, Trash2, ZoomIn, ZoomOut, Hand } from 'lucide-react';
 import { loadImageElement } from '../../lib/tilemap/tileSlicer';
-import { TilemapMode } from '../../types/tilemap';
-import { RuleTileRole, pickRoleCell } from '../../lib/tilemap/ruleTileLayout';
+import { TilemapGridLayout, TilemapMode } from '../../types/tilemap';
+import { signatureFromMap } from '../../lib/tilemap/edgeProfile';
+import { buildSignatureIndex, buildSlotTable, signatureToSlot } from '../../lib/tilemap/autotileSignature';
 
 interface TilePreviewCanvasProps {
   tiles: string[]; // 슬롯 타일 dataURL (null 제거된 배열)
   mode: TilemapMode;
-  roles?: RuleTileRole[]; // mode==='ruletile'일 때 getRuleTileRoles(grid) 결과
+  grid: TilemapGridLayout; // 룰타일 signature 축약 방식 결정 (4x4=4비트, 8x8=blob)
+  baseTile?: string | null; // 룰타일: 순수 베이스 지형 타일 (슬롯 밖의 별도 타일)
   onClose: () => void;
 }
 
-const MAP_COLS = 12;
-const MAP_ROWS = 8;
+/**
+ * 맵 크기. 전체 화면 모달에서 실제로 지형을 설계할 수 있을 만큼 넓게 잡는다
+ * (24x16 x 64px = 1536x1024 → 대개 화면보다 크므로 패닝이 필요하다).
+ */
+const MAP_COLS = 24;
+const MAP_ROWS = 16;
 const CELL_PX = 64;
+
+/** 줌 단계 — 0.5x는 전체 조망, 2x는 경계 디테일 확인용 */
+const ZOOM_LEVELS = [0.5, 1, 2] as const;
+type Zoom = (typeof ZOOM_LEVELS)[number];
 
 type Tool = 'stamp' | 'eraser';
 
@@ -23,69 +33,77 @@ function createEmptyMap(): (number | null)[][] {
 }
 
 /**
- * 룰타일 오토타일 선택: 4방(N/E/S/W) 이웃의 오버레이 여부로 역할을 정하고,
- * 4방이 모두 오버레이인데 대각이 비면 해당 방향 오목 코너를 쓴다 (없으면 fill 폴백).
- * variant는 (row*31+col*17)로 결정적 순환 — 같은 맵은 항상 같은 그림.
+ * 룰타일 오토타일 선택.
+ *
+ * 셀의 8방향 이웃에서 signature를 계산하고, 생성 단계와 **동일한** 슬롯 테이블
+ * (`autotileSignature.ts`)로 타일을 조회한다. 미리보기와 유니티 Rule Tile이 같은 표를
+ * 참조하므로 둘의 동작이 구조적으로 일치한다 — v2처럼 별도 규칙을 손으로 짜지 않는다.
+ *
+ * 변형 타일이 여럿이면 (row*31+col*17)로 결정적 선택 — 같은 맵은 항상 같은 그림.
  */
 function resolveRuleTileCell(
-  map: (number | null)[][], row: number, col: number,
-  roles: RuleTileRole[],
+  map: (number | null)[][],
+  row: number,
+  col: number,
+  grid: TilemapGridLayout,
+  index: Map<number, number[]>
 ): number {
   const isOverlay = (r: number, c: number): boolean =>
     r >= 0 && r < map.length && c >= 0 && c < map[0].length && map[r][c] !== null;
 
-  const n = isOverlay(row - 1, col), s = isOverlay(row + 1, col);
-  const w = isOverlay(row, col - 1), e = isOverlay(row, col + 1);
-  const variant = row * 31 + col * 17;
-  const pick = (role: RuleTileRole): number => {
-    const idx = pickRoleCell(roles, role, variant);
-    return idx >= 0 ? idx : pickRoleCell(roles, 'fill', variant);
-  };
-
-  // base가 보이는 방향 조합으로 역할 결정 (base = 오버레이 아닌 쪽)
-  if (!n && !w && s && e) return pick('corner_nw');
-  if (!n && !e && s && w) return pick('corner_ne');
-  if (!s && !w && n && e) return pick('corner_sw');
-  if (!s && !e && n && w) return pick('corner_se');
-  if (!n && s) return pick('edge_n');
-  if (!s && n) return pick('edge_s');
-  if (!w && e) return pick('edge_w');
-  if (!e && w) return pick('edge_e');
-  if (n && s && w && e) {
-    // 대각 검사: 비어 있는 대각 방향의 오목 코너
-    // (concave_nw는 Task 1 라벨 정의상 "base가 NW 대각에 보이는 타일"이며, NW 대각이 비었을 때 선택하는 이 매핑과 일치한다)
-    if (!isOverlay(row - 1, col - 1)) return pick('concave_nw');
-    if (!isOverlay(row - 1, col + 1)) return pick('concave_ne');
-    if (!isOverlay(row + 1, col - 1)) return pick('concave_sw');
-    if (!isOverlay(row + 1, col + 1)) return pick('concave_se');
-    return pick('fill');
-  }
-  // 고립/한 줄 등 세트에 없는 형태는 fill로 폴백
-  return pick('fill');
+  const signature = signatureFromMap(isOverlay, row, col);
+  return signatureToSlot(signature, grid, index, row * 31 + col * 17);
 }
 
 /**
- * 타일 배치 미리보기 캔버스 — plain canvas 기반 스탬프/랜덤 채우기/줌 모달.
+ * 타일 배치 미리보기 캔버스 — 전체 화면 모달의 plain canvas 도구.
  * 맵 상태는 저장하지 않는 휘발성 편집 도구다 (스펙 §6).
  * mode==='ruletile'일 때는 셀 상태 의미가 바뀐다: null=베이스, 1=오버레이.
+ *
+ * 조작:
+ * - 좌클릭 드래그: 현재 도구(칠하기/지우개)
+ * - **Alt + 드래그**: 도구와 무관하게 즉시 지우기
+ * - **가운데 클릭 드래그** 또는 **스페이스바 + 드래그**: 패닝
  */
-function TilePreviewCanvasComponent({ tiles, mode, roles, onClose }: TilePreviewCanvasProps) {
+function TilePreviewCanvasComponent({ tiles, mode, grid, baseTile, onClose }: TilePreviewCanvasProps) {
   const isRuleTile = mode === 'ruletile';
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
+  // 베이스 타일은 슬롯 배열 뒤에 덧붙여 로드한다 (인덱스 = tiles.length)
+  const baseTileIndex = tiles.length;
   const [imagesLoaded, setImagesLoaded] = useState(false);
+
+  // signature → 슬롯 조회표 (그리드가 바뀔 때만 재생성)
+  const signatureIndex = useMemo(
+    () => buildSignatureIndex(buildSlotTable(grid)),
+    [grid]
+  );
 
   const [mapCells, setMapCells] = useState<(number | null)[][]>(createEmptyMap);
   const [selectedTile, setSelectedTile] = useState(0);
   const [tool, setTool] = useState<Tool>('stamp');
-  const [zoom, setZoom] = useState<1 | 2>(1);
-  const [isDrawing, setIsDrawing] = useState(false);
+  const [zoom, setZoom] = useState<Zoom>(1);
+  /**
+   * 드래그/패닝 진행 플래그는 **ref**로 둔다.
+   * state로 두면 mousedown 직후 첫 mousemove가 아직 이전 렌더의 값(false)을 읽어
+   * 한 프레임 동안 의도와 다르게 동작한다(패닝 대신 칠하기). 커서 표시용으로만
+   * 별도 state를 둔다.
+   */
+  const isDrawingRef = useRef(false);
+  const isPanningRef = useRef(false);
+  const isSpaceHeldRef = useRef(false);
+  /** 커서 모양 갱신용 (렌더에만 쓰인다) */
+  const [cursorMode, setCursorMode] = useState<'draw' | 'panReady' | 'panning'>('draw');
+  /** 패닝 시작 시점의 포인터·스크롤 위치 */
+  const panStartRef = useRef({ x: 0, y: 0, left: 0, top: 0 });
 
   // 타일 이미지 프리로드
   useEffect(() => {
     let cancelled = false;
     setImagesLoaded(false);
-    Promise.all(tiles.map((t) => loadImageElement(t)))
+    const sources = baseTile ? [...tiles, baseTile] : tiles;
+    Promise.all(sources.map((t) => loadImageElement(t)))
       .then((imgs) => {
         if (cancelled) return;
         imagesRef.current = imgs;
@@ -99,7 +117,7 @@ function TilePreviewCanvasComponent({ tiles, mode, roles, onClose }: TilePreview
     return () => {
       cancelled = true;
     };
-  }, [tiles]);
+  }, [tiles, baseTile]);
 
   // 캔버스 렌더링
   useEffect(() => {
@@ -119,10 +137,12 @@ function TilePreviewCanvasComponent({ tiles, mode, roles, onClose }: TilePreview
         const y = r * cellSize;
 
         let tileIndex: number | null;
-        if (isRuleTile && roles) {
+        if (isRuleTile) {
+          // 오버레이 셀은 signature로, 베이스 셀은 전용 베이스 타일로 그린다.
+          // (v2에서는 4x4에 'base' 역할이 없어 배경이 통째로 회색 박스로 나왔다)
           tileIndex = mapCells[r][c] !== null
-            ? resolveRuleTileCell(mapCells, r, c, roles)
-            : pickRoleCell(roles, 'base', r * 31 + c * 17);
+            ? resolveRuleTileCell(mapCells, r, c, grid, signatureIndex)
+            : (baseTile ? baseTileIndex : -1);
           if (tileIndex < 0) tileIndex = null;
         } else {
           tileIndex = mapCells[r][c];
@@ -135,31 +155,58 @@ function TilePreviewCanvasComponent({ tiles, mode, roles, onClose }: TilePreview
           ctx.fillStyle = '#e5e7eb';
           ctx.fillRect(x, y, cellSize, cellSize);
         }
-
-        ctx.strokeStyle = '#d1d5db';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
       }
     }
-  }, [mapCells, zoom, imagesLoaded, isRuleTile, roles]);
+  }, [mapCells, zoom, imagesLoaded, isRuleTile, grid, signatureIndex, baseTile, baseTileIndex]);
 
-  // Esc 키로 닫기
+  // Esc 닫기 / 스페이스바 패닝 토글
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.code === 'Space') {
+        // 스페이스로 페이지가 스크롤되거나 포커스된 버튼이 눌리는 것을 막는다
+        e.preventDefault();
+        isSpaceHeldRef.current = true;
+        if (!isPanningRef.current) setCursorMode('panReady');
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        isSpaceHeldRef.current = false;
+        isPanningRef.current = false;
+        setCursorMode('draw');
+      }
+    };
+    // 창 포커스를 잃으면 keyup을 놓치므로 상태를 풀어준다
+    const handleBlur = () => {
+      isSpaceHeldRef.current = false;
+      isPanningRef.current = false;
+      isDrawingRef.current = false;
+      setCursorMode('draw');
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
   }, [onClose]);
 
+  /** 셀 하나에 도구를 적용한다. alt가 true면 도구와 무관하게 지운다 */
   const applyAt = useCallback(
-    (offsetX: number, offsetY: number) => {
+    (offsetX: number, offsetY: number, alt: boolean) => {
       const cellSize = CELL_PX * zoom;
       const col = Math.floor(offsetX / cellSize);
       const row = Math.floor(offsetY / cellSize);
       if (col < 0 || col >= MAP_COLS || row < 0 || row >= MAP_ROWS) return;
 
-      const value = tool === 'stamp' ? (isRuleTile ? 1 : selectedTile) : null;
+      const erasing = alt || tool === 'eraser';
+      const value = erasing ? null : (isRuleTile ? 1 : selectedTile);
       setMapCells((prev) => {
         if (prev[row][col] === value) return prev;
         const next = prev.map((rowCells) => [...rowCells]);
@@ -170,17 +217,44 @@ function TilePreviewCanvasComponent({ tiles, mode, roles, onClose }: TilePreview
     [tool, selectedTile, zoom, isRuleTile]
   );
 
+  /** 패닝 시작 (가운데 클릭 또는 스페이스+좌클릭) */
+  const beginPan = (clientX: number, clientY: number) => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    panStartRef.current = { x: clientX, y: clientY, left: vp.scrollLeft, top: vp.scrollTop };
+    isPanningRef.current = true;
+    setCursorMode('panning');
+  };
+
   const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
-    applyAt(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+    // 가운데 클릭: 브라우저 자동 스크롤을 막고 패닝으로 쓴다
+    if (e.button === 1 || (e.button === 0 && isSpaceHeldRef.current)) {
+      e.preventDefault();
+      beginPan(e.clientX, e.clientY);
+      return;
+    }
+    if (e.button !== 0) return;
+    isDrawingRef.current = true;
+    applyAt(e.nativeEvent.offsetX, e.nativeEvent.offsetY, e.altKey);
   };
 
   const handleMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    applyAt(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+    if (isPanningRef.current) {
+      const vp = viewportRef.current;
+      if (!vp) return;
+      vp.scrollLeft = panStartRef.current.left - (e.clientX - panStartRef.current.x);
+      vp.scrollTop = panStartRef.current.top - (e.clientY - panStartRef.current.y);
+      return;
+    }
+    if (!isDrawingRef.current) return;
+    applyAt(e.nativeEvent.offsetX, e.nativeEvent.offsetY, e.altKey);
   };
 
-  const stopDrawing = () => setIsDrawing(false);
+  const stopInteraction = () => {
+    isDrawingRef.current = false;
+    isPanningRef.current = false;
+    setCursorMode(isSpaceHeldRef.current ? 'panReady' : 'draw');
+  };
 
   const handleRandomFill = () => {
     if (tiles.length === 0) return;
@@ -193,12 +267,19 @@ function TilePreviewCanvasComponent({ tiles, mode, roles, onClose }: TilePreview
 
   const handleClearAll = () => setMapCells(createEmptyMap());
 
+  const panCursor = cursorMode === 'panning' ? 'grabbing' : cursorMode === 'panReady' ? 'grab' : 'crosshair';
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-2">
+      <div className="bg-white rounded-xl shadow-2xl w-[97vw] h-[95vh] flex flex-col overflow-hidden">
         {/* 상단 툴바 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-800">타일 배치 미리보기</h2>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <h2 className="text-base font-semibold text-gray-800 shrink-0">타일 배치 미리보기</h2>
+            <span className="text-[11px] text-gray-500 truncate hidden lg:inline">
+              가운데 클릭 또는 Space+드래그 = 이동 · Alt+드래그 = 지우기
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
               <button
@@ -213,7 +294,7 @@ function TilePreviewCanvasComponent({ tiles, mode, roles, onClose }: TilePreview
               </button>
               <button
                 onClick={() => setTool('eraser')}
-                title="지우개"
+                title="지우개 (Alt+드래그로도 지울 수 있습니다)"
                 className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   tool === 'eraser' ? 'bg-white shadow text-purple-700' : 'text-gray-600 hover:text-gray-900'
                 }`}
@@ -241,72 +322,81 @@ function TilePreviewCanvasComponent({ tiles, mode, roles, onClose }: TilePreview
             </button>
 
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setZoom(1)}
-                title="1x 배율"
-                className={`flex items-center px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  zoom === 1 ? 'bg-white shadow text-purple-700' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <ZoomOut size={14} />
-              </button>
-              <button
-                onClick={() => setZoom(2)}
-                title="2x 배율"
-                className={`flex items-center px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  zoom === 2 ? 'bg-white shadow text-purple-700' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <ZoomIn size={14} />
-              </button>
+              {ZOOM_LEVELS.map((level) => (
+                <button
+                  key={level}
+                  onClick={() => setZoom(level)}
+                  title={`${level}x 배율`}
+                  className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    zoom === level ? 'bg-white shadow text-purple-700' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {level === 0.5 ? <ZoomOut size={14} /> : level === 2 ? <ZoomIn size={14} /> : null}
+                  {level}x
+                </button>
+              ))}
             </div>
 
             <button
               onClick={onClose}
-              title="닫기"
-              className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              title="닫기 (Esc)"
             >
-              <X size={18} />
+              <X size={18} className="text-gray-600" />
             </button>
           </div>
         </div>
 
-        {/* 본문: 좌측 팔레트 + 캔버스 */}
-        <div className="flex-1 flex overflow-hidden">
-          {!isRuleTile && (
-            <div className="w-20 border-r border-gray-200 overflow-y-auto p-2 flex flex-col items-center gap-2">
-              {tiles.map((tile, index) => (
+        {/* 캔버스 뷰포트 — 스크롤 컨테이너이자 패닝 대상 */}
+        <div
+          ref={viewportRef}
+          className="flex-1 overflow-auto bg-gray-100 min-h-0"
+        >
+          <canvas
+            ref={canvasRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={stopInteraction}
+            onMouseLeave={stopInteraction}
+            // 가운데 클릭의 브라우저 기본 자동 스크롤 억제
+            onAuxClick={(e) => e.preventDefault()}
+            onContextMenu={(e) => e.preventDefault()}
+            className="block"
+            style={{ cursor: panCursor, imageRendering: zoom >= 2 ? 'pixelated' : 'auto' }}
+          />
+        </div>
+
+        {/* 하단: 변형 모드 타일 팔레트 */}
+        {!isRuleTile && (
+          <div className="shrink-0 border-t border-gray-200 px-4 py-2.5 overflow-x-auto">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-600 shrink-0">스탬프 타일</span>
+              {tiles.map((tile, i) => (
                 <button
-                  key={index}
-                  onClick={() => setSelectedTile(index)}
-                  title={`타일 ${index}`}
-                  className={`w-12 h-12 rounded overflow-hidden border border-gray-200 flex-shrink-0 ${
-                    selectedTile === index ? 'ring-2 ring-lime-500' : ''
+                  key={i}
+                  onClick={() => setSelectedTile(i)}
+                  className={`w-11 h-11 shrink-0 rounded overflow-hidden border-2 transition-all ${
+                    selectedTile === i ? 'border-purple-500' : 'border-gray-200 hover:border-gray-400'
                   }`}
+                  title={`타일 ${i}`}
                 >
-                  <img src={tile} alt={`타일 ${index}`} className="w-full h-full object-cover" />
+                  <img src={tile} alt={`타일 ${i}`} className="w-full h-full object-cover" />
                 </button>
               ))}
             </div>
-          )}
-
-          <div className="flex-1 overflow-auto bg-gray-50 p-4">
-            {imagesLoaded ? (
-              <canvas
-                ref={canvasRef}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
-                className="cursor-crosshair border border-gray-300"
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                타일 이미지 로딩 중...
-              </div>
-            )}
           </div>
-        </div>
+        )}
+
+        {/* 룰타일 모드 안내 */}
+        {isRuleTile && (
+          <div className="shrink-0 border-t border-gray-200 px-4 py-2 flex items-center gap-2 text-[11px] text-gray-500">
+            <Hand size={12} className="shrink-0" />
+            <span>
+              칠한 영역이 오버레이 지형이 되고, 주변 이웃에 맞는 타일이 자동으로 선택됩니다
+              (유니티 Rule Tile과 같은 표를 조회).
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

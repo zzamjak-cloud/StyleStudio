@@ -82,6 +82,17 @@ export const GEMINI_IMAGE_MODELS = IMAGE_MODELS.filter(
 
 export const DEFAULT_IMAGE_MODEL: GeminiImageGenerationModel = 'gemini-3-pro-image-preview';
 
+/**
+ * TILEMAP 세션 고정 모델 — 덕테이프(gpt-image-2).
+ *
+ * 타일맵은 프롬프트가 요구하는 **레이아웃**을 정확히 지켜야 한다(변형 모드는 NxN 그리드,
+ * 룰타일 모드는 머티리얼 시트 3패널). 나노바나나 계열은 이 레이아웃을 자주 무시해
+ * 사용할 수 없는 결과를 내지만 덕테이프는 거의 실수 없이 지킨다. 그래서 모델 선택을
+ * 없애고 이 값으로 고정한다 — `GeneratorSettings`도 TILEMAP에서 모델 드롭다운과
+ * 고급 설정을 숨긴다(덕테이프는 Seed/Temperature/Top-K/Top-P를 지원하지 않는다).
+ */
+export const TILEMAP_FIXED_IMAGE_MODEL: ImageGenerationModel = 'gpt-image-2';
+
 export function getImageModelDefinition(modelId: ImageGenerationModel): ImageModelDefinition {
   return IMAGE_MODELS.find((model) => model.id === modelId) ?? IMAGE_MODELS[0];
 }

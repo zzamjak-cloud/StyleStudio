@@ -67,7 +67,9 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 타일이 서로 이어지지 않음/seam 경고 | `tilemap/overview.md` |
 | 선택 재생성·교체가 동작 안 함 | `tilemap/overview.md` |
 | 내보낸 시트에 교체 타일이 반영 안 됨 | `tilemap/overview.md` |
-| 룰타일 역할이 어긋남 / 오목 코너가 안 나옴 | `tilemap/overview.md` |
+| 룰타일이 서로 안 이어짐 / 격자선이 보임 | `tilemap/overview.md` |
+| 1칸 폭 통로·고립 셀이 사라짐 / 미리보기가 유니티와 다름 | `tilemap/overview.md` |
+| 미리보기 배경이 회색 박스 / 기존 룰타일 세션이 이상함 | `tilemap/overview.md` |
 | UI 세션에서 참조 문서 첨부가 안 보임 | `documents/overview.md` |
 | 참조 문서 드롭 영역이 커 보이거나 한 줄로 안 보임 | `documents/overview.md` |
 | PDF/Excel 파싱 결과가 프롬프트에 안 반영됨 | `documents/overview.md` |
@@ -149,7 +151,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 ### tilemap/ — 타일맵
 | 파일 | 내용 |
 |------|------|
-| `overview.md` | 손맵 변형 타일 세트(4x4/8x8, 1:1·1K 고정)·seam 점수·교체 재생성·유니티 내보내기 |
+| `overview.md` | 변형 세트(분할·seam 점수·교체 재생성)와 **룰타일 v3 절차적 합성**(엣지 계약·signature 테이블·합성 파이프라인·dev self-check)·유니티 내보내기 |
 
 ### documents/ — 참조 문서
 | 파일 | 내용 |
@@ -207,6 +209,8 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 픽셀 그리드 정보(getPixelArtGridInfo) | `src/types/pixelart.ts` |
 | 타일맵 후처리 훅(저장·분할·seam·교체) | `src/hooks/useTilemapProcessing.ts` |
 | 타일맵 분할·seam 검증·유니티 내보내기 | `src/lib/tilemap/` (`tileSlicer.ts`·`seamValidator.ts`·`tilemapExporter.ts`) |
+| 룰타일 절차적 합성(재질·경계·signature·합성) | `src/lib/tilemap/` (`seamlessTexture.ts`·`edgeProfile.ts`·`autotileSignature.ts`·`ruleTileComposer.ts`) |
+| 타일맵 파이프라인 검증 (dev 전용) | `src/lib/tilemap/tilemapSelfCheck.ts` + `dev/tilemap-check.html` |
 | 참조 문서 파싱 디스패처(parseFile) | `src/lib/utils/fileParser.ts` |
 | 참조 문서 관리(processFiles) | `src/components/generator/DocumentManager.tsx` |
 | Tauri 플러그인·OAuth invoke | `src-tauri/src/lib.rs` |

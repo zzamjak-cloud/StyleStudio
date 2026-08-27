@@ -4,15 +4,25 @@ import { LazyImage } from '../common/LazyImage';
 import { TilePreviewCanvas } from './TilePreviewCanvas';
 import { TilemapGridLayout, TileSlotAssignment, TilemapMode, TILEMAP_SEAM_WARNING_THRESHOLD } from '../../types/tilemap';
 import { TilemapReplacementProposal } from '../../hooks/useTilemapProcessing';
-import { getRuleTileRoles, RULE_TILE_ROLE_LABELS } from '../../lib/tilemap/ruleTileLayout';
+import { buildSlotTable, describeSlot } from '../../lib/tilemap/autotileSignature';
 
 interface TilemapResultViewProps {
   isGenerating: boolean;
   progressMessage: string;
-  generatedImage: string | null; // 최근 생성 시트 (시트 보기용)
+  generatedImage: string | null; // AI 원본 시트 (룰타일에서는 머티리얼 시트)
+  /**
+   * 내보내기와 동일한 합성 시트 (`tilesheet.png`와 같은 이미지).
+   * 시트 보기는 이 값을 우선 표시한다 — AI 원본을 띄우면 실제 산출물과 달라 혼란을 준다.
+   */
+  composedSheet?: string | null;
+  /** 생성 직후 자동 내보내기된 폴더 경로 (있으면 상단에 안내 표시) */
+  autoExportFolder?: string | null;
+  /** 경계 설정 변경으로 타일을 재합성 중인지 */
+  isRecomposing?: boolean;
   grid: TilemapGridLayout;
   mode: TilemapMode;
   currentTiles: (string | null)[];
+  baseTile?: string | null; // 룰타일: 순수 베이스 지형 타일 (슬롯 밖의 별도 타일)
   slotAssignments: TileSlotAssignment[];
   proposal: TilemapReplacementProposal | null;
   onToggleLock: (slotIndex: number) => void;
@@ -29,9 +39,13 @@ function TilemapResultViewComponent({
   isGenerating,
   progressMessage,
   generatedImage,
+  composedSheet,
+  autoExportFolder,
+  isRecomposing,
   grid,
   mode,
   currentTiles,
+  baseTile,
   slotAssignments,
   proposal,
   onToggleLock,
@@ -42,9 +56,12 @@ function TilemapResultViewComponent({
   onManualSave,
 }: TilemapResultViewProps) {
   const hasTileData = slotAssignments.length > 0;
-  const hasSheet = generatedImage !== null;
+  // 시트 보기에 띄울 이미지 — 합성 시트가 있으면 그것(=내보내기 결과), 없으면 AI 원본
+  const sheetImage = composedSheet ?? generatedImage;
+  const hasSheet = sheetImage !== null;
   const isRuleTile = mode === 'ruletile';
-  const ruleTileRoles = useMemo(() => (isRuleTile ? getRuleTileRoles(grid) : null), [isRuleTile, grid]);
+  // 룰타일 슬롯 배치표 — 뱃지 라벨은 signature에서 파생한다(v2의 고정 14종 열거형 대체)
+  const ruleTileSlots = useMemo(() => (isRuleTile ? buildSlotTable(grid) : null), [isRuleTile, grid]);
 
   const [viewMode, setViewMode] = useState<ViewMode>(hasTileData ? 'tiles' : 'sheet');
   const [selectedSlots, setSelectedSlots] = useState<Set<number>>(new Set());
@@ -162,6 +179,23 @@ function TilemapResultViewComponent({
         </div>
       </div>
 
+      {/* 경계 설정 재합성 중 표시 — 생성 API 호출이 아니라 로컬 재합성이다 */}
+      {isRecomposing && (
+        <div className="px-6 py-2 border-b border-purple-200 bg-purple-50 text-[12px] text-purple-800 flex items-center gap-2">
+          <span className="inline-block w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full animate-spin shrink-0" />
+          <span>경계 설정을 적용해 타일을 다시 합성하는 중… (재생성 아님)</span>
+        </div>
+      )}
+
+      {/* 자동 내보내기 안내 */}
+      {autoExportFolder && (
+        <div className="px-6 py-2 border-b border-emerald-200 bg-emerald-50 text-[12px] text-emerald-800 flex items-center gap-2">
+          <Upload size={13} className="shrink-0" />
+          <span className="shrink-0 font-medium">유니티용으로 자동 내보냄:</span>
+          <span className="font-mono truncate" title={autoExportFolder}>{autoExportFolder}</span>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
         {viewMode === 'sheet' ? (
           <div className="p-8">
@@ -178,7 +212,7 @@ function TilemapResultViewComponent({
                     </button>
                     <div className="flex items-center justify-center">
                       <LazyImage
-                        src={generatedImage as string}
+                        src={sheetImage as string}
                         alt="타일 시트"
                         className="rounded-lg"
                         style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain' }}
@@ -249,7 +283,7 @@ function TilemapResultViewComponent({
                     {/* 우상단 역할 뱃지(룰타일) / seam 점수 뱃지 / 교체 예정 뱃지 */}
                     {isRuleTile ? (
                       <div className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-600 text-white">
-                        {RULE_TILE_ROLE_LABELS[ruleTileRoles![slotIndex]]}
+                        {describeSlot(ruleTileSlots![slotIndex])}
                       </div>
                     ) : isProposed ? (
                       <div className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500 text-white">
@@ -318,7 +352,8 @@ function TilemapResultViewComponent({
         <TilePreviewCanvas
           tiles={previewTiles}
           mode={mode}
-          roles={mode === 'ruletile' ? getRuleTileRoles(grid) : undefined}
+          grid={grid}
+          baseTile={baseTile}
           onClose={() => setShowPreviewCanvas(false)}
         />
       )}
