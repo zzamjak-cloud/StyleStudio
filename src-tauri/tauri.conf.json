@@ -32,7 +32,7 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
-    "publisher": "최진평 (Jinpyoung Choi)",
+    "publisher": "Jinpyoung Choi",
     "homepage": "https://github.com/zzamjak-cloud/StyleStudio",
     "copyright": "Copyright (C) 2026 최진평 (Jinpyoung Choi)",
     "license": "GPL-3.0-or-later",

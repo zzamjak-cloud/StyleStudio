@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Windows MSI 빌드 실패를 수정했습니다.** `bundle.publisher`에 한글이 들어가면 WiX가 `Manufacturer` 값을 en-US MSI의 코드페이지(1252)로 인코딩할 수 없어 `light.exe`가 실패했습니다. 게시자 표기를 ASCII(`Jinpyoung Choi`)로 변경했습니다. (v0.4.21부터 Windows 릴리스가 실패하던 원인)
+
 ## [0.5.0] - 2026-08-27
 
 타일맵(TILEMAP) 세션을 새로 추가하고, 유니티 Rule Tile용 지형 전환 타일셋 생성을 절차적 합성 방식으로 완성했습니다.
