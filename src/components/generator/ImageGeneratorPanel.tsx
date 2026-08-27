@@ -1186,6 +1186,7 @@ export function ImageGeneratorPanel({
               progressMessage={progressMessage}
               generatedImage={generatedImage}
               grid={tilemap.displayGrid}
+              mode={tilemap.effectiveMode}
               currentTiles={tilemap.currentTiles}
               slotAssignments={tilemapData?.slotAssignments ?? []}
               proposal={tilemap.proposal}

@@ -2,14 +2,16 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image as ImageIcon, Download, Lock, LockOpen, Grid3x3, LayoutGrid, Eye, Upload } from 'lucide-react';
 import { LazyImage } from '../common/LazyImage';
 import { TilePreviewCanvas } from './TilePreviewCanvas';
-import { TilemapGridLayout, TileSlotAssignment, TILEMAP_SEAM_WARNING_THRESHOLD } from '../../types/tilemap';
+import { TilemapGridLayout, TileSlotAssignment, TilemapMode, TILEMAP_SEAM_WARNING_THRESHOLD } from '../../types/tilemap';
 import { TilemapReplacementProposal } from '../../hooks/useTilemapProcessing';
+import { getRuleTileRoles, RULE_TILE_ROLE_LABELS } from '../../lib/tilemap/ruleTileLayout';
 
 interface TilemapResultViewProps {
   isGenerating: boolean;
   progressMessage: string;
   generatedImage: string | null; // 최근 생성 시트 (시트 보기용)
   grid: TilemapGridLayout;
+  mode: TilemapMode;
   currentTiles: (string | null)[];
   slotAssignments: TileSlotAssignment[];
   proposal: TilemapReplacementProposal | null;
@@ -28,6 +30,7 @@ function TilemapResultViewComponent({
   progressMessage,
   generatedImage,
   grid,
+  mode,
   currentTiles,
   slotAssignments,
   proposal,
@@ -40,6 +43,8 @@ function TilemapResultViewComponent({
 }: TilemapResultViewProps) {
   const hasTileData = slotAssignments.length > 0;
   const hasSheet = generatedImage !== null;
+  const isRuleTile = mode === 'ruletile';
+  const ruleTileRoles = useMemo(() => (isRuleTile ? getRuleTileRoles(grid) : null), [isRuleTile, grid]);
 
   const [viewMode, setViewMode] = useState<ViewMode>(hasTileData ? 'tiles' : 'sheet');
   const [selectedSlots, setSelectedSlots] = useState<Set<number>>(new Set());
@@ -214,31 +219,39 @@ function TilemapResultViewComponent({
                       <div className="w-full h-full bg-gray-200" />
                     )}
 
-                    {/* 좌상단 선택 체크박스 */}
-                    <label className="absolute top-1 left-1 z-10">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleSelect(slotIndex)}
-                        className="w-4 h-4 accent-lime-500 cursor-pointer"
-                      />
-                    </label>
+                    {!isRuleTile && (
+                      <>
+                        {/* 좌상단 선택 체크박스 */}
+                        <label className="absolute top-1 left-1 z-10">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(slotIndex)}
+                            className="w-4 h-4 accent-lime-500 cursor-pointer"
+                          />
+                        </label>
 
-                    {/* 좌하단 락 토글 */}
-                    <button
-                      onClick={() => onToggleLock(slotIndex)}
-                      className="absolute bottom-1 left-1 z-10 p-1 bg-black/50 hover:bg-black/70 rounded transition-colors"
-                      title={locked ? '잠금 해제' : '잠금 (교체 재생성에서 보호)'}
-                    >
-                      {locked ? (
-                        <Lock size={12} className="text-white" />
-                      ) : (
-                        <LockOpen size={12} className="text-white/70" />
-                      )}
-                    </button>
+                        {/* 좌하단 락 토글 */}
+                        <button
+                          onClick={() => onToggleLock(slotIndex)}
+                          className="absolute bottom-1 left-1 z-10 p-1 bg-black/50 hover:bg-black/70 rounded transition-colors"
+                          title={locked ? '잠금 해제' : '잠금 (교체 재생성에서 보호)'}
+                        >
+                          {locked ? (
+                            <Lock size={12} className="text-white" />
+                          ) : (
+                            <LockOpen size={12} className="text-white/70" />
+                          )}
+                        </button>
+                      </>
+                    )}
 
-                    {/* 우상단 seam 점수 뱃지 / 교체 예정 뱃지 */}
-                    {isProposed ? (
+                    {/* 우상단 역할 뱃지(룰타일) / seam 점수 뱃지 / 교체 예정 뱃지 */}
+                    {isRuleTile ? (
+                      <div className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-600 text-white">
+                        {RULE_TILE_ROLE_LABELS[ruleTileRoles![slotIndex]]}
+                      </div>
+                    ) : isProposed ? (
                       <div className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500 text-white">
                         교체 예정
                       </div>
@@ -282,6 +295,12 @@ function TilemapResultViewComponent({
               확정
             </button>
           </div>
+        </div>
+      ) : viewMode === 'tiles' && isRuleTile ? (
+        <div className="flex items-center justify-center px-6 py-3 border-t border-gray-200 bg-white">
+          <p className="text-sm text-gray-500">
+            룰타일 세트는 역할이 고정되어 슬롯 교체가 없습니다 — 마음에 안 들면 다시 생성하세요.
+          </p>
         </div>
       ) : viewMode === 'tiles' ? (
         <div className="flex items-center justify-end px-6 py-3 border-t border-gray-200 bg-white">
