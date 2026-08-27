@@ -317,6 +317,8 @@ function TilemapResultViewComponent({
       {showPreviewCanvas && (
         <TilePreviewCanvas
           tiles={previewTiles}
+          mode={mode}
+          roles={mode === 'ruletile' ? getRuleTileRoles(grid) : undefined}
           onClose={() => setShowPreviewCanvas(false)}
         />
       )}
