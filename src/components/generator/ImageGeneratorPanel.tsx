@@ -595,10 +595,10 @@ export function ImageGeneratorPanel({
       let translatedOverlayTerrain = tilemapOverlayTerrain.trim();
       if (isRuletile) {
         if (containsKorean(translatedBaseTerrain)) {
-          translatedBaseTerrain = await translateToEnglish(geminiApiKey, translatedBaseTerrain);
+          translatedBaseTerrain = (await translateToEnglish(geminiApiKey, translatedBaseTerrain)).trim() || translatedBaseTerrain;
         }
         if (containsKorean(translatedOverlayTerrain)) {
-          translatedOverlayTerrain = await translateToEnglish(geminiApiKey, translatedOverlayTerrain);
+          translatedOverlayTerrain = (await translateToEnglish(geminiApiKey, translatedOverlayTerrain)).trim() || translatedOverlayTerrain;
         }
       }
 

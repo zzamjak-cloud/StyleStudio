@@ -80,9 +80,12 @@ export function useTilemapProcessing({
           logger.error('❌ 타일 시트 복원 실패:', sheet.id, e);
         }
       }
-      // 세션 전환 시 이전 세션의 캐시가 남아있으면 안 되므로 병합이 아닌 교체
+      // 세션 전환 시 이전 세션의 캐시·제안이 남아있으면 안 되므로 병합이 아닌 교체
+      // (다른 세션의 제안이 현재 세션에 잘못 확정되는 사고 방지)
       if (!cancelled) {
         setTileCache(restored);
+        setProposal(null);
+        pendingReplaceSlotsRef.current = [];
       }
     })();
 
@@ -100,11 +103,11 @@ export function useTilemapProcessing({
     });
   })();
 
-  /** 교체 재생성 예약: 다음 processNewSheet가 교체 제안 모드로 동작 (룰타일은 이중 방어로 no-op) */
+  /** 교체 재생성 예약: 다음 processNewSheet가 교체 제안 모드로 동작 (보유 세트가 룰타일이면 이중 방어로 no-op) */
   const requestReplacement = useCallback((slotIndexes: number[]) => {
-    if (mode === 'ruletile') return;
+    if (effectiveMode === 'ruletile') return;
     pendingReplaceSlotsRef.current = slotIndexes;
-  }, [mode]);
+  }, [effectiveMode]);
 
   /** 생성 완료된 시트를 후처리 (저장→분할→점수→할당/제안) */
   const processNewSheet = useCallback(async (sheetDataUrl: string) => {
@@ -135,8 +138,8 @@ export function useTilemapProcessing({
       onTilemapDataChange({
         grid,
         mode,
-        baseTerrain,
-        overlayTerrain,
+        baseTerrain: mode === 'ruletile' ? baseTerrain : undefined,
+        overlayTerrain: mode === 'ruletile' ? overlayTerrain : undefined,
         sheets: setChanged ? [sheet] : [...prevData.sheets, sheet],
         slotAssignments: tiles.map((_, i) => ({
           slotIndex: i,
@@ -167,9 +170,9 @@ export function useTilemapProcessing({
     });
   }, [enabled, onTilemapDataChange, grid, tilemapData, mode, baseTerrain, overlayTerrain]);
 
-  /** 교체 제안 확정: 해당 슬롯만 갱신 + 시트 풀에 추가 (룰타일은 이중 방어로 no-op) */
+  /** 교체 제안 확정: 해당 슬롯만 갱신 + 시트 풀에 추가 (보유 세트가 룰타일이면 이중 방어로 no-op) */
   const confirmProposal = useCallback(() => {
-    if (mode === 'ruletile') return;
+    if (effectiveMode === 'ruletile') return;
     if (!proposal || !tilemapData || !onTilemapDataChange) return;
     const bySlot = new Map(proposal.replacements.map((r) => [r.slotIndex, r]));
     onTilemapDataChange({
@@ -184,11 +187,11 @@ export function useTilemapProcessing({
     });
     pendingReplaceSlotsRef.current = [];
     setProposal(null);
-  }, [mode, proposal, tilemapData, onTilemapDataChange]);
+  }, [effectiveMode, proposal, tilemapData, onTilemapDataChange]);
 
-  /** 교체 제안 파기: 저장했던 시트 이미지도 정리 (룰타일은 이중 방어로 no-op) */
+  /** 교체 제안 파기: 저장했던 시트 이미지도 정리 (보유 세트가 룰타일이면 이중 방어로 no-op) */
   const discardProposal = useCallback(async () => {
-    if (mode === 'ruletile') return;
+    if (effectiveMode === 'ruletile') return;
     if (!proposal) return;
     try {
       await deleteImage(proposal.sheet.imageKey);
@@ -202,11 +205,11 @@ export function useTilemapProcessing({
     });
     pendingReplaceSlotsRef.current = [];
     setProposal(null);
-  }, [mode, proposal]);
+  }, [effectiveMode, proposal]);
 
-  /** 슬롯 락 토글 (교체 보호, 룰타일은 이중 방어로 no-op) */
+  /** 슬롯 락 토글 (교체 보호, 보유 세트가 룰타일이면 이중 방어로 no-op) */
   const toggleLock = useCallback((slotIndex: number) => {
-    if (mode === 'ruletile') return;
+    if (effectiveMode === 'ruletile') return;
     if (!tilemapData || !onTilemapDataChange) return;
     onTilemapDataChange({
       ...tilemapData,
@@ -214,7 +217,7 @@ export function useTilemapProcessing({
         a.slotIndex === slotIndex ? { ...a, locked: !a.locked } : a
       ),
     });
-  }, [mode, tilemapData, onTilemapDataChange]);
+  }, [effectiveMode, tilemapData, onTilemapDataChange]);
 
   return {
     grid,

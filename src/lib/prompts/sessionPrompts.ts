@@ -729,10 +729,15 @@ Generate the ${tileCount}-tile hand-painted variation set in the ${gridLayout} g
  * 분할하면 ruleTileLayout의 역할 테이블과 맞아떨어진다 (스펙 §12.2).
  */
 function generateTilemapRuleTilePrompt(params: PromptGenerationParams): string {
-  const { pixelArtGrid, analysis } = params;
+  const { pixelArtGrid, analysis, basePrompt } = params;
   const grid = pixelArtGrid === '8x8' ? '8x8' : '4x4';
   const base = params.tilemapBaseTerrain || 'grass';
   const overlay = params.tilemapOverlayTerrain || 'dirt path';
+
+  // 그리드별 패치 기하: 전환선은 외곽 링 셀의 중앙을 지나야 한다 (셀 폭의 절반 inset)
+  const inset = grid === '8x8' ? '6.25%' : '12.5%';
+  const outset = grid === '8x8' ? '93.75%' : '87.5%';
+  const bandHalf = grid === '8x8' ? '3%' : '6%';
 
   // 참조 분석 스펙 섹션 (변형 모드와 동일 로직 재사용)
   const t = analysis?.tilemap_specific;
@@ -748,7 +753,11 @@ function generateTilemapRuleTilePrompt(params: PromptGenerationParams): string {
 
   const donutSection = grid === '8x8'
     ? `
-🕳️ CENTER HOLE (donut composition): cut a square hole of PURE ${base} in the middle of the ${overlay} area. The hole spans from 37.5% to 62.5% of the canvas (both axes). The hole's painted transition band must be centered on the 31.25% and 68.75% lines. So the final image is a ${overlay} ring (donut) sitting on ${base}.`
+🕳️ CENTER HOLE (donut composition): cut a square hole of ${base} in the middle of the ${overlay} area. The hole (including its painted transition band) extends from 31.25% to 68.75% of the canvas on both axes: the transition band is CENTERED on the 31.25% and 68.75% lines (same ${bandHalf} width rule), and the innermost region from 37.5% to 62.5% is PURE ${base} with no blending. So the final image is a ${overlay} ring (donut) sitting on ${base}.`
+    : '';
+
+  const styleDirection = basePrompt && basePrompt.trim()
+    ? `\n🎨 ADDITIONAL STYLE DIRECTION (applies to both terrains, must NOT change the patch geometry): ${basePrompt.trim()}\n`
     : '';
 
   return `🎯 HAND-PAINTED TERRAIN TRANSITION TILESET (Unity Rule Tile source, single 1024x1024 image)
@@ -756,18 +765,18 @@ function generateTilemapRuleTilePrompt(params: PromptGenerationParams): string {
 Paint ONE picture: a field of ${base} covering the ENTIRE canvas, with ONE large organic patch of ${overlay} on top of it. This image will be sliced into a ${grid} grid to produce corner / edge / fill transition tiles, so the patch geometry must be EXACT:
 
 📐 PATCH GEOMETRY (critical):
-- The ${overlay} patch covers the square region from 12.5% to 87.5% of the canvas (both axes).
-- The painted transition between ${base} and ${overlay} must be a band CENTERED on that boundary line, no wider than 6% of the canvas on each side.
+- The ${overlay} patch covers the square region from ${inset} to ${outset} of the canvas (both axes).
+- The painted transition between ${base} and ${overlay} must be a band CENTERED on that boundary line, no wider than ${bandHalf} of the canvas on each side.
 - Corners of the patch are gently rounded (radius about half a grid cell), staying within the corner cells.
 - Inside the patch: continuous ${overlay} texture. Outside: continuous ${base} texture.${donutSection}
 ${styleSpec}
 🧱 RULES:
 1. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered.
-2. The transition band is hand-painted and organic (soft irregular brush edge, small overlaps like grass blades over the ${overlay}) but must NEVER wander outside its 6% band.
+2. The transition band is hand-painted and organic (soft irregular brush edge, small overlaps like grass blades over the ${overlay}) but must NEVER wander outside its ${bandHalf} band.
 3. UNIFORM TEXTURES: both ${base} and ${overlay} areas are statistically uniform - consistent hue, brightness and stroke density. Sparse small details only, placed off-center and never repeated.
 4. NO GRID LINES: do NOT draw any lines, borders, dividers, or separators between grid cells. The grid is purely conceptual.
 5. CONSISTENT LIGHTING: one light direction and color temperature across the whole canvas.
-
+${styleDirection}
 ⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, seams, visible borders, vignette, text, objects, characters.
 
 Paint the ${base} field with the ${overlay} ${grid === '8x8' ? 'donut ring' : 'patch'} now.`;
