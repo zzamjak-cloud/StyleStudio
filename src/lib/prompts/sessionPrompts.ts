@@ -3,6 +3,7 @@ import { ReferenceDocument } from '../../types/referenceDocument';
 import { PixelArtGridLayout, getPixelArtGridInfo } from '../../types/pixelart';
 import { ImageAnalysisResult } from '../../types/analysis';
 import { IllustrationSessionData } from '../../types/illustration';
+import { TilemapMode } from '../../types/tilemap';
 import { buildThinkingPrefix, ThinkingSessionType } from './thinkingPrefix';
 import { formatCompositionForPrompt } from '../sketch/analyzeSketch';
 
@@ -47,6 +48,9 @@ export interface PromptGenerationParams {
   illustrationData?: IllustrationSessionData; // ILLUSTRATION 세션 전용
   cameraSettings?: string; // 카메라 앵글/렌즈 설정 (별도 처리용)
   thinkingMode?: boolean; // 추론 기반 생성 prefix 적용 여부
+  tilemapMode?: TilemapMode; // TILEMAP: 변형/룰타일 모드
+  tilemapBaseTerrain?: string; // TILEMAP 룰타일: 베이스 지형 (영어 번역본)
+  tilemapOverlayTerrain?: string; // TILEMAP 룰타일: 오버레이 지형 (영어 번역본)
 }
 
 /**
@@ -659,12 +663,24 @@ Use high-quality rendering with attention to lighting and composition.`;
 }
 
 /**
- * TILEMAP 세션 프롬프트 생성
- * - 손맵(hand-painted) 변형 타일 세트: 모든 타일이 상호 seamless (임의 배치 호환)
- * - 타일링 규칙 6조: 균질 베이스 · 조용한 경계 존 · 중앙 디테일 랜덤성 ·
- *   NO GRID LINES · 일관 조명 · 손맵 채색 강제
+ * TILEMAP 세션 프롬프트 생성 (모드 분기)
+ * - 변형(variation) 모드: 손맵 변형 타일 세트 (모든 타일이 상호 seamless)
+ * - 룰타일(ruletile) 모드: 지형 전환 타일셋
  */
 function generateTilemapPrompt(params: PromptGenerationParams): string {
+  if (params.tilemapMode === 'ruletile') {
+    return generateTilemapRuleTilePrompt(params);
+  }
+  return generateTilemapVariationPrompt(params);
+}
+
+/**
+ * TILEMAP 변형 모드 프롬프트 생성
+ * - 손맵(hand-painted) 변형 타일 세트: 모든 타일이 상호 seamless (임의 배치 호환)
+ * - 타일링 규칙: 균질 베이스 · 조용한 경계 존 · 분산 디테일 랜덤성 ·
+ *   NO GRID LINES · 일관 조명 · 손맵 채색 강제
+ */
+function generateTilemapVariationPrompt(params: PromptGenerationParams): string {
   const { basePrompt, pixelArtGrid, analysis } = params;
 
   // 타일맵은 4x4/8x8만 지원 — 그 외 값이 들어오면 4x4로 강제
@@ -691,17 +707,68 @@ function generateTilemapPrompt(params: PromptGenerationParams): string {
 
 Create ${tileCount} mutually interchangeable ground tile variations of ONE terrain type, arranged in a ${gridLayout} grid. These tiles will be cut apart and placed in ANY random arrangement in a game engine (Unity Tilemap), so EVERY tile edge must blend seamlessly with EVERY other tile edge.
 ${styleSpec}
-🧱 TILING RULES (CRITICAL - all 6 must hold):
+🧱 TILING RULES (CRITICAL - all 7 must hold):
 1. UNIFORM BASE: the entire canvas is ONE continuous, statistically uniform hand-painted texture of the same material - consistent hue, brightness, and brushstroke density everywhere.
 2. QUIET EDGE ZONES: the outer ~15% of every cell must stay low-contrast base texture only - no distinctive details, no strong shapes near any cell edge.
-3. CENTERED DETAIL VARIETY: distinctive details (flowers, pebbles, cracks, leaves) go ONLY near each cell's center, and every cell gets DIFFERENT details for natural variety.
+3. SPARSE, SCATTERED DETAILS: roughly HALF of the cells must be PURE base texture with NO distinctive detail at all. In the remaining cells, place small details OFF-CENTER at a different position in every cell (anywhere within the inner 60% safe zone - never at the exact center), varying their size and count. NEVER repeat the same motif twice (each flower, pebble or tuft design appears only once in the whole sheet).
 4. NO GRID LINES: do NOT draw any lines, borders, dividers, or separators between cells. The grid layout is purely conceptual - there must be NO visible grid structure in the final image.
 5. CONSISTENT LIGHTING: one light direction and color temperature across the whole canvas; all shadows fall the same way.
 6. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered.
+7. NO REPEATING PATTERN: when these tiles are shuffled and tiled, the result must look like ONE natural continuous ground - if a regular polka-dot pattern of centered details emerges, the sheet has FAILED.
 
 ⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, seams, visible borders, vignette, tiling artifacts.
 
 🌿 TERRAIN: ${basePrompt || 'stylized grass ground'}
 
 Generate the ${tileCount}-tile hand-painted variation set in the ${gridLayout} grid now.`;
+}
+
+/**
+ * TILEMAP 룰타일(지형 전환) 프롬프트.
+ * 셀별 역할을 지시하지 않고 거시 구도(4x4=패치, 8x8=도넛)를 그리게 한 뒤
+ * 분할하면 ruleTileLayout의 역할 테이블과 맞아떨어진다 (스펙 §12.2).
+ */
+function generateTilemapRuleTilePrompt(params: PromptGenerationParams): string {
+  const { pixelArtGrid, analysis } = params;
+  const grid = pixelArtGrid === '8x8' ? '8x8' : '4x4';
+  const base = params.tilemapBaseTerrain || 'grass';
+  const overlay = params.tilemapOverlayTerrain || 'dirt path';
+
+  // 참조 분석 스펙 섹션 (변형 모드와 동일 로직 재사용)
+  const t = analysis?.tilemap_specific;
+  const specLines: string[] = [];
+  if (t?.brush_style) specLines.push(`- Brushwork: ${t.brush_style}`);
+  if (t?.color_palette) specLines.push(`- Color palette: ${t.color_palette}`);
+  if (t?.perspective) specLines.push(`- Perspective: ${t.perspective}`);
+  if (t?.edge_softness) specLines.push(`- Edge softness: ${t.edge_softness}`);
+  if (t?.lighting_direction) specLines.push(`- Lighting: ${t.lighting_direction}`);
+  const styleSpec = specLines.length > 0
+    ? `\n🎨 HAND-PAINTED STYLE SPEC (from reference analysis - MUST match):\n${specLines.join('\n')}\n`
+    : '';
+
+  const donutSection = grid === '8x8'
+    ? `
+🕳️ CENTER HOLE (donut composition): cut a square hole of PURE ${base} in the middle of the ${overlay} area. The hole spans from 37.5% to 62.5% of the canvas (both axes). The hole's painted transition band must be centered on the 31.25% and 68.75% lines. So the final image is a ${overlay} ring (donut) sitting on ${base}.`
+    : '';
+
+  return `🎯 HAND-PAINTED TERRAIN TRANSITION TILESET (Unity Rule Tile source, single 1024x1024 image)
+
+Paint ONE picture: a field of ${base} covering the ENTIRE canvas, with ONE large organic patch of ${overlay} on top of it. This image will be sliced into a ${grid} grid to produce corner / edge / fill transition tiles, so the patch geometry must be EXACT:
+
+📐 PATCH GEOMETRY (critical):
+- The ${overlay} patch covers the square region from 12.5% to 87.5% of the canvas (both axes).
+- The painted transition between ${base} and ${overlay} must be a band CENTERED on that boundary line, no wider than 6% of the canvas on each side.
+- Corners of the patch are gently rounded (radius about half a grid cell), staying within the corner cells.
+- Inside the patch: continuous ${overlay} texture. Outside: continuous ${base} texture.${donutSection}
+${styleSpec}
+🧱 RULES:
+1. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered.
+2. The transition band is hand-painted and organic (soft irregular brush edge, small overlaps like grass blades over the ${overlay}) but must NEVER wander outside its 6% band.
+3. UNIFORM TEXTURES: both ${base} and ${overlay} areas are statistically uniform - consistent hue, brightness and stroke density. Sparse small details only, placed off-center and never repeated.
+4. NO GRID LINES: do NOT draw any lines, borders, dividers, or separators between grid cells. The grid is purely conceptual.
+5. CONSISTENT LIGHTING: one light direction and color temperature across the whole canvas.
+
+⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, seams, visible borders, vignette, text, objects, characters.
+
+Paint the ${base} field with the ${overlay} ${grid === '8x8' ? 'donut ring' : 'patch'} now.`;
 }
