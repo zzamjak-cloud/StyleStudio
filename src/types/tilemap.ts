@@ -6,6 +6,9 @@ import { PixelArtGridLayout } from './pixelart';
  */
 export type TilemapGridLayout = Extract<PixelArtGridLayout, '4x4' | '8x8'>;
 
+/** 타일셋 모드: 변형 세트(상호교환) vs 룰타일 지형 전환 세트(역할 고정) */
+export type TilemapMode = 'variation' | 'ruletile';
+
 /** 타일맵에서 지원하는 그리드 목록 (UI 노출용) */
 export const TILEMAP_GRID_LAYOUTS: TilemapGridLayout[] = ['4x4', '8x8'];
 
@@ -36,6 +39,9 @@ export interface TilemapSessionData {
   grid: TilemapGridLayout;
   sheets: TilemapSheet[];
   slotAssignments: TileSlotAssignment[];
+  mode?: TilemapMode;        // 미지정 시 'variation' (v1 세션 호환)
+  baseTerrain?: string;      // 룰타일: 베이스 지형 입력 원문 (예: "잔디")
+  overlayTerrain?: string;   // 룰타일: 오버레이 지형 입력 원문 (예: "흙길")
 }
 
 /** PixelArtGridLayout 값이 타일맵 지원 그리드인지 판별 */
