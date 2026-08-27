@@ -1013,7 +1013,7 @@ export function ImageGeneratorPanel({
       logger.error('❌ 타일맵 내보내기 실패:', error);
       alert('타일맵 내보내기에 실패했습니다.\n\n' + message);
     }
-  }, [tilemap.currentTiles, tilemap.displayGrid, sessionName]);
+  }, [tilemap.currentTiles, tilemap.displayGrid, tilemap.effectiveMode, sessionName]);
 
   // 히스토리에서 설정 복원 (단일 setState + useCallback으로 자식 memo 유지)
   const handleRestoreFromHistory = useCallback(async (e: React.MouseEvent, entry: GenerationHistoryEntry) => {
