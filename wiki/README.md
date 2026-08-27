@@ -67,6 +67,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 타일이 서로 이어지지 않음/seam 경고 | `tilemap/overview.md` |
 | 선택 재생성·교체가 동작 안 함 | `tilemap/overview.md` |
 | 내보낸 시트에 교체 타일이 반영 안 됨 | `tilemap/overview.md` |
+| 룰타일 역할이 어긋남 / 오목 코너가 안 나옴 | `tilemap/overview.md` |
 | UI 세션에서 참조 문서 첨부가 안 보임 | `documents/overview.md` |
 | 참조 문서 드롭 영역이 커 보이거나 한 줄로 안 보임 | `documents/overview.md` |
 | PDF/Excel 파싱 결과가 프롬프트에 안 반영됨 | `documents/overview.md` |
