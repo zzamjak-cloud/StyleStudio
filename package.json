@@ -1,7 +1,7 @@
 {
   "name": "stylestudio-tauri",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "AI 게임 아트 제작 데스크톱 애플리케이션",
   "author": "최진평 (Jinpyoung Choi) <zzamjak@naver.com>",
   "license": "GPL-3.0-or-later",
