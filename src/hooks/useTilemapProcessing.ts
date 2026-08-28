@@ -7,6 +7,7 @@ import {
   TilemapSheet,
   TilemapEdgeStyle,
   TilemapOutline,
+  TilemapOutlineSide,
   isTilemapGridLayout,
 } from '../types/tilemap';
 import { sliceTileSheet } from '../lib/tilemap/tileSlicer';
@@ -29,10 +30,29 @@ interface UseTilemapProcessingOptions {
   onTilemapDataChange?: (data: TilemapSessionData) => void;
   pixelArtGrid: PixelArtGridLayout; // 패널의 현재 그리드 선택값
   mode: TilemapMode; // 현재 선택된 타일셋 모드
-  baseTerrain?: string; // 룰타일: 베이스 지형 원문 (저장용)
-  overlayTerrain?: string; // 룰타일: 오버레이 지형 원문 (저장용)
+  baseTerrain?: string; // 룰타일: 베이스 지형 원문 (저장용). 빈 값 = 투명
+  overlayTerrain?: string; // 룰타일: 오버레이 지형 원문 (저장용). 빈 값 = 투명
   edgeStyle?: TilemapEdgeStyle; // 룰타일: 경계선 모양 프리셋
   outline?: TilemapOutline; // 룰타일: 경계 아웃라인
+  outline2?: TilemapOutline; // 룰타일: 보조 아웃라인 (2단계 띠)
+  outlineSide?: TilemapOutlineSide; // 룰타일: 아웃라인을 뻗는 방향
+}
+
+/**
+ * 아웃라인 설정을 내용 기반 문자열 키로 만든다.
+ * 아웃라인은 객체라 매 렌더 새 참조일 수 있어, 이펙트 의존성으로 바로 쓸 수 없다.
+ * **필드를 추가하면 반드시 여기에도 넣어야 한다** — 빠뜨리면 그 값 변경이 재합성을 트리거하지 못한다.
+ */
+function makeOutlineKey(
+  side: TilemapOutlineSide | undefined,
+  ...outlines: Array<TilemapOutline | undefined>
+): string {
+  return [
+    side ?? '',
+    ...outlines.map((o) =>
+      o ? `${o.enabled ? 1 : 0}|${o.thicknessPx}|${o.color}|${o.opacity ?? 1}` : ''
+    ),
+  ].join('#');
 }
 
 /**
@@ -50,12 +70,14 @@ export function useTilemapProcessing({
   overlayTerrain,
   edgeStyle,
   outline,
+  outline2,
+  outlineSide,
 }: UseTilemapProcessingOptions) {
   // sheetId → 타일 dataURL[] (휘발성 캐시, 저장 안 함)
   // variation은 시트 분할 결과, ruletile은 머티리얼 시트에서 합성한 결과다
   const [tileCache, setTileCache] = useState<Map<string, string[]>>(new Map());
-  // 룰타일 전용: sheetId → 순수 베이스 지형 타일 (그리드 슬롯 밖의 17번째 타일)
-  const [baseTileCache, setBaseTileCache] = useState<Map<string, string>>(new Map());
+  // 룰타일 전용: sheetId → 순수 베이스 지형 타일 변형 목록 (그리드 슬롯 밖의 별도 타일)
+  const [baseTileCache, setBaseTileCache] = useState<Map<string, string[]>>(new Map());
   /**
    * 룰타일 전용: sheetId → 머티리얼 시트 dataURL (메모리 캐시).
    *
@@ -78,13 +100,20 @@ export function useTilemapProcessing({
   // 보유 세트의 모드 — displayGrid와 같은 원리로 보유 데이터 우선, 없으면 'variation' 폴백(v1 세션 호환)
   const effectiveMode: TilemapMode = tilemapData?.mode ?? 'variation';
 
+  /**
+   * 보유 세트의 투명 지형 여부. **패널의 입력 필드가 아니라 저장된 플래그**를 본다 —
+   * 입력 필드는 "다음 생성 목표"라서, 사용자가 지형 텍스트를 지운 순간 보유 세트가
+   * 투명으로 재해석되면 안 된다(경계 설정을 만질 때마다 결과가 달라진다).
+   * v5 이전 세션에는 플래그가 없고 그때는 두 지형이 모두 필수였으므로 false다.
+   */
+  const storedTransparentBase = tilemapData?.transparentBase ?? false;
+  const storedTransparentOverlay = tilemapData?.transparentOverlay ?? false;
+
   // 세션 전환 감지를 위한 시트 정체성 (길이만으로는 다른 세션의 동일 개수 시트를 구분 못함)
   const sheetIds = tilemapData?.sheets.map((s) => s.id).join(',') ?? '';
 
   // 아웃라인은 객체라 매 렌더 새 참조일 수 있으므로 내용 기반 키로 의존성을 건다
-  const outlineKey = outline
-    ? `${outline.enabled ? 1 : 0}|${outline.thicknessPx}|${outline.color}`
-    : '';
+  const outlineKey = makeOutlineKey(outlineSide, outline, outline2);
 
   // 세션 재진입 시: 저장된 시트를 로드해 캐시 복원
   useEffect(() => {
@@ -96,7 +125,7 @@ export function useTilemapProcessing({
 
     (async () => {
       const restored = new Map<string, string[]>();
-      const restoredBase = new Map<string, string>();
+      const restoredBase = new Map<string, string[]>();
       for (const sheet of tilemapData.sheets) {
         try {
           const dataUrl = await loadImage(sheet.imageKey);
@@ -111,9 +140,13 @@ export function useTilemapProcessing({
             const set = await buildRuleTileSet(dataUrl, tilemapData.grid, {
               edgeStyle: tilemapData.edgeStyle,
               outline: tilemapData.outline,
+              outline2: tilemapData.outline2,
+              outlineSide: tilemapData.outlineSide,
+              transparentBase: tilemapData.transparentBase,
+              transparentOverlay: tilemapData.transparentOverlay,
             });
             restored.set(sheet.id, set.tiles);
-            restoredBase.set(sheet.id, set.baseTile);
+            restoredBase.set(sheet.id, set.baseTiles);
           } else {
             restored.set(sheet.id, await sliceTileSheet(dataUrl, tilemapData.grid));
           }
@@ -147,9 +180,11 @@ export function useTilemapProcessing({
     if ((tilemapData.mode ?? 'variation') !== 'ruletile') return;
     if (tilemapData.sheets.length === 0) return;
     // 저장된 설정과 같으면 복원 이펙트 결과가 이미 맞다 — 중복 합성 방지
-    const storedKey = tilemapData.outline
-      ? `${tilemapData.outline.enabled ? 1 : 0}|${tilemapData.outline.thicknessPx}|${tilemapData.outline.color}`
-      : '';
+    const storedKey = makeOutlineKey(
+      tilemapData.outlineSide,
+      tilemapData.outline,
+      tilemapData.outline2
+    );
     if (tilemapData.edgeStyle === edgeStyle && storedKey === outlineKey) return;
 
     let cancelled = false;
@@ -159,15 +194,22 @@ export function useTilemapProcessing({
         setIsRecomposing(true);
         try {
           const nextTiles = new Map<string, string[]>();
-          const nextBase = new Map<string, string>();
+          const nextBase = new Map<string, string[]>();
           for (const sheet of tilemapData.sheets) {
             const dataUrl =
               materialSheetsRef.current.get(sheet.id) ?? (await loadImage(sheet.imageKey));
             if (!dataUrl) continue;
             materialSheetsRef.current.set(sheet.id, dataUrl);
-            const set = await buildRuleTileSet(dataUrl, tilemapData.grid, { edgeStyle, outline });
+            const set = await buildRuleTileSet(dataUrl, tilemapData.grid, {
+              edgeStyle,
+              outline,
+              outline2,
+              outlineSide,
+              transparentBase: tilemapData.transparentBase,
+              transparentOverlay: tilemapData.transparentOverlay,
+            });
             nextTiles.set(sheet.id, set.tiles);
-            nextBase.set(sheet.id, set.baseTile);
+            nextBase.set(sheet.id, set.baseTiles);
           }
           if (cancelled) return;
           setTileCache(nextTiles);
@@ -194,11 +236,13 @@ export function useTilemapProcessing({
     if (!enabled || !onTilemapDataChange || !tilemapData) return;
     if ((tilemapData.mode ?? 'variation') !== 'ruletile') return;
     if (tilemapData.slotAssignments.length === 0) return;
-    const storedKey = tilemapData.outline
-      ? `${tilemapData.outline.enabled ? 1 : 0}|${tilemapData.outline.thicknessPx}|${tilemapData.outline.color}`
-      : '';
+    const storedKey = makeOutlineKey(
+      tilemapData.outlineSide,
+      tilemapData.outline,
+      tilemapData.outline2
+    );
     if (tilemapData.edgeStyle === edgeStyle && storedKey === outlineKey) return;
-    onTilemapDataChange({ ...tilemapData, edgeStyle, outline });
+    onTilemapDataChange({ ...tilemapData, edgeStyle, outline, outline2, outlineSide });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, edgeStyle, outlineKey, tilemapData?.mode, sheetIds]);
 
@@ -226,18 +270,29 @@ export function useTilemapProcessing({
    */
   const processNewSheet = useCallback(async (
     sheetDataUrl: string
-  ): Promise<{ tiles: string[]; baseTile: string | null; grid: TilemapGridLayout; mode: TilemapMode } | null> => {
+  ): Promise<{ tiles: string[]; baseTiles: string[]; grid: TilemapGridLayout; mode: TilemapMode } | null> => {
     if (!enabled || !onTilemapDataChange) return null;
 
     const isRuletile = mode === 'ruletile';
     // 룰타일: 시트를 자르지 않고 머티리얼 시트로 해석해 타일을 절차적으로 합성한다
     // variation: 기존과 동일하게 그리드 분할
+    // 지형 입력이 비어 있으면 그 지형은 재질 대신 투명으로 합성한다
+    const transparentBase = isRuletile && !baseTerrain?.trim();
+    const transparentOverlay = isRuletile && !overlayTerrain?.trim();
+
     let tiles: string[];
-    let baseTile: string | null = null;
+    let baseTiles: string[] = [];
     if (isRuletile) {
-      const set = await buildRuleTileSet(sheetDataUrl, grid, { edgeStyle, outline });
+      const set = await buildRuleTileSet(sheetDataUrl, grid, {
+        edgeStyle,
+        outline,
+        outline2,
+        outlineSide,
+        transparentBase,
+        transparentOverlay,
+      });
       tiles = set.tiles;
-      baseTile = set.baseTile;
+      baseTiles = set.baseTiles;
     } else {
       tiles = await sliceTileSheet(sheetDataUrl, grid);
     }
@@ -250,7 +305,7 @@ export function useTilemapProcessing({
     const sheet: TilemapSheet = { id: sheetId, imageKey, createdAt: new Date().toISOString() };
 
     setTileCache((prev) => new Map(prev).set(sheetId, tiles));
-    if (baseTile) setBaseTileCache((prev) => new Map(prev).set(sheetId, baseTile));
+    if (baseTiles.length > 0) setBaseTileCache((prev) => new Map(prev).set(sheetId, baseTiles));
     // 경계 설정 변경 시 imageStorage를 다시 읽지 않도록 머티리얼 시트를 메모리에 캐시
     if (isRuletile) materialSheetsRef.current.set(sheetId, sheetDataUrl);
 
@@ -272,6 +327,10 @@ export function useTilemapProcessing({
         composerVersion: isRuletile ? COMPOSER_VERSION : undefined,
         edgeStyle: isRuletile ? edgeStyle : undefined,
         outline: isRuletile ? outline : undefined,
+        outline2: isRuletile ? outline2 : undefined,
+        outlineSide: isRuletile ? outlineSide : undefined,
+        transparentBase: isRuletile ? transparentBase : undefined,
+        transparentOverlay: isRuletile ? transparentOverlay : undefined,
         sheets: setChanged ? [sheet] : [...prevData.sheets, sheet],
         slotAssignments: tiles.map((_, i) => ({
           slotIndex: i,
@@ -281,7 +340,7 @@ export function useTilemapProcessing({
         })),
       });
       // 전체 할당은 곧바로 최종 상태이므로 자동 내보내기 대상이다
-      return { tiles, baseTile, grid, mode };
+      return { tiles, baseTiles, grid, mode };
     }
 
     // 교체 제안: 새 시트에서 점수 상위 셀을 선택 슬롯 수만큼 배정 (락 슬롯 제외)
@@ -303,7 +362,7 @@ export function useTilemapProcessing({
     });
     // 교체 제안은 사용자가 확정해야 최종 상태가 된다 — 자동 내보내기 대상 아님
     return null;
-  }, [enabled, onTilemapDataChange, grid, tilemapData, mode, baseTerrain, overlayTerrain, edgeStyle, outline]);
+  }, [enabled, onTilemapDataChange, grid, tilemapData, mode, baseTerrain, overlayTerrain, edgeStyle, outline, outline2, outlineSide]);
 
   /** 교체 제안 확정: 해당 슬롯만 갱신 + 시트 풀에 추가 (보유 세트가 룰타일이면 이중 방어로 no-op) */
   const confirmProposal = useCallback(() => {
@@ -377,11 +436,16 @@ export function useTilemapProcessing({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, tilesKey, displayGrid]);
 
-  /** 룰타일 순수 베이스 지형 타일 — 그리드 슬롯 밖의 별도 타일 */
-  const baseTile: string | null = (() => {
-    if (!enabled || effectiveMode !== 'ruletile' || !tilemapData) return null;
+  /** 보유 룰타일 세트에서 베이스 지형이 투명인지 (미리보기·내보내기 안내에 쓴다) */
+  const baseTransparent = enabled && effectiveMode === 'ruletile' && storedTransparentBase;
+  /** 보유 룰타일 세트에서 오버레이 지형이 투명인지 */
+  const overlayTransparent = enabled && effectiveMode === 'ruletile' && storedTransparentOverlay;
+
+  /** 룰타일 순수 베이스 지형 타일 변형 목록 — 그리드 슬롯 밖의 별도 타일 (베이스가 투명이면 빈 배열) */
+  const baseTiles: string[] = (() => {
+    if (!enabled || effectiveMode !== 'ruletile' || !tilemapData) return [];
     const lastSheet = tilemapData.sheets[tilemapData.sheets.length - 1];
-    return lastSheet ? baseTileCache.get(lastSheet.id) ?? null : null;
+    return lastSheet ? baseTileCache.get(lastSheet.id) ?? [] : [];
   })();
 
   /**
@@ -399,7 +463,9 @@ export function useTilemapProcessing({
     displayGrid,
     effectiveMode,
     currentTiles,
-    baseTile,
+    baseTiles,
+    baseTransparent,
+    overlayTransparent,
     composedSheet,
     isRecomposing,
     needsRecompose,

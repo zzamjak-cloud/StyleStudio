@@ -9,7 +9,9 @@ interface TilePreviewCanvasProps {
   tiles: string[]; // 슬롯 타일 dataURL (null 제거된 배열)
   mode: TilemapMode;
   grid: TilemapGridLayout; // 룰타일 signature 축약 방식 결정 (4x4=4비트, 8x8=blob)
-  baseTile?: string | null; // 룰타일: 순수 베이스 지형 타일 (슬롯 밖의 별도 타일)
+  baseTiles?: string[]; // 룰타일: 순수 베이스 지형 타일 변형들 (슬롯 밖의 별도 타일)
+  /** 룰타일: 베이스 지형이 투명인지. 회색 "타일 없음" 박스와 구별해 체커보드로 그린다 */
+  baseTransparent?: boolean;
   onClose: () => void;
 }
 
@@ -26,6 +28,21 @@ const ZOOM_LEVELS = [0.5, 1, 2] as const;
 type Zoom = (typeof ZOOM_LEVELS)[number];
 
 type Tool = 'stamp' | 'eraser';
+
+/** 투명 영역을 나타내는 체커보드 셀 (회색 "타일 없음" 박스와 구별하기 위한 표시) */
+function drawCheckerCell(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number
+): void {
+  const q = size / 2;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x, y, size, size);
+  ctx.fillStyle = '#e5e7eb';
+  ctx.fillRect(x, y, q, q);
+  ctx.fillRect(x + q, y + q, q, q);
+}
 
 /** 전부 null인 초기 맵 셀 배열 생성 */
 function createEmptyMap(): (number | null)[][] {
@@ -65,13 +82,15 @@ function resolveRuleTileCell(
  * - **Alt + 드래그**: 도구와 무관하게 즉시 지우기
  * - **가운데 클릭 드래그** 또는 **스페이스바 + 드래그**: 패닝
  */
-function TilePreviewCanvasComponent({ tiles, mode, grid, baseTile, onClose }: TilePreviewCanvasProps) {
+function TilePreviewCanvasComponent({ tiles, mode, grid, baseTiles = [], baseTransparent = false, onClose }: TilePreviewCanvasProps) {
   const isRuleTile = mode === 'ruletile';
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
-  // 베이스 타일은 슬롯 배열 뒤에 덧붙여 로드한다 (인덱스 = tiles.length)
-  const baseTileIndex = tiles.length;
+  // 베이스 타일 변형들은 슬롯 배열 뒤에 이어 붙여 로드한다 (인덱스 = tiles.length + v)
+  const baseTileOffset = tiles.length;
+  // 배열 정체성이 매 렌더 바뀌어도 이펙트가 재실행되지 않도록 내용 기반 키를 쓴다
+  const baseTilesKey = baseTiles.map((t) => t.length).join(',');
   const [imagesLoaded, setImagesLoaded] = useState(false);
 
   // signature → 슬롯 조회표 (그리드가 바뀔 때만 재생성)
@@ -102,7 +121,7 @@ function TilePreviewCanvasComponent({ tiles, mode, grid, baseTile, onClose }: Ti
   useEffect(() => {
     let cancelled = false;
     setImagesLoaded(false);
-    const sources = baseTile ? [...tiles, baseTile] : tiles;
+    const sources = [...tiles, ...baseTiles];
     Promise.all(sources.map((t) => loadImageElement(t)))
       .then((imgs) => {
         if (cancelled) return;
@@ -117,7 +136,8 @@ function TilePreviewCanvasComponent({ tiles, mode, grid, baseTile, onClose }: Ti
     return () => {
       cancelled = true;
     };
-  }, [tiles, baseTile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tiles, baseTilesKey]);
 
   // 캔버스 렌더링
   useEffect(() => {
@@ -140,9 +160,13 @@ function TilePreviewCanvasComponent({ tiles, mode, grid, baseTile, onClose }: Ti
         if (isRuleTile) {
           // 오버레이 셀은 signature로, 베이스 셀은 전용 베이스 타일로 그린다.
           // (v2에서는 4x4에 'base' 역할이 없어 배경이 통째로 회색 박스로 나왔다)
+          // 베이스 셀은 변형 중 하나를 결정적으로 고른다 — 한 장만 쓰면 바닥이 통째로
+          // 같은 무늬로 반복돼 실제 유니티 화면(Random Tile 사용)과 인상이 달라진다
           tileIndex = mapCells[r][c] !== null
             ? resolveRuleTileCell(mapCells, r, c, grid, signatureIndex)
-            : (baseTile ? baseTileIndex : -1);
+            : (baseTiles.length > 0
+                ? baseTileOffset + ((r * 31 + c * 17) % baseTiles.length)
+                : -1);
           if (tileIndex < 0) tileIndex = null;
         } else {
           tileIndex = mapCells[r][c];
@@ -151,13 +175,18 @@ function TilePreviewCanvasComponent({ tiles, mode, grid, baseTile, onClose }: Ti
 
         if (img) {
           ctx.drawImage(img, x, y, cellSize, cellSize);
+        } else if (isRuleTile && baseTransparent && mapCells[r][c] === null) {
+          // 베이스가 투명인 세트: 바닥 셀은 "타일 없음"이 아니라 **의도된 투명**이다.
+          // 회색 박스로 그리면 오류처럼 보이므로 체커보드로 구분해 그린다
+          drawCheckerCell(ctx, x, y, cellSize);
         } else {
           ctx.fillStyle = '#e5e7eb';
           ctx.fillRect(x, y, cellSize, cellSize);
         }
       }
     }
-  }, [mapCells, zoom, imagesLoaded, isRuleTile, grid, signatureIndex, baseTile, baseTileIndex]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapCells, zoom, imagesLoaded, isRuleTile, grid, signatureIndex, baseTilesKey, baseTileOffset, baseTransparent]);
 
   // Esc 닫기 / 스페이스바 패닝 토글
   useEffect(() => {

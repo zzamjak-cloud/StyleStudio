@@ -58,7 +58,7 @@ GenerationSettings = {
 
 - 히스토리 적립과 별개로, 생성 완료 시 `autoSaveImage`가 파일도 저장한다.
 - 경로: `getSessionImageFolder(sessionName)` → `~/Downloads/AI_Gen/{정제된 세션명}/`.
-- 파일명: `style-studio-{timestamp}.jpg`(투명 배경 대상 세션은 `.png` — 현재 대상 없음).
+- 파일명: `style-studio-{timestamp}.{ext}`. **확장자는 data URL 바이트의 매직 넘버로 판별**한다(PNG면 `.png`) — `lib/utils/imageDataUrl.ts`. 세션 타입 목록으로 추측하던 예전 방식은 PNG를 `.jpg`로 내보냈다.
 - 히스토리의 `imageBase64`(메모리/세션 저장소)와 디스크 파일은 독립. 히스토리 삭제는 디스크 파일을 지우지 않는다.
 
 ## 회귀 증상별 원인

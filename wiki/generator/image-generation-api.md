@@ -46,7 +46,7 @@ ImageModelDefinition = {
 - 참조 이미지가 없으면 `POST /v1/images/generations`(JSON), 있으면 `POST /v1/images/edits`(FormData, `image[]` 최대 10장).
 - 요청 필드: `model: 'gpt-image-2'`, `prompt`, `size`(=`mapToOpenAISize(aspectRatio)`), `quality`(기본 medium), `n:1`.
 - **응답 정규화**: `data[0].b64_json` 우선, 없으면 `data[0].url`을 fetch해 base64화(`fetchImageUrlToBase64`, 16KB 청크).
-- **JPEG 통일**: gpt-image-2는 PNG로 응답하지만, 자동 저장이 `.jpg` 확장자를 쓰므로 `convertBase64ToJpeg`로 흰 배경 위에 합성 후 JPEG(0.92)로 변환해 `onComplete`. OS 썸네일 헤더/확장자 일치 목적.
+- **JPEG 통일**: gpt-image-2는 PNG로 응답하지만 `convertBase64ToJpeg`가 흰 배경 위에 합성 후 JPEG(0.92)로 변환해 `onComplete`. 원래 목적("자동 저장이 `.jpg` 확장자를 쓰므로 헤더를 맞춘다")은 **사라졌다** — 저장 확장자가 이제 실제 바이트를 따른다(`lib/utils/imageDataUrl.ts`). 남긴 이유는 저장 용량이다(PNG 원본은 JPEG 0.92보다 훨씬 크고 채팅 이미지는 IndexedDB에 쌓인다). **투명 배경이 필요한 세션을 만든다면 이 변환이 알파를 흰색으로 굳히므로 먼저 걷어내야 한다.** 타일맵은 AI 원본이 불투명한 재질 스와치이고 타일은 코드가 PNG로 합성하므로 영향이 없다.
 - **에러 한국어화**(`formatOpenAIError`): `moderation_blocked`(안전 차단, Gemini 전환 권유)·`content_policy_violation`·401(키)·429(한도)·413/too large(용량) 등 상세 메시지.
 - **`editWithMask`**: 사용자 마스크(흰=편집/검=보존)로 `/v1/images/edits` 부분 편집(생성기 본 플로우 외 부분 편집용).
 

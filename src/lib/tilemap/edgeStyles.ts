@@ -15,6 +15,8 @@
  * - `bladeAmplitudeRatio` / `bladeFrequencyPx` : 두 지형이 맞물리는 **잔가지**
  *   (진폭↑ = 더 깊이 침범, 주파수↑ = 더 굵고 큰 손가락)
  * - `cornerRoundRatio` : 볼록 코너 라운드 정도 (0 = 각짐, 1 = 최대 라운드)
+ * - `angular` : 변위 잡음을 선형 보간으로 바꿔 **폴리곤 곡선**을 만든다
+ *   (기본 스무스스텝은 항상 부드러운 곡선만 만든다 — `edgeProfile.TerrainMaskOptions.angular`)
  */
 
 import { TilemapEdgeStyle, DEFAULT_TILEMAP_EDGE_STYLE } from '../../types/tilemap';
@@ -32,20 +34,8 @@ export interface TilemapEdgeStylePreset {
 
 export const TILEMAP_EDGE_STYLES: TilemapEdgeStylePreset[] = [
   {
-    id: 'blades',
-    label: '잔가지 (기본)',
-    hint: '가늘게 맞물리는 풀잎 느낌',
-    mask: {
-      warpAmplitudeRatio: 0.40,
-      warpFrequencyPx: 26,
-      bladeAmplitudeRatio: 0.30,
-      bladeFrequencyPx: 6,
-      cornerRoundRatio: 0.6,
-    },
-  },
-  {
     id: 'chunky',
-    label: '굵은 맞물림',
+    label: '굵은 맞물림 (기본)',
     hint: '큼직한 손가락 형태 · 캐주얼',
     mask: {
       warpAmplitudeRatio: 0.35,
@@ -53,6 +43,18 @@ export const TILEMAP_EDGE_STYLES: TilemapEdgeStylePreset[] = [
       bladeAmplitudeRatio: 0.45,
       bladeFrequencyPx: 15,
       cornerRoundRatio: 0.7,
+    },
+  },
+  {
+    id: 'blades',
+    label: '잔가지',
+    hint: '가늘게 맞물리는 풀잎 느낌',
+    mask: {
+      warpAmplitudeRatio: 0.40,
+      warpFrequencyPx: 26,
+      bladeAmplitudeRatio: 0.30,
+      bladeFrequencyPx: 6,
+      cornerRoundRatio: 0.6,
     },
   },
   {
@@ -105,14 +107,40 @@ export const TILEMAP_EDGE_STYLES: TilemapEdgeStylePreset[] = [
   },
   {
     id: 'sharp',
-    label: '각진 형태',
-    hint: '거의 직선 · 기하학적',
+    label: '직선형',
+    hint: '흔들림 거의 없는 기하학적 직선',
     mask: {
       warpAmplitudeRatio: 0.06,
       warpFrequencyPx: 30,
       bladeAmplitudeRatio: 0.04,
       bladeFrequencyPx: 12,
       cornerRoundRatio: 0.12,
+    },
+  },
+  {
+    id: 'polygon',
+    label: '각진 폴리곤',
+    hint: '직선 구간으로 꺾이는 저폴리 윤곽',
+    mask: {
+      warpAmplitudeRatio: 0.62,
+      warpFrequencyPx: 34,
+      bladeAmplitudeRatio: 0,
+      bladeFrequencyPx: 12,
+      cornerRoundRatio: 0,
+      angular: true,
+    },
+  },
+  {
+    id: 'crystal',
+    label: '각진 맞물림',
+    hint: '뾰족한 결정처럼 맞물리는 각진 경계',
+    mask: {
+      warpAmplitudeRatio: 0.34,
+      warpFrequencyPx: 30,
+      bladeAmplitudeRatio: 0.46,
+      bladeFrequencyPx: 14,
+      cornerRoundRatio: 0,
+      angular: true,
     },
   },
 ];

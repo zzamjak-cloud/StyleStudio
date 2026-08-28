@@ -76,6 +76,18 @@ export interface TerrainMaskOptions {
    * 흔들림은 변에서 0이므로 시드가 달라도 변 위의 지형 판정은 동일하다 → 계약 유지.
    */
   warpSeed?: number;
+  /**
+   * 각진(폴리곤) 경계 여부.
+   *
+   * 기본 잡음은 격자값을 5차 스무스스텝으로 보간하므로 변위장이 C2 연속 —
+   * 경계가 항상 **부드러운 곡선**으로만 나온다. true면 선형 보간으로 바꾼다:
+   * 변위장이 격자선에서 기울기가 꺾이는 C0 필드가 되어, 경계가 직선 구간과
+   * 뚜렷한 꼭짓점으로 이루어진 **폴리곤 곡선**이 된다(캐주얼·로우폴리 감).
+   *
+   * 계약과 무관하다 — 보간 방식이 무엇이든 변위장은 창(`warpEdgeFalloffRatio`)에
+   * 의해 타일 변에서 정확히 0이 된다.
+   */
+  angular?: boolean;
 }
 
 /**
@@ -122,6 +134,7 @@ const DEFAULT_OPTIONS: Required<TerrainMaskOptions> = {
   bladeAmplitudeRatio: 0.30,
   bladeFrequencyPx: 6,
   warpSeed: 0,
+  angular: false,
 };
 
 /** 결정적 해시 → 0~1 */
@@ -137,12 +150,20 @@ function smooth(t: number): number {
   return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
-/** 격자 보간 값잡음 — 결정적, 시드별로 독립 */
-function valueNoise(x: number, y: number, cell: number, seed: number): number {
+/**
+ * 격자 보간 값잡음 — 결정적, 시드별로 독립.
+ *
+ * `angular`면 스무스스텝 대신 **선형 보간**을 쓴다. 격자선에서 기울기가 꺾이므로
+ * 경계가 직선 구간 + 꼭짓점으로 이루어진 폴리곤 곡선이 된다
+ * (`TerrainMaskOptions.angular` 주석 참조).
+ */
+function valueNoise(x: number, y: number, cell: number, seed: number, angular: boolean): number {
   const gx = Math.floor(x / cell);
   const gy = Math.floor(y / cell);
-  const fx = smooth(x / cell - gx);
-  const fy = smooth(y / cell - gy);
+  const tx = x / cell - gx;
+  const ty = y / cell - gy;
+  const fx = angular ? tx : smooth(tx);
+  const fy = angular ? ty : smooth(ty);
   const a = hash2(gx, gy, seed);
   const b = hash2(gx + 1, gy, seed);
   const c = hash2(gx, gy + 1, seed);
@@ -187,17 +208,18 @@ function computeWarp(x: number, y: number, size: number, o: ResolvedMaskOptions)
   }
 
   const s = o.seedOffset;
+  const ang = o.angular;
   // 두 옥타브를 겹쳐 손맵스러운 큰 흔들림을 만든다. 시드는 변형 번호만큼 어긋난다
-  const n1x = valueNoise(x, y, o.warpFrequencyPx, 11 + s) - 0.5;
-  const n1y = valueNoise(x, y, o.warpFrequencyPx, 23 + s) - 0.5;
-  const n2x = valueNoise(x, y, o.warpFrequencyPx2, 31 + s) - 0.5;
-  const n2y = valueNoise(x, y, o.warpFrequencyPx2, 41 + s) - 0.5;
+  const n1x = valueNoise(x, y, o.warpFrequencyPx, 11 + s, ang) - 0.5;
+  const n1y = valueNoise(x, y, o.warpFrequencyPx, 23 + s, ang) - 0.5;
+  const n2x = valueNoise(x, y, o.warpFrequencyPx2, 31 + s, ang) - 0.5;
+  const n2y = valueNoise(x, y, o.warpFrequencyPx2, 41 + s, ang) - 0.5;
 
   // 블레이드 옥타브: 고주파·고진폭 변위로 두 지형이 손가락처럼 맞물리게 한다.
   // 알파 블렌딩 대신 이 이진 침범이 손맵 경계를 만든다 (bladeAmplitudeRatio 주석 참조).
   // 창(win)을 똑같이 곱하므로 타일 변에서는 0 → 엣지 계약 유지.
-  const b1x = valueNoise(x, y, o.bladeFrequencyPx, 53 + s) - 0.5;
-  const b1y = valueNoise(x, y, o.bladeFrequencyPx, 67 + s) - 0.5;
+  const b1x = valueNoise(x, y, o.bladeFrequencyPx, 53 + s, ang) - 0.5;
+  const b1y = valueNoise(x, y, o.bladeFrequencyPx, 67 + s, ang) - 0.5;
 
   warpDx = win * (o.warpAmp * (n1x * 1.4 + n2x * 0.6) + o.bladeAmp * b1x * 2);
   warpDy = win * (o.warpAmp * (n1y * 1.4 + n2y * 0.6) + o.bladeAmp * b1y * 2);

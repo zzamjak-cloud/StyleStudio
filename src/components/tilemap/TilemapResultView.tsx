@@ -6,6 +6,23 @@ import { TilemapGridLayout, TileSlotAssignment, TilemapMode, TILEMAP_SEAM_WARNIN
 import { TilemapReplacementProposal } from '../../hooks/useTilemapProcessing';
 import { buildSlotTable, describeSlot } from '../../lib/tilemap/autotileSignature';
 
+/**
+ * 투명 영역 표시용 체커보드.
+ *
+ * 흰 배경 위에 투명 타일을 그대로 얹으면 "흰 재질"과 구별이 안 된다.
+ * 시트/타일 셀 뒤에 깔아 투명임을 눈으로 알 수 있게 한다.
+ */
+const CHECKER_BG: React.CSSProperties = {
+  backgroundImage:
+    'linear-gradient(45deg, #e5e7eb 25%, transparent 25%), ' +
+    'linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), ' +
+    'linear-gradient(45deg, transparent 75%, #e5e7eb 75%), ' +
+    'linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)',
+  backgroundSize: '12px 12px',
+  backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0',
+  backgroundColor: '#ffffff',
+};
+
 interface TilemapResultViewProps {
   isGenerating: boolean;
   progressMessage: string;
@@ -22,7 +39,8 @@ interface TilemapResultViewProps {
   grid: TilemapGridLayout;
   mode: TilemapMode;
   currentTiles: (string | null)[];
-  baseTile?: string | null; // 룰타일: 순수 베이스 지형 타일 (슬롯 밖의 별도 타일)
+  baseTiles?: string[]; // 룰타일: 순수 베이스 지형 타일 변형들 (슬롯 밖의 별도 타일)
+  baseTransparent?: boolean; // 룰타일: 베이스 지형이 투명인지 (미리보기 배경 표현용)
   slotAssignments: TileSlotAssignment[];
   proposal: TilemapReplacementProposal | null;
   onToggleLock: (slotIndex: number) => void;
@@ -45,7 +63,8 @@ function TilemapResultViewComponent({
   grid,
   mode,
   currentTiles,
-  baseTile,
+  baseTiles,
+  baseTransparent,
   slotAssignments,
   proposal,
   onToggleLock,
@@ -203,6 +222,7 @@ function TilemapResultViewComponent({
               {hasSheet ? (
                 <div className="max-w-5xl w-full">
                   <div className="relative bg-white rounded-xl shadow-2xl p-6 overflow-auto" style={{ maxHeight: '70vh' }}>
+                    {/* 시트에 투명 영역이 있을 수 있으므로 체커보드 위에 얹는다 */}
                     <button
                       onClick={onManualSave}
                       className="absolute top-4 left-4 z-10 p-3 bg-white/90 hover:bg-white border border-gray-200 rounded-lg shadow-lg transition-all hover:shadow-xl group"
@@ -215,7 +235,7 @@ function TilemapResultViewComponent({
                         src={sheetImage as string}
                         alt="타일 시트"
                         className="rounded-lg"
-                        style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain' }}
+                        style={{ ...CHECKER_BG, maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain' }}
                       />
                     </div>
                   </div>
@@ -246,6 +266,7 @@ function TilemapResultViewComponent({
                     className={`relative aspect-square rounded-lg overflow-hidden border border-gray-200 ${
                       isProposed ? 'ring-2 ring-blue-500' : isSelected ? 'ring-2 ring-lime-500' : ''
                     }`}
+                    style={CHECKER_BG}
                   >
                     {displayTile ? (
                       <img src={displayTile} alt={`타일 ${slotIndex}`} className="w-full h-full object-cover" />
@@ -353,7 +374,8 @@ function TilemapResultViewComponent({
           tiles={previewTiles}
           mode={mode}
           grid={grid}
-          baseTile={baseTile}
+          baseTiles={baseTiles}
+          baseTransparent={baseTransparent}
           onClose={() => setShowPreviewCanvas(false)}
         />
       )}

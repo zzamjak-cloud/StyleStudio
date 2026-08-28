@@ -1,6 +1,6 @@
 # 타일맵 (Tilemap)
 
-유니티 Tilemap용 타일 세트를 생성하는 세션. 그리드는 **4x4(16타일)·8x8(64타일)만 지원**, 비율·해상도는 **1:1·1K로 고정**(다른 세션과 달리 `GeneratorSettings`에서 비율/크기 선택 UI 자체가 숨겨짐). 두 가지 모드가 있고, **모드에 따라 파이프라인이 완전히 다르다**.
+유니티 Tilemap용 타일 세트를 생성하는 세션. 그리드는 **4x4(16타일)·8x8(64타일)만 지원**하되 **룰타일 모드는 8x8 고정**, 비율·해상도는 **1:1·1K로 고정**, 이미지 품질도 **medium 고정**(다른 세션과 달리 `GeneratorSettings`에서 비율/크기/품질/모델 선택 UI 자체가 숨겨짐). 두 가지 모드가 있고, **모드에 따라 파이프라인이 완전히 다르다**.
 
 | 모드 | AI에게 받는 것 | 코드가 하는 것 | 타일 상호 교환 |
 |------|---------------|---------------|---------------|
@@ -12,17 +12,17 @@
 ## 관련 파일
 
 ### 공통
-- `src/types/tilemap.ts` — 타입·상수. `TilemapGridLayout`(`'4x4'|'8x8'`), `TilemapMode`, `TILEMAP_SEAM_WARNING_THRESHOLD = 70`, `TilemapSheet`(모드에 따라 타일 시트/머티리얼 시트), `TileSlotAssignment`, `TilemapSessionData`(`composerVersion` 포함), `isTilemapGridLayout`
-- `src/hooks/useTilemapProcessing.ts` — 후처리 훅. 재진입 복원 `useEffect`(모드별로 분할/합성 분기), `currentTiles`·`baseTile`·`needsRecompose` 파생, `processNewSheet`, `requestReplacement`/`confirmProposal`/`discardProposal`/`toggleLock`(룰타일이면 전부 no-op)
-- `src/lib/tilemap/tilemapExporter.ts` — `exportTilemapForUnity`(시트 재합성 + 개별 PNG + 룰타일이면 `tiles/tile_base.png` + 가이드), `composeFinalSheet`, `buildRoleTable`·`buildRuleGrid`(signature → 유니티 3x3 규칙 표 자동 생성)
+- `src/types/tilemap.ts` — 타입·상수. `TilemapGridLayout`(`'4x4'|'8x8'`), `TILEMAP_RULETILE_GRID = '8x8'`(룰타일 강제 그리드), `TilemapMode`, `TILEMAP_SEAM_WARNING_THRESHOLD = 70`, `TilemapSheet`(모드에 따라 타일 시트/머티리얼 시트), `TileSlotAssignment`, `TilemapSessionData`(`composerVersion` 포함), `TilemapOutline`(`opacity` 포함)·`DEFAULT_TILEMAP_OUTLINE2`·`outlineOpacity`, `isTilemapGridLayout`
+- `src/hooks/useTilemapProcessing.ts` — 후처리 훅. 재진입 복원 `useEffect`(모드별로 분할/합성 분기), `currentTiles`·`baseTiles`·`needsRecompose` 파생, `processNewSheet`, `requestReplacement`/`confirmProposal`/`discardProposal`/`toggleLock`(룰타일이면 전부 no-op)
+- `src/lib/tilemap/tilemapExporter.ts` — `exportTilemapForUnity`(시트 재합성 + 개별 PNG + 룰타일이면 `tiles/tile_base*.png`(변형 8장) + 가이드), `composeFinalSheet`, `buildRoleTable`·`buildRuleGrid`(signature → 유니티 3x3 규칙 표 자동 생성)
 - `src/components/tilemap/TilemapResultView.tsx` — 결과 뷰. 시트/타일 뷰 토글, 뱃지(룰타일은 `describeSlot`, variation은 seam 점수), 락·선택·제안 액션바
 - `src/components/tilemap/TilePreviewCanvas.tsx` — 배치 미리보기 **전체 화면 모달**(24x16 맵, 스탬프/지우개/랜덤 채우기, 줌 0.5x·1x·2x, 패닝). 맵 상태 비저장. 룰타일이면 `signatureFromMap` → `signatureToSlot`으로 생성 단계와 **같은 표**를 조회
-- `src/components/tilemap/EdgeStylePicker.tsx` — 경계선 모양 썸네일 드롭다운 + 아웃라인(두께·색) 설정
+- `src/components/tilemap/EdgeStylePicker.tsx` — 경계선 모양 썸네일 드롭다운 + 아웃라인(방향·폭·색·투명도, 2단계) 설정
 - `dev/tilemap-preview.html` + `dev/tilemap-preview.tsx` — 미리보기 캔버스 dev 하네스(합성 재질로 세트를 만들어 실제 조작 검증)
 - `src/lib/prompts/sessionPrompts.ts` — `generateTilemapPrompt`(모드 분기), `generateTilemapVariationPrompt`, `generateTilemapRuleTilePrompt`. `buildPromptForSession`이 `sessionType === 'TILEMAP'`이면 참조 유무와 무관하게 최우선 분기
 - `src/lib/gemini/analysisPrompt.ts` — `TILEMAP_ANALYZER_PROMPT`(손맵 텍스처 전용 분석, character 필드는 전부 `N/A`)
 - `src/components/analysis/TilemapCard.tsx` — `tilemap_specific` 분석 편집 카드
-- `src/components/generator/GeneratorSettings.tsx` — TILEMAP 전용 그리드·모드 토글, 룰타일 지형 2필드. 비율·크기 UI를 `sessionType !== 'TILEMAP'`로 숨김
+- `src/components/generator/GeneratorSettings.tsx` — TILEMAP 전용 그리드·모드 토글, 룰타일 지형 2필드. 비율·크기·품질 UI와 모델 표시를 `sessionType !== 'TILEMAP'`로 숨김. 룰타일이면 그리드 버튼 대신 `8x8 (룰타일 고정)` 읽기 전용 표시
 
 ### variation 전용
 - `src/lib/tilemap/tileSlicer.ts` — `sliceTileSheet`(실측 크기 기준 중앙 crop 후 그리드 분할), `loadImageElement`
@@ -31,17 +31,25 @@
 ### ruletile 전용 (v3 절차적 합성 파이프라인)
 - `src/lib/tilemap/seamlessTexture.ts` — **1단계**. `extractRegion`, `makeSeamless`(분리형 주기 크로스페이드), `measureWrapContinuity`
 - `src/lib/tilemap/edgeProfile.ts` — **2단계**. `NEIGHBOR` 8방향 비트, `TRANSITION_INSET_RATIO`, `terrainSDF`, `warpOffset`, `warpedTerrainSDF`, `buildTerrainMask`, `borderTerrainProfile`(검증용), `signatureFromMap`
-- `src/lib/tilemap/autotileSignature.ts` — **3단계**. `reduceToBlob`/`reduceToSides`, `SIGNATURES_4BIT`(16종)·`SIGNATURES_BLOB`(47종), `buildSlotTable`, `buildSignatureIndex`, `signatureToSlot`, `describeSignature`/`describeSlot`, `BASE_TILE_FILENAME`
-- `src/lib/tilemap/ruleTileComposer.ts` — **4단계**. `buildRuleTileSet`, `COMPOSER_VERSION`
+- `src/lib/tilemap/autotileSignature.ts` — **3단계**. `reduceToBlob`/`reduceToSides`, `SIGNATURES_4BIT`(16종)·`SIGNATURES_BLOB`(47종), `buildSlotTable`, `buildSignatureIndex`, `signatureToSlot`, `describeSignature`/`describeSlot`, `BASE_TILE_FILENAME`·`baseTileFilename`
+- `src/lib/tilemap/ruleTileComposer.ts` — **4단계**. `buildRuleTileSet`, `COMPOSER_VERSION`(현재 7), `resolveOutlineBands`·`sampleOutline`(썸네일과 공유)
 - `src/lib/tilemap/tilemapSelfCheck.ts` + `dev/tilemap-check.html` — 단계별 게이트 검사(dev 전용)
 
-## 생성 모델 고정 (덕테이프)
+## 고정값 (덕테이프 · medium · 8x8)
 
-TILEMAP은 `TILEMAP_FIXED_IMAGE_MODEL = 'gpt-image-2'`(덕테이프)로 **고정**이며 모델 드롭다운을 노출하지 않는다(`GeneratorSettings`가 읽기 전용 표시로 대체). 타일맵은 프롬프트가 지정한 레이아웃을 정확히 지켜야 하는데(변형=NxN 그리드, 룰타일=머티리얼 시트 3패널) 나노바나나 계열은 이를 자주 무시해 사용할 수 없는 결과를 냈다.
+TILEMAP은 사용자가 고를 수 없는 값이 여럿이다. **바꿀 수 없는 값은 사이드바에 표시조차 하지 않는다** — 읽기 전용 표시는 자리만 차지하고 "왜 못 바꾸지"라는 오해를 만든다. 대신 어긋난 값이 들어오면 되돌리는 **방어 이펙트**를 `ImageGeneratorPanel`에 둔다(UI가 없으므로 사용자가 직접 되돌릴 방법이 없다).
 
-- `ImageGeneratorPanel`이 초기값을 덕테이프로 잡고, **어긋나면 되돌리는 이펙트**도 둔다 — 히스토리 복원 등으로 다른 모델이 들어와도 사용자가 드롭다운으로 되돌릴 방법이 없기 때문이다.
+| 값 | 고정 | 방어 이펙트 | UI |
+|---|---|---|---|
+| 이미지 모델 | `TILEMAP_FIXED_IMAGE_MODEL = 'gpt-image-2'`(덕테이프) | `imageModel !== 덕테이프`면 되돌림 | 없음 (키 없을 때 경고만) |
+| 이미지 품질 | `medium` | `imageQuality !== 'medium'`이면 되돌림 | 없음 |
+| 비율·해상도 | 1:1 · 1K | — | 없음 |
+| 그리드 (룰타일) | `TILEMAP_RULETILE_GRID = '8x8'` | 룰타일인데 8x8이 아니면 되돌림 | 읽기 전용 표시 |
+
+- **모델**: 타일맵은 프롬프트가 지정한 레이아웃을 정확히 지켜야 하는데(변형=NxN 그리드, 룰타일=머티리얼 시트 2패널) 나노바나나 계열은 이를 자주 무시해 사용할 수 없는 결과를 냈다. OpenAI 키가 없으면 경고 문구만 띄운다 — 없으면 생성이 그냥 실패한다.
+- **품질**: 룰타일 머티리얼 시트는 설계상 **디테일 없는 균질 필드**라 high로 올려도 얻는 게 없고 비용·시간만 늘어난다.
+- **그리드(룰타일)**: 4x4는 상하좌우만 구분하는 4비트 16종이라 **오목 코너가 없다** — 좁게 꺾인 길과 안쪽 모서리를 표현하지 못해 "완벽한 룰타일"이 되지 않는다. 8x8(blob 47종 + 변형 17종)만 전 조합을 담는다. 변형 모드는 4x4/8x8 모두 선택 가능하다.
 - **고급 설정 블록 전체를 숨긴다** — 덕테이프는 Seed/Temperature/Top-K/Top-P를 지원하지 않는다.
-- OpenAI 키가 없으면 모델 표시 아래에 경고를 띄운다(드롭다운이 없어 기존 안내 문구가 노출되지 않으므로).
 
 ## 데이터 모델
 
@@ -51,16 +59,20 @@ TilemapSessionData = {      // Session.tilemapData
   sheets: TilemapSheet[]           // 시트 이미지 키 목록 (imageStorage: tilemap-sheet-{id})
   slotAssignments: TileSlotAssignment[]  // 슬롯 수 = 현재 grid의 totalFrames
   mode?: 'variation' | 'ruletile'  // 미지정 시 'variation' (v1 세션 호환)
-  baseTerrain?: string             // 룰타일: 베이스 지형 입력 원문
-  overlayTerrain?: string          // 룰타일: 오버레이 지형 입력 원문
+  baseTerrain?: string             // 룰타일: 베이스 지형 입력 원문 (빈 값 = 투명)
+  overlayTerrain?: string          // 룰타일: 오버레이 지형 입력 원문 (빈 값 = 투명)
+  transparentBase?: boolean        // 룰타일: 생성 시점에 굳힌 투명 여부
+  transparentOverlay?: boolean
   composerVersion?: number         // 룰타일: 합성 알고리즘 버전. 없거나 다르면 재생성 필요
-  edgeStyle?: TilemapEdgeStyle     // 룰타일: 경계선 모양 프리셋 (미지정 시 'blades')
-  outline?: TilemapOutline         // 룰타일: 경계 아웃라인 {enabled, thicknessPx, color}
+  edgeStyle?: TilemapEdgeStyle     // 룰타일: 경계선 모양 프리셋 (미지정 시 'chunky')
+  outline?: TilemapOutline         // 룰타일: 1단계 아웃라인 띠 {enabled, thicknessPx, color, opacity}
+  outline2?: TilemapOutline        // 룰타일: 2단계 띠 (1단계에 이어 붙는다)
+  outlineSide?: 'outer' | 'inner'  // 룰타일: 띠가 뻗는 방향 (미지정 시 'outer')
 }
 ```
 
 - **타일은 저장하지 않는다.** `sheets`와 `slotAssignments`만 영속화하고, 실제 타일 PNG는 세션 진입 시 휘발성 `tileCache`(`sheetId → 타일 dataURL[]`)로만 재구성한다.
-- 룰타일의 **베이스 타일**(순수 베이스 지형)은 그리드 슬롯 밖의 별도 타일이다. `baseTileCache`에 따로 들고 있으며, 내보내기에서 `tiles/tile_base.png`로 나간다.
+- 룰타일의 **베이스 타일**(순수 베이스 지형)은 그리드 슬롯 밖의 별도 타일이며 **변형 8장**이다(`baseTiles: string[]`). `baseTileCache`(sheetId → string[])에 들고 있고, 내보내기에서 `tiles/tile_base.png` + `tile_base_1..7.png`로 나간다(0번은 기존 파일명 유지 — 이미 임포트한 프로젝트가 깨지지 않게).
 - `TilemapGridLayout`은 `PixelArtGridLayout`의 부분집합이라 `getPixelArtGridInfo`를 그대로 재사용한다(4x4→cellSize 256, 8x8→cellSize 128, 둘 다 1024 캔버스 기준).
 
 ---
@@ -96,15 +108,39 @@ T/2로 두면 상하 양쪽이 베이스인 **1칸 폭 통로**에서 오버레�
 [AI]  머티리얼 시트 1장 (좌우 2등분, 전환 패널 없음)
        ├ 좌 절반 : 순수 베이스 지형 스와치 (디테일 없는 균질 필드)
        └ 우 절반 : 순수 오버레이 지형 스와치
+      (한쪽 지형이 투명이면 캔버스 전체가 남은 지형 하나의 스와치 — 아래 "투명 지형")
 
-[코드] 1) cropMaterialSwatch(1:1 크롭) + makeSeamless → wrap 연속 텍스처 2장 (크기 = cellSize)
+[코드] 1) cropMaterialSwatch(1:1 크롭) + makeSeamless → wrap 연속 **정규 텍스처** 2장 (크기 = cellSize)
+          + 패널의 다른 위치를 크롭해 **텍스처 변형 8장씩** (아래 "재질 랜덤성")
        2) buildSlotTable(grid)로 슬롯 배치 결정
-       3) 슬롯마다 warpedTerrainSDFResolved 부호로 베이스/오버레이 **이진 결정** (1px AA만)
-          + 아웃라인이 켜져 있으면 |SDF| < 반두께를 지정 색으로 덮음
-       4) 순수 베이스 텍스처 = 베이스 타일 (슬롯 밖)
+       3) 슬롯마다 (베이스 변형, 오버레이 변형)을 해시로 고른 뒤,
+          warpedTerrainSDFResolved 부호로 베이스/오버레이 **이진 결정** (1px AA만)
+          + 아웃라인 레이어(굵은 것부터)를 |SDF| < 반두께 만큼 지정 색·불투명도로 덮음
+       4) 베이스 텍스처 변형 8장 = 베이스 타일 8장 (슬롯 밖)
 ```
 
 **모든 타일이 텍스처를 오프셋 (0,0)으로 동일하게 샘플링**한다. 두 타일을 나란히 놓으면 접합부가 그 텍스처 자신의 wrap 경계와 정확히 같은 지점이 되어 이어진다. 이게 교체 가능성의 두 번째 축이다(첫 번째는 엣지 계약).
+
+## 재질 랜덤성 — 변은 공유하고 안쪽만 다르다
+
+v4까지는 64장이 **모두 같은 텍스처**를 같은 오프셋으로 샘플링했다. 경계 모양은 슬롯마다 달라도 재질 표정이 동일해서, 세트 전체를 화면에 깔면 "한 타일의 반복"으로 보였다.
+
+유니티 Rule Tile은 변형을 **런타임에 무작위로** 고르므로, 어떤 두 텍스처가 이웃해도 이어져야 한다 = **모든 변형의 변 픽셀이 완전히 동일해야 한다**. 그래서 변형을 이렇게 만든다:
+
+```
+variant = (1 - a(x,y)) * canonical + a(x,y) * crop
+a = 0  (변에서 EDGE_HOLD_PX=2px 까지)      → 변 근처는 정규 텍스처 그대로
+a: 0→1 (VARIANT_RAMP_RATIO=0.12 구간, 스무스스텝)
+a = 1  (내부)                              → 패널의 다른 위치를 크롭한 것 = 랜덤성
+```
+
+- `crop`은 `makeSeamless`를 거치지 않는다 — 변이 어차피 정규 텍스처라 필요 없고, 크로스페이드 유령도 피한다.
+- 크롭 위치는 **황금비 저불일치 수열**로 패널 전체에 흩는다. 규칙적 격자로 잡으면 변형끼리 겹치는 영역이 많아 차이가 잘 안 난다.
+- 슬롯마다 베이스·오버레이 변형을 **독립 해시로** 고른다(8 x 8 = 64 조합). 결정적이라 같은 시트는 항상 같은 결과다.
+- 스와치 여유가 없으면(모델이 규격보다 작은 이미지를 준 경우) 변형 없이 정규 1장으로 폴백한다.
+- 베이스 지형은 맵의 대부분을 덮으므로 **베이스 타일도 8장** 내보낸다. 유니티에서는 Random Tile(2D Tilemap Extras)로 묶어 쓴다.
+
+> 전용 게이트가 있다(`재질 변형 — 변 픽셀 동일성 + 내부 랜덤성`). 변 픽셀은 **정확히 일치**(허용 오차 1), 내부는 평균 채널 차 2 이상이어야 통과한다. 두 조건을 함께 재는 이유: 변만 검사하면 "변형이 사실상 같아짐" 회귀를 놓치고, 내부만 검사하면 접합이 깨진 걸 놓친다.
 
 ## 경계 렌더링 — 섞지 않고 맞물린다
 
@@ -120,14 +156,51 @@ T/2로 두면 상하 양쪽이 베이스인 **1칸 폭 통로**에서 오버레�
 
 전용 게이트가 있다: 순수 단색 재질 2종으로 합성해 **중간색 픽셀 비율**을 센다(현재 0.99%, 허용 3%). 밴드 블렌딩이 되살아나면 즉시 실패한다.
 
+## 투명 지형 — 어떤 바닥에도 얹는 길
+
+지형 입력 필드를 **비우면 그 지형은 재질 대신 알파 0**으로 합성된다. 베이스를 비우면 오버레이와 아웃라인만 남으므로, 프로젝트의 어떤 바닥 타일맵 위에 레이어를 얹어도 그대로 쓸 수 있는 길 타일이 된다. 반대로 오버레이를 비우면 베이스만 남는다 — 어느 쪽을 비울지는 사용자가 고른다. **둘 다 비우는 것은 막는다**(아웃라인 말고 남는 게 없다).
+
+- **프롬프트가 바뀐다.** 한쪽이 투명이면 쓰지 않을 반쪽을 그리게 할 이유가 없으므로 **캔버스 전체를 남은 지형 하나의 스와치**로 요청한다(`generateTilemapRuleTilePrompt`의 solo 분기). 스와치 면적이 두 배가 되고, "대비되는 두 재질을 만들라"는 압력이 사라져 요청한 재질이 흔들리지 않는다. `extractMaterials`도 같은 조건에서 캔버스 전체를 크롭한다.
+- **합성이 프리멀티플라이드 알파**로 바뀌었다. 경계 1px AA와 아웃라인 덮기가 모두 알파를 건드리는데, 스트레이트 알파로 섞으면 투명 픽셀의 (의미 없는) RGB 0이 결과에 끼어들어 경계에 **검은 테두리**가 생긴다. 누산은 프리멀티플라이드로 하고 마지막에 한 번만 언프리멀티플라이한다.
+- **아웃라인은 투명한 쪽으로도 뻗는다.** 아웃라인은 경계선(SDF=0)을 중심으로 그리므로 투명 영역 위에도 source-over로 얹힌다 — 안 그러면 반쪽짜리 윤곽선이 된다.
+- 베이스가 투명이면 칠할 바닥이 없으므로 **`baseTiles`는 빈 배열**이고 `tile_base*.png`도 나가지 않는다. 임포트 가이드가 "바닥을 채우라" 대신 "다른 바닥 위 레이어에 그리라"로 바뀐다.
+- 투명 여부는 **생성 시점에 `tilemapData.transparentBase/Overlay`로 굳힌다.** 지형 문자열이 비었는지로 매번 파생하면, 사용자가 패널의 입력 필드를 지운 순간 보유 세트의 해석이 바뀌어 경계 설정을 만질 때마다 결과가 달라진다(패널 입력은 "다음 생성 목표"다 — `grid`·`mode`와 같은 원리).
+- 결과 뷰의 시트·타일 셀과 미리보기 캔버스의 바닥 셀은 **체커보드**로 그린다. 흰 배경에 투명 타일을 얹으면 "흰 재질"과 구별되지 않고, 미리보기의 회색 "타일 없음" 박스와도 헷갈린다.
+
+> 전용 게이트가 있다(`투명 지형 — 알파 0 · 검은 테두리 없음 · 아웃라인 관통`). halo 판정은 색 일치가 아니라 **휘도**로 한다: 두 기준색(재질·아웃라인)의 볼록 결합은 휘도가 `min(두 휘도)` 아래로 내려갈 수 없으므로, 그 아래면 검은색이 섞인 것이다. 색 일치로 재면 아웃라인 가장자리의 정상 AA 픽셀까지 위반으로 세어 기준이 무뎌진다.
+
 ## 경계선 모양 프리셋 + 아웃라인
 
 지형 경계는 코드가 만들므로, 재질과 **독립적으로** 모양을 고를 수 있다. 예전에는 어떤 지형을 뽑아도 경계 모양이 똑같았다.
 
-- 프리셋 **7종**은 `lib/tilemap/edgeStyles.ts`에: 잔가지(기본)·굵은 맞물림·거친 찢김·물결·조약돌·매끈함·각진 형태. 각각 `TerrainMaskOptions`의 진폭·주파수·코너 반경만 다르다.
+- 프리셋 **9종**은 `lib/tilemap/edgeStyles.ts`에: **굵은 맞물림(기본)**·잔가지·거친 찢김·물결·조약돌·매끈함·직선형·각진 폴리곤·각진 맞물림. 각각 `TerrainMaskOptions`의 진폭·주파수·코너 반경·`angular`만 다르다.
+- **각진(폴리곤) 경계**는 `angular: true`로 만든다. 기본 값잡음은 격자값을 5차 스무스스텝으로 보간해 변위장이 C2 연속이라 **부드러운 곡선만** 나온다. `angular`면 선형 보간으로 바꿔 격자선에서 기울기가 꺾이고, 경계가 직선 구간 + 뚜렷한 꼭짓점의 폴리곤 곡선이 된다(캐주얼·로우폴리). 진폭을 줄여 "거의 직선"으로 만든 `sharp`(직선형)와는 다른 축이다 — `sharp`는 여전히 곡선이고 작을 뿐이다.
+- 기본값은 `chunky`(굵은 맞물림)다. 이전 기본이던 `blades`(잔가지)는 셀 128px에서 잔가지가 너무 가늘게 보였다.
 - 프리셋은 `types/tilemap.ts`의 `TilemapEdgeStyle` 문자열 유니온만 참조한다 — 프리셋 본체를 types에 두면 `edgeProfile.ts` ↔ `types/tilemap.ts` 순환 참조가 된다.
 - **UI는 썸네일 드롭다운**(`components/tilemap/EdgeStylePicker.tsx`). 썸네일은 합성기와 **같은 `warpedTerrainSDFResolved`**로 그린다 — 색만 대표색으로 바꾸고 기하는 동일하다. 썸네일이 실제 결과와 어긋나면 눈으로 고르는 의미가 없어진다.
-- **아웃라인**은 `|SDF| < 반두께`를 지정 색으로 덮는 하드 스텐실이다(1px 안티에일리어싱만). 두께는 셀 128px 기준이며 4x4(셀 256px)에서는 2배로 환산해, 유니티 PPU 128 임포트 시 세계 두께가 같게 보인다.
+- **아웃라인**은 경계선에서 **한쪽 방향으로만** 뻗는 띠를 지정 색으로 덮는 하드 스텐실이다(1px 안티에일리어싱만). 폭은 셀 128px 기준이며 4x4(셀 256px)에서는 2배로 환산해, 유니티 PPU 128 임포트 시 세계 두께가 같게 보인다. 폭 범위는 1~12px.
+- **불투명도**(`opacity`, 0~1)는 스텐실의 *덮는 양*을 줄인다. 윤곽선이 아니라 **그림자처럼** 깔 때 쓴다. 지형을 알파 블렌딩하는 것과는 다르다 — 베이스/오버레이 판정은 여전히 이진이다.
+- 해석기·샘플러(`resolveOutlineBands`/`sampleOutline`)는 `ruleTileComposer`에서 **export해 썸네일이 그대로 재사용**한다 — 썸네일이 실제 결과와 어긋나면 눈으로 고르는 의미가 없다.
+
+### 계단식 단방향 띠 (감싸지 않는다)
+
+```
+  [오버레이 재질] │ 1단계 띠 │ 2단계 띠 │ [베이스 재질/투명]
+                 ↑ 경계선(SDF=0)      바깥쪽(outer) →
+```
+
+처음 구현은 두 아웃라인이 모두 `|SDF| < 반두께`로 경계선을 **가운데 두고 양쪽에** 퍼졌다. 그러면 굵은 쪽이 얇은 쪽을 **감싸는** 동심 구조밖에 나오지 않아 두 색을 단계별로 늘어놓을 수 없었다. 지금은:
+
+- 각 띠가 `outlineSide`로 지정한 **한쪽으로만** 뻗고(`outer`=오버레이 바깥, `inner`=안쪽), 2단계 띠는 1단계 띠가 끝나는 지점에서 **이어서** 시작한다.
+- `thicknessPx`는 이제 **한쪽 방향 폭**이다(양쪽 합이 아니다). 예전 값 그대로면 두 배 굵게 보인다.
+- 방향은 **두 띠에 공통**으로 적용된다 — 서로 반대로 뻗으면 "계단"이 되지 않는다.
+- 보조 띠 UI는 1단계가 켜져 있을 때만 노출한다.
+
+**띠를 하나씩 순서대로 합성하면 안 된다.** 맞닿는 지점에서 두 띠가 각각 0.5만 덮어 아래 재질이 25% 비치는 **1px 틈**이 생긴다(투명 베이스에서는 반투명 선). 그래서 `sampleOutline`이 가중치를 `clamp(t-start+0.5) - clamp(t-end+0.5)` 로 잡아 맞닿는 지점에서 **정확히 서로 보완**(합 1)되게 하고, 기여분을 **먼저 다 합친 뒤 한 번에** 합성한다.
+
+**엣지 계약**: 예전에는 SDF의 *크기*만 공유 변에서 일치하면 됐지만 방향이 생겼으니 **부호까지** 일치해야 한다. 부호는 지형 판정 그 자체라 엣지 계약이 이미 보장한다.
+
+> 전용 게이트가 있다(`계단식 아웃라인 — 단방향(바깥/안쪽) · 순서·폭`). 합성기와 **같은 SDF를 다시 계산해** 픽셀마다 기대 색(오버레이 / 1단계 / 2단계 / 베이스)을 만들고 대조하며, 띠 사이 1px 틈과 `inner` 방향까지 확인한다. 띠 사이 판정은 "정확히 50:50인가"가 아니라 **두 아웃라인 색이 공유하는 채널이 유지되는가**로 한다 — 혼합 비율은 위치에 따라 연속으로 변하므로 특정 비율을 요구하면 정상 픽셀이 걸린다.
 - 프리셋/아웃라인은 **계약을 깨지 않는다**: 변위장은 어떤 값이든 창에 의해 타일 변에서 0이 되고, 코너 라운딩은 인셋 라인에 접하므로 변 위 판정과 무관하다. 아웃라인은 SDF의 *크기*까지 공유 변에서 일치해야 선이 안 끊기는데, 변에서는 x 제약이 비활성이라 SDF가 y만의 함수로 줄어들어 일치한다 — 전용 게이트로 확인한다(불일치 0개).
 
 ### 즉시 반영
@@ -137,6 +210,8 @@ T/2로 두면 상하 양쪽이 베이스인 **1칸 폭 통로**에서 오버레�
 
 1. **저장소 복원** (`sheetIds`·`grid`·`mode` 의존) — imageStorage에서 머티리얼 시트를 읽어 **저장된** 경계 설정으로 합성하고, 원본 dataURL을 `materialSheetsRef`에 캐시한다.
 2. **경계 설정 재합성** (`edgeStyle`·`outlineKey` 의존) — 캐시된 머티리얼 시트로 **패널의 현재 선택**으로 다시 합성한다. IndexedDB 왕복이 없어 체감상 즉시다. 컬러 피커가 드래그 중 값을 연속으로 쏘므로 120ms 디바운스한다. 진행 중에는 `isRecomposing`이 true가 되어 결과 뷰 상단에 "재생성 아님" 표시가 뜬다.
+
+`outlineKey`는 `makeOutlineKey(outline, outline2)`가 만드는 내용 기반 문자열이다(아웃라인은 객체라 매 렌더 새 참조라서 의존성으로 바로 못 쓴다). **`TilemapOutline`에 필드를 추가하면 반드시 여기에도 넣어야 한다** — 빠뜨리면 그 값 변경이 재합성을 트리거하지 못한다.
 
 세 번째 이펙트가 패널 선택을 `tilemapData`에 영속화한다(재진입 시 복원용).
 
@@ -181,7 +256,11 @@ T/2로 두면 상하 양쪽이 베이스인 **1칸 폭 통로**에서 오버레�
 
 ## 내보내기
 
-`~/Downloads/AI_Gen/{세션명}/tilemap_{yymmdd_HHMMSS}/` 에 `tilesheet.png` + `tiles/tile_NN.png` + (룰타일이면) `tiles/tile_base.png` + `IMPORT_GUIDE.txt`.
+`~/Downloads/AI_Gen/{세션명}/tilemap_{yymmdd_HHMMSS}/` 에 `tilesheet.png` + `tiles/tile_NN.png` + (룰타일이면) `tiles/tile_base*.png` + `IMPORT_GUIDE.txt`.
+
+**전부 PNG이고 알파가 보존된다.** 타일은 `canvas.toDataURL('image/png')` 결과이고 `dataUrlToBytes`가 재인코딩 없이 그대로 파일에 쓴다 — 중간에 canvas로 다시 그리거나 JPEG로 변환하면 투명 영역이 흰색으로 굳는다. "투명 지형" 게이트가 산출 타일이 실제 PNG 바이트인지까지 확인한다.
+
+결과 뷰 "시트 보기"의 **다운로드 버튼**도 실제 바이트 포맷을 따라 `.png`로 저장한다 — 예전에는 세션 타입 목록으로 확장자를 골라 투명 PNG를 `.jpg`로 내보냈다(`wiki/generator/overview.md`의 "저장 확장자" 절).
 
 폴더명 타임스탬프는 `formatExportStamp()`가 **로컬 시각** 기준 `yymmdd_HHMMSS`로 만든다(예: 2026-08-27 13:44:55 → `tilemap_260827_134455`). epoch 밀리초는 사람이 읽을 수 없어 폴더 정렬·식별이 어려웠다.
 
@@ -218,11 +297,16 @@ T/2로 두면 상하 양쪽이 베이스인 **1칸 폭 통로**에서 오버레�
 
 `npm run dev` 후 `http://localhost:1420/dev/tilemap-check.html`. 프로덕션 번들에는 포함되지 않는다.
 
-단계별 게이트 13건:
+단계별 게이트 21건:
 1. `makeSeamless` wrap 연속성 — 판정은 **분위수 기준**(경계 스텝 ≤ 내부 스텝 P95). "좌열==우열 픽셀 동일"은 열 중복을 뜻하므로 틀린 기준이고, 내부 *평균* 대비 배수도 틀린 기준이다(크로스페이드가 기울기를 위치별로 재분배함)
 2. 엣지 계약 전수 — 인접 쌍 2048건, 베이스 이웃 변 512건, 전이 위치 768건
 3. signature 테이블 — 16/47종, 축약 멱등성, raw 256종 슬롯 해석
 4. 합성 타일 접합 연속성 — 실제 12x8 맵 배치 후 접합부 스텝 vs 타일 내부 스텝 P95
+5. 경계 품질 — 중간색 픽셀 비율(선명도) + 아웃라인 접합 연속성
+6. 경계선 프리셋 9종 정합성·형태 상이성
+7. 재질 변형 — 변 픽셀 동일성 + 내부 랜덤성
+8. 계단식 아웃라인 — 단방향·순서·폭 (SDF 재계산 대조)
+9. 투명 지형 — 알파 0 · 검은 테두리 없음 · 아웃라인 관통
 
 ## 회귀 증상별 원인
 
@@ -242,6 +326,20 @@ T/2로 두면 상하 양쪽이 베이스인 **1칸 폭 통로**에서 오버레�
 | 경계가 얼버무려짐 / 반투명하게 섞인 느낌 | 알파 블렌딩이 되살아났다 — 위 "경계 렌더링" 절. `dev/tilemap-check.html`의 "경계 선명도" 게이트가 잡아낸다 |
 | 결과물이 흐릿함 | 두 가지가 원인이었고 v2 합성기에서 고쳤다: ① 재질을 타일 크기로 **다운스케일**하던 것을 1:1 크롭으로 교체 ② `makeSeamless` 코사인 창이 하필 `t=0.25`(= 인셋 `k=T/4`, 지형 경계가 지나가는 자리)에서 50:50 블렌딩이라 경계가 뭉개졌던 것을 **평탄부를 가진 창**으로 교체. 두 지점을 되돌리면 흐림이 재발한다 |
 | 지형을 바꿰도 경계 모양이 똑같음 | 경계선 프리셋을 안 바꾼 것 — 설정 패널의 "경계선 모양" 썸네일 드롭다운 |
+| 64장이 전부 같은 재질로 보임 | 텍스처 변형이 죽었다 — 위 "재질 랜덤성" 절. `dev/tilemap-check.html`의 "재질 변형" 게이트가 내부 상이성 하한(평균 차 2)으로 잡는다. 스와치가 균질을 넘어 **완전 단색**이면 변형해도 차이가 없는 게 정상이다 |
+| 변형을 넣었더니 격자선이 다시 보임 | 변형의 변 픽셀이 정규 텍스처와 어긋났다(`EDGE_HOLD_PX`/`VARIANT_RAMP_RATIO`를 건드렸거나 `crop`을 변까지 덮게 만든 경우). "재질 변형" 게이트의 변 픽셀 검사가 잡는다 |
+| 각진 프리셋인데 여전히 부드러움 | `angular` 플래그가 `valueNoise`까지 전달되지 않았다 — `computeWarp`가 네 옥타브 + 블레이드 전부에 `ang`를 넘겨야 한다 |
+| 아웃라인이 하나만 보임 | 보조 띠 UI가 1단계 `enabled`에 종속이라 1단계가 꺼져 있으면 노출되지 않는다. 또는 2단계 폭이 0이다 |
+| 두 아웃라인이 서로를 감싼다 | 대칭(`|SDF| < 반두께`) 방식으로 되돌아갔다 — 위 "계단식 단방향 띠" 절. `dev/tilemap-check.html`의 "계단식 아웃라인" 게이트가 잡는다 |
+| 두 띠 사이에 반투명한 1px 선이 보인다 | 띠를 순차 source-over 하고 있다. `sampleOutline`로 기여분을 합산한 뒤 한 번에 얹어야 한다 |
+| 아웃라인이 예전보다 두 배 굵다 | `thicknessPx`가 양쪽 합에서 **한쪽 폭**으로 바뀌었다 — 값을 절반으로 줄이면 예전과 같다 |
+| 아웃라인 투명도를 바꿔도 반영 안 됨 | `makeOutlineKey`에 `opacity`가 빠졌다 — 위 "즉시 반영" 절 |
+| 룰타일인데 4x4로 생성됨 | 8x8 강제 이펙트가 빠졌다 — `ImageGeneratorPanel`의 `tilemapMode === 'ruletile'` → `TILEMAP_RULETILE_GRID` 되돌림 |
+| 투명 지형 경계에 검은 테두리가 생김 | 합성이 스트레이트 알파로 되돌아갔다 — 위 "투명 지형" 절. `dev/tilemap-check.html`의 "투명 지형" 게이트가 휘도로 잡는다 |
+| 지형을 비웠는데 투명이 안 됨 | 보유 세트는 `tilemapData.transparentBase/Overlay`(생성 시점 값)를 따른다 — 필드를 지운 것만으로는 안 바뀌고 **재생성해야** 한다 |
+| 투명 베이스인데 아웃라인이 반쪽만 나옴 | 아웃라인이 알파를 건드리지 않고 색만 덮고 있다 — source-over(`pa = cover + pa*keep`)여야 한다 |
+| 투명 타일이 흰색으로 보임 | 체커보드 배경(`CHECKER_BG`)이 빠졌다. PNG 자체는 알파 0이 맞는지 게이트로 확인 |
+| 지형 하나만 입력했는데 시트가 좌우 2분할로 나옴 | 프롬프트의 solo 분기가 빠졌다 — `generateTilemapRuleTilePrompt`의 `soloTerrain` |
 | 아웃라인이 타일 경계에서 끊김 | SDF **크기**가 공유 변에서 어긋난 것. `dev/tilemap-check.html`의 "경계 품질" 게이트가 잡는다 |
 | 경계선/아웃라인 변경이 타일 보기에 안 반영됨 | 재합성 이펙트가 저장소 복원 이펙트와 합쳐졌는지 확인 — 위 "즉시 반영" 절의 두 이펙트 분리가 전제다 |
 | 미리보기에서 패닝 첫 프레임이 칠해짐 | 진행 플래그가 state로 되돌아갔다 — 위 "조작" 절 |
@@ -253,7 +351,8 @@ T/2로 두면 상하 양쪽이 베이스인 **1칸 폭 통로**에서 오버레�
 | 재진입 시 회색 박스만 표시 | `tilemap-sheet-*` imageStorage 키 유실 — 콘솔의 "⚠️ 타일 시트 이미지 미발견" 확인. 세션 삭제 시 이 키들은 정리되지 않아 orphan으로 남을 수 있음 |
 | 미리보기 캔버스 버튼이 비활성화됨 | `currentTiles`에 `null`이 있으면 비활성 — 모든 슬롯이 채워져야 열림 |
 | 비율/해상도 선택 UI가 안 보임 | 의도된 동작 — TILEMAP은 1:1·1K 고정 |
-| 모델/고급 설정 UI가 안 보임 | 의도된 동작 — TILEMAP은 덕테이프 고정 (위 "생성 모델 고정" 절) |
+| 모델/품질/고급 설정 UI가 안 보임 | 의도된 동작 — TILEMAP은 덕테이프·medium 고정 (위 "고정값" 절). 바꿀 수 없는 값은 표시하지 않는다 |
+| 룰타일에서 그리드 버튼이 안 보임 | 의도된 동작 — 룰타일은 8x8 고정 (위 "고정값" 절) |
 | 타일맵 생성이 API 키 오류로 실패 | 덕테이프는 OpenAI 키를 쓴다. Gemini 키만 있으면 타일맵은 생성되지 않는다 |
 
 ---

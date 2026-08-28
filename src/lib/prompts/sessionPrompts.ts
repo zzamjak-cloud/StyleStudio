@@ -736,14 +736,24 @@ Generate the ${tileCount}-tile hand-painted variation set in the ${gridLayout} g
  * 그래서 이 프롬프트에는 정밀한 기하 요구가 없고, 모델 편차에 둔감하다.
  *
  * 요청 레이아웃(합성기가 실측 비율로 해석):
- *   - 좌상 사분면: 순수 베이스 지형 필드
- *   - 우상 사분면: 순수 오버레이 지형 필드
- *   - 하단 절반: 좌=베이스 / 우=오버레이, 수직 경계에 손맵 프린지 (붓결 추출용)
+ *   - 좌 절반: 순수 베이스 지형 필드
+ *   - 우 절반: 순수 오버레이 지형 필드
+ *
+ * **지형 하나를 비우면 그 지형은 투명**이므로 재질이 필요 없다. 그때는 캔버스 전체를
+ * 남은 지형 하나의 스와치로 요청한다 — 쓰지 않을 반쪽을 그리게 하면 스와치 면적이
+ * 절반으로 줄고, 모델이 "두 개를 그려야 한다"는 지시 때문에 굳이 대비되는 두 재질을
+ * 만들어 내려다 요청한 재질까지 흔들린다.
  */
 function generateTilemapRuleTilePrompt(params: PromptGenerationParams): string {
   const { analysis, basePrompt } = params;
-  const base = params.tilemapBaseTerrain || 'grass';
-  const overlay = params.tilemapOverlayTerrain || 'dirt path';
+  const baseInput = (params.tilemapBaseTerrain ?? '').trim();
+  const overlayInput = (params.tilemapOverlayTerrain ?? '').trim();
+  // 둘 다 비는 경우는 UI에서 막지만, 프롬프트 단독으로도 안전하게 폴백한다
+  const bothEmpty = !baseInput && !overlayInput;
+  const base = baseInput || (bothEmpty ? 'grass' : '');
+  const overlay = overlayInput || (bothEmpty ? 'dirt path' : '');
+  /** 한쪽만 투명이면 캔버스 전체가 남은 지형 하나의 스와치다 */
+  const soloTerrain = base && overlay ? '' : base || overlay;
 
   // 참조 분석 스펙 섹션 (변형 모드와 동일 로직 재사용)
   const t = analysis?.tilemap_specific;
@@ -760,6 +770,26 @@ function generateTilemapRuleTilePrompt(params: PromptGenerationParams): string {
   const styleDirection = basePrompt && basePrompt.trim()
     ? `\n🎨 ADDITIONAL STYLE DIRECTION (applies to both terrains, must NOT change the layout): ${basePrompt.trim()}\n`
     : '';
+
+  if (soloTerrain) {
+    // 한쪽 지형이 투명 → 캔버스 전체가 남은 지형 하나의 스와치
+    return `🎯 HAND-PAINTED TERRAIN MATERIAL SWATCH (1024x1024, ONE material filling the whole canvas)
+
+This is NOT a finished picture, NOT a landscape and NOT a tile sheet. It is a **material reference swatch**: one flat field of terrain material filling the entire canvas. Software will cut the actual game tiles from this material, so keep it completely uniform.
+
+📐 LAYOUT: the ENTIRE canvas, edge to edge, is a flat even field of ${soloTerrain}. Nothing else. No panels, no halves, no second material.
+${styleSpec}
+🧱 RULES:
+1. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered.
+2. FLAT, EVEN FIELD: statistically uniform all over - same hue, brightness and detail density from corner to corner. NO large shapes, NO paths, NO patches, NO objects, NO flowers, NO rocks, NO scattered focal details, NO vignette, NO lighting gradient across the canvas. Think of a fabric swatch, not a landscape.
+3. CRISP TEXTURE: keep the brushwork sharp and well defined at full resolution - no blur, no soft haze, no washed-out low-contrast mush.
+4. NO GRID LINES, NO FRAMES, NO BORDERS: do not draw any dividers, outlines, captions or panel borders.
+5. CONSISTENT LIGHTING: one light direction and color temperature across the whole canvas.
+
+⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, panel borders, text, labels, objects, characters, vignette, dramatic lighting, large composed scenery, blurry, soft focus, second material, split panels.
+${styleDirection}
+Paint the ${soloTerrain} material swatch now.`;
+  }
 
   return `🎯 HAND-PAINTED TERRAIN MATERIAL SHEET (1024x1024, two swatches)
 

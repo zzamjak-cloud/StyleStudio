@@ -13,9 +13,13 @@ import { IllustrationSessionData, ILLUSTRATION_LIMITS } from '../../types/illust
 import {
   DEFAULT_TILEMAP_EDGE_STYLE,
   DEFAULT_TILEMAP_OUTLINE,
+  DEFAULT_TILEMAP_OUTLINE2,
+  DEFAULT_TILEMAP_OUTLINE_SIDE,
+  TILEMAP_RULETILE_GRID,
   TilemapEdgeStyle,
   TilemapMode,
   TilemapOutline,
+  TilemapOutlineSide,
   TilemapSessionData,
 } from '../../types/tilemap';
 import { getCameraAnglePrompt } from '../../types/cameraAngle';
@@ -29,6 +33,7 @@ import { useTilemapProcessing } from '../../hooks/useTilemapProcessing';
 import { logger } from '../../lib/logger';
 import { loadImage } from '../../lib/imageStorage';
 import { exportTilemapForUnity } from '../../lib/tilemap/tilemapExporter';
+import { detectImageFormat, getImageSaveFormat } from '../../lib/utils/imageDataUrl';
 import { GeneratorSettings } from './GeneratorSettings';
 import { GeneratorPreview } from './GeneratorPreview';
 import { GeneratorHistory } from './GeneratorHistory';
@@ -369,6 +374,8 @@ interface GeneratorState {
   tilemapOverlayTerrain: string; // 룰타일: 오버레이 지형 (한국어 원문)
   tilemapEdgeStyle: TilemapEdgeStyle; // 룰타일: 경계선 모양 프리셋
   tilemapOutline: TilemapOutline; // 룰타일: 경계 아웃라인
+  tilemapOutline2: TilemapOutline; // 룰타일: 보조 아웃라인 (2단계 띠)
+  tilemapOutlineSide: TilemapOutlineSide; // 룰타일: 아웃라인을 뻗는 방향
   cameraAngle: string;  // 카메라 앵글 프리셋 ID
   cameraLens: string;   // 카메라 렌즈/화각 프리셋 ID
   zoomLevel: 'fit' | 'actual' | number;
@@ -424,12 +431,18 @@ export function ImageGeneratorPanel({
     isGenerating: false,
     progressMessage: '',
     generatedImage: null,
-    pixelArtGrid: sessionType === 'TILEMAP' ? (tilemapData?.grid ?? '4x4') : IMAGE_GENERATION_DEFAULTS.PIXEL_ART_GRID,
+    pixelArtGrid: sessionType === 'TILEMAP'
+      ? ((tilemapData?.mode ?? 'variation') === 'ruletile'
+          ? TILEMAP_RULETILE_GRID
+          : (tilemapData?.grid ?? '4x4'))
+      : IMAGE_GENERATION_DEFAULTS.PIXEL_ART_GRID,
     tilemapMode: (sessionType === 'TILEMAP' ? (tilemapData?.mode ?? 'variation') : 'variation') as TilemapMode,
     tilemapBaseTerrain: tilemapData?.baseTerrain ?? '',
     tilemapOverlayTerrain: tilemapData?.overlayTerrain ?? '',
     tilemapEdgeStyle: tilemapData?.edgeStyle ?? DEFAULT_TILEMAP_EDGE_STYLE,
     tilemapOutline: tilemapData?.outline ?? DEFAULT_TILEMAP_OUTLINE,
+    tilemapOutline2: tilemapData?.outline2 ?? DEFAULT_TILEMAP_OUTLINE2,
+    tilemapOutlineSide: tilemapData?.outlineSide ?? DEFAULT_TILEMAP_OUTLINE_SIDE,
     cameraAngle: 'none',  // 기본값: 선택 안함
     cameraLens: 'none',   // 기본값: 선택 안함
     zoomLevel: 'fit',
@@ -470,6 +483,8 @@ export function ImageGeneratorPanel({
     tilemapOverlayTerrain,
     tilemapEdgeStyle,
     tilemapOutline,
+    tilemapOutline2,
+    tilemapOutlineSide,
     cameraAngle,
     cameraLens,
     zoomLevel,
@@ -498,6 +513,8 @@ export function ImageGeneratorPanel({
     overlayTerrain: tilemapOverlayTerrain,
     edgeStyle: tilemapEdgeStyle,
     outline: tilemapOutline,
+    outline2: tilemapOutline2,
+    outlineSide: tilemapOutlineSide,
   });
 
   const resolveStoredImage = useCallback(async (image: string): Promise<string> => {
@@ -522,6 +539,8 @@ export function ImageGeneratorPanel({
   const setTilemapOverlayTerrain = useCallback((value: string) => updateState({ tilemapOverlayTerrain: value }), [updateState]);
   const setTilemapEdgeStyle = useCallback((value: TilemapEdgeStyle) => updateState({ tilemapEdgeStyle: value }), [updateState]);
   const setTilemapOutline = useCallback((value: TilemapOutline) => updateState({ tilemapOutline: value }), [updateState]);
+  const setTilemapOutline2 = useCallback((value: TilemapOutline) => updateState({ tilemapOutline2: value }), [updateState]);
+  const setTilemapOutlineSide = useCallback((value: TilemapOutlineSide) => updateState({ tilemapOutlineSide: value }), [updateState]);
 
   // 생성 직후 자동 내보내기된 폴더 경로 (결과 뷰에 안내로 표시)
   const [lastAutoExportFolder, setLastAutoExportFolder] = useState<string | null>(null);
@@ -555,6 +574,26 @@ export function ImageGeneratorPanel({
       updateState({ imageModel: TILEMAP_FIXED_IMAGE_MODEL });
     }
   }, [sessionType, imageModel, updateState]);
+
+  // 룰타일은 8x8 고정 — 4x4는 대각을 구분하지 못해 오목 코너·1칸 통로를 표현할 수 없다.
+  // 모드 전환·세션 복원 등 어느 경로로 4x4가 들어와도 되돌린다(그리드 선택 UI도 숨겨져 있다).
+  useEffect(() => {
+    if (
+      sessionType === 'TILEMAP' &&
+      tilemapMode === 'ruletile' &&
+      pixelArtGrid !== TILEMAP_RULETILE_GRID
+    ) {
+      updateState({ pixelArtGrid: TILEMAP_RULETILE_GRID });
+    }
+  }, [sessionType, tilemapMode, pixelArtGrid, updateState]);
+
+  // 타일맵은 이미지 품질 medium 고정 — 재질 스와치는 균질한 필드라 high로 올려도
+  // 얻는 게 없고 비용·시간만 늘어난다 (품질 선택 UI도 숨겨져 있다)
+  useEffect(() => {
+    if (sessionType === 'TILEMAP' && imageQuality !== 'medium') {
+      updateState({ imageQuality: 'medium' });
+    }
+  }, [sessionType, imageQuality, updateState]);
 
   useEffect(() => {
     const modelDef = getImageModelDefinition(imageModel);
@@ -596,8 +635,10 @@ export function ImageGeneratorPanel({
     }
 
     const isRuletile = sessionType === 'TILEMAP' && tilemapMode === 'ruletile';
-    if (isRuletile && (!tilemapBaseTerrain.trim() || !tilemapOverlayTerrain.trim())) {
-      alert('베이스 지형과 오버레이 지형을 입력해주세요. (예: 잔디 / 흙길)');
+    // 지형을 비우면 그 지형은 투명으로 합성된다(어떤 바닥에도 얹는 길 타일).
+    // 다만 **둘 다** 비면 아웃라인 말고는 아무것도 남지 않으므로 막는다.
+    if (isRuletile && !tilemapBaseTerrain.trim() && !tilemapOverlayTerrain.trim()) {
+      alert('베이스 지형과 오버레이 지형 중 최소 하나는 입력해주세요.\n비워 둔 지형은 투명하게 처리됩니다. (예: 잔디 / 흙길)');
       return;
     }
 
@@ -738,8 +779,11 @@ export function ImageGeneratorPanel({
           logger.debug('📊 진행:', message);
         },
         onComplete: async (imageBase64: string) => {
-            // Gemini API는 JPEG 바이너리를 반환하므로 올바른 MIME 타입 사용
-            let dataUrl = `data:image/jpeg;base64,${imageBase64}`;
+            // MIME을 하드코딩하지 않는다 — 모델·경로에 따라 PNG가 올 수 있고,
+            // 잘못 라벨링하면 저장 단계가 PNG 바이트를 .jpg로 내보낸다(투명 채널 손실처럼 보임).
+            // 매직 넘버로 실제 포맷을 판별해 붙인다 (lib/utils/imageDataUrl.ts)
+            const rawFormat = detectImageFormat(`data:image/png;base64,${imageBase64}`);
+            let dataUrl = `data:image/${rawFormat === 'jpg' ? 'jpeg' : rawFormat};base64,${imageBase64}`;
 
             // 흰색 배경 제거 대상 세션 타입인지 확인
             const shouldRemoveBackground = TRANSPARENT_BACKGROUND_SESSION_TYPES.includes(sessionType);
@@ -773,7 +817,7 @@ export function ImageGeneratorPanel({
             // AI 원본이 필요하면 히스토리(imageStorage)에 그대로 남아 있다.
             if (sessionType !== 'TILEMAP') {
               try {
-                const savedPath = await autoSaveImage(dataUrl, shouldRemoveBackground);
+                const savedPath = await autoSaveImage(dataUrl);
                 logger.debug('💾 자동 저장 완료:', savedPath);
               } catch (error) {
                 logger.error('❌ 자동 저장 실패:', error);
@@ -832,7 +876,7 @@ export function ImageGeneratorPanel({
                     grid: exportReady.grid,
                     tiles: exportReady.tiles,
                     mode: exportReady.mode,
-                    baseTile: exportReady.baseTile,
+                    baseTiles: exportReady.baseTiles,
                   });
                   logger.debug('📦 타일맵 자동 내보내기 완료:', folder);
                   setLastAutoExportFolder(folder);
@@ -902,8 +946,11 @@ export function ImageGeneratorPanel({
     }
   };
 
-  // 자동 저장 함수 (세션별 폴더 고정, v0.4.4)
-  const autoSaveImage = async (imageDataUrl: string, saveAsPng: boolean = false) => {
+  /**
+   * 자동 저장 함수 (세션별 폴더 고정, v0.4.4).
+   * 확장자는 **실제 바이트**에서 결정한다 — 세션 타입으로 추측하면 PNG를 .jpg로 내보낸다.
+   */
+  const autoSaveImage = async (imageDataUrl: string) => {
     try {
       // Data URL 형식 검증
       if (!imageDataUrl || !imageDataUrl.startsWith('data:')) {
@@ -914,9 +961,10 @@ export function ImageGeneratorPanel({
       const savePath = await getSessionImageFolder(sessionName);
       logger.debug('🔍 저장 경로:', savePath);
 
-      // 파일명 생성
+      // 파일명 생성 (바이트가 PNG면 반드시 .png — 알파를 가진 파일을 .jpg로 두면
+      // 뷰어·임포터가 투명 영역을 흰색이나 체크무늬로 그린다)
       const timestamp = Date.now();
-      const fileExtension = saveAsPng ? 'png' : 'jpg';
+      const fileExtension = getImageSaveFormat(imageDataUrl).extension;
       const fileName = `style-studio-${timestamp}.${fileExtension}`;
       const fullPath = await join(savePath, fileName);
 
@@ -968,33 +1016,24 @@ export function ImageGeneratorPanel({
       return;
     }
 
-    // 투명 배경 이미지인지 확인 (세션 타입 기반)
-    const shouldSaveAsPng = TRANSPARENT_BACKGROUND_SESSION_TYPES.includes(sessionType);
+    // 저장 포맷은 **실제 바이트**에서 판별한다. 세션 타입 목록으로 추측하던 예전 방식은
+    // 타일맵 합성 시트(투명 PNG)를 .jpg로 내보냈다 — 확장자와 헤더가 어긋나면
+    // OS 썸네일러·유니티 임포터가 투명 영역을 흰색이나 체크무늬로 그린다.
+    const saveFormat = getImageSaveFormat(imageToSave);
 
     try {
       // 저장 경로 결정 (v0.4.4: 세션별 폴더 고정)
       const defaultPath = await getSessionImageFolder(sessionName);
 
-      // 기본 파일명 생성 (투명 배경 이미지는 PNG, 그 외는 JPG)
+      // 기본 파일명 생성 (확장자 = 실제 바이트 포맷)
       const timestamp = Date.now();
-      const fileExtension = shouldSaveAsPng ? 'png' : 'jpg';
-      const defaultFileName = `style-studio-${timestamp}.${fileExtension}`;
+      const defaultFileName = `style-studio-${timestamp}.${saveFormat.extension}`;
       const defaultFilePath = await join(defaultPath, defaultFileName);
 
       // Tauri의 save 다이얼로그 사용 (OS 네이티브, 덮어쓰기 자동 확인)
       const selectedPath = await save({
         defaultPath: defaultFilePath,
-        filters: shouldSaveAsPng ? [
-          {
-            name: 'PNG Image',
-            extensions: ['png'],
-          },
-        ] : [
-          {
-            name: 'JPEG Image',
-            extensions: ['jpg', 'jpeg'],
-          },
-        ],
+        filters: [saveFormat.filter],
         title: '이미지 저장',
       });
 
@@ -1074,7 +1113,7 @@ export function ImageGeneratorPanel({
         grid: tilemap.displayGrid,
         tiles: tiles as string[],
         mode: tilemap.effectiveMode,
-        baseTile: tilemap.baseTile,
+        baseTiles: tilemap.baseTiles,
       });
       alert(`유니티용 타일맵을 내보냈습니다.\n\n${folder}`);
     } catch (error) {
@@ -1082,7 +1121,7 @@ export function ImageGeneratorPanel({
       logger.error('❌ 타일맵 내보내기 실패:', error);
       alert('타일맵 내보내기에 실패했습니다.\n\n' + message);
     }
-  }, [tilemap.currentTiles, tilemap.displayGrid, tilemap.effectiveMode, tilemap.baseTile, sessionName]);
+  }, [tilemap.currentTiles, tilemap.displayGrid, tilemap.effectiveMode, tilemap.baseTiles, sessionName]);
 
   // 히스토리에서 설정 복원 (단일 setState + useCallback으로 자식 memo 유지)
   const handleRestoreFromHistory = useCallback(async (e: React.MouseEvent, entry: GenerationHistoryEntry) => {
@@ -1261,7 +1300,8 @@ export function ImageGeneratorPanel({
             autoExportFolder={lastAutoExportFolder}
             isRecomposing={tilemap.isRecomposing}
             currentTiles={tilemap.currentTiles}
-            baseTile={tilemap.baseTile}
+            baseTiles={tilemap.baseTiles}
+            baseTransparent={tilemap.baseTransparent}
               slotAssignments={tilemapData?.slotAssignments ?? []}
               proposal={tilemap.proposal}
               onToggleLock={tilemap.toggleLock}
@@ -1314,6 +1354,8 @@ export function ImageGeneratorPanel({
           tilemapOverlayTerrain={tilemapOverlayTerrain}
           tilemapEdgeStyle={tilemapEdgeStyle}
           tilemapOutline={tilemapOutline}
+          tilemapOutline2={tilemapOutline2}
+          tilemapOutlineSide={tilemapOutlineSide}
           showAdvanced={showAdvanced}
           showHelp={showHelp}
           seed={seed}
@@ -1339,6 +1381,8 @@ export function ImageGeneratorPanel({
           onTilemapOverlayTerrainChange={setTilemapOverlayTerrain}
           onTilemapEdgeStyleChange={setTilemapEdgeStyle}
           onTilemapOutlineChange={setTilemapOutline}
+          onTilemapOutline2Change={setTilemapOutline2}
+          onTilemapOutlineSideChange={setTilemapOutlineSide}
           onShowAdvancedChange={setShowAdvanced}
           onShowHelpChange={setShowHelp}
           onSeedChange={setSeed}

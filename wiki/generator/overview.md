@@ -53,7 +53,7 @@ SessionType = BASIC | STYLE | CHARACTER | BACKGROUND | ICON
    - 그 외: 카메라 설정을 basePrompt에 이어 붙이고, 참조 이미지가 없으면(`!hasRefImages`) 분석 통합 프롬프트(`positivePrompt`)도 basePrompt에 포함.
 5. **참조 이미지 수집** — `ILLUSTRATION`은 캐릭터별 최대 `ILLUSTRATION_LIMITS.MAX_IMAGES_PER_CHARACTER`장 + 배경 + 구도 스케치(마지막 reference)를 모아 `resolveStoredImage`로 복원. `CHARACTER` 또는 `useReferenceImages` 시에는 `referenceImages`를 복원.
 6. **API 호출** — provider가 `openai`면 `generateOpenAIImage`, 아니면 `generateImage`(Gemini). 콜백 `onProgress`/`onComplete`/`onError`.
-7. **완료 처리**(`onComplete`) — Gemini 응답은 JPEG로 간주해 `data:image/jpeg;base64,...` data URL 생성. 대상 세션이면 배경 제거(현재 없음). `setGeneratedImage`·줌 fit 리셋 → 자동 저장 → 히스토리 적립(`onHistoryAdd`).
+7. **완료 처리**(`onComplete`) — 응답 base64의 매직 넘버로 실제 포맷을 판별해 data URL을 만든다(예전에는 `image/jpeg`로 하드코딩했다). 대상 세션이면 배경 제거(현재 없음). `setGeneratedImage`·줌 fit 리셋 → 자동 저장 → 히스토리 적립(`onHistoryAdd`).
 
 ## 생성 화면 레이아웃
 
@@ -65,8 +65,33 @@ SessionType = BASIC | STYLE | CHARACTER | BACKGROUND | ICON
 
 ## 저장·자동 저장
 
-- **자동 저장**(`autoSaveImage`, `ImageGeneratorPanel.tsx:777`) — 생성 완료 즉시 `getSessionImageFolder(sessionName)` 경로에 `style-studio-{timestamp}.jpg`로 저장(배경 제거 대상은 png). Base64→`Uint8Array`→Tauri `writeFile`.
+- **자동 저장**(`autoSaveImage`) — 생성 완료 즉시 `getSessionImageFolder(sessionName)` 경로에 `style-studio-{timestamp}.{ext}`로 저장. Base64→`Uint8Array`→Tauri `writeFile`(재인코딩 없음).
 - **수동 저장**(`handleManualSave`) — Tauri `save` 다이얼로그로 사용자가 경로 지정. 기본 경로/파일명은 자동 저장과 동일 규칙.
+- **확장자는 실제 바이트에서 판별한다** — 아래 절 참조. 세션 타입으로 추측하던 예전 방식은 PNG를 `.jpg`로 내보냈다.
+
+## 저장 확장자는 세션 타입이 아니라 **실제 바이트**로 정한다
+
+`src/lib/utils/imageDataUrl.ts` 의 `detectImageFormat`/`getImageSaveFormat` 이 base64 선두의
+**매직 넘버**(`iVBORw0KGgo`=PNG, `/9j/`=JPEG, `UklGR`=WebP, `R0lGOD`=GIF)로 포맷을 판별하고,
+저장 경로가 그 결과로 확장자와 다이얼로그 필터를 정한다.
+
+예전에는 `TRANSPARENT_BACKGROUND_SESSION_TYPES` 목록(현재 **빈 배열**)으로 png/jpg를 골랐다.
+목록이 비어 있으니 **무엇을 저장하든 `.jpg`** 였고, 저장 코드는 data URL의 base64를 재인코딩
+없이 그대로 쓰므로 **PNG 바이트가 `.jpg` 파일로** 나갔다. 타일맵 합성 시트(투명 PNG)를
+다운로드하면 그렇게 됐다 — 확장자와 헤더가 어긋나면 OS 썸네일러·유니티 임포터가 투명 영역을
+흰색이나 체크무늬로 그린다.
+
+- data URL의 **선언 MIME은 믿지 않는다.** 앱 곳곳이 `data:image/jpeg;base64,...` 를 하드코딩해
+  붙이므로(생성 API가 무엇을 돌려주든) 선언을 따르면 같은 버그가 재발한다. 생성 완료 지점
+  (`onComplete`)도 이제 매직 넘버로 판별한 MIME을 붙인다.
+- 바이트는 **항상 재인코딩 없이** 파일로 간다(`dataUrlToBytes`). canvas로 다시 그리거나 JPEG로
+  변환하는 순간 알파가 흰색으로 굳는다.
+- 타일맵 유니티 내보내기는 원래부터 `.png` 고정이었다(`tilemapExporter`) — 영향받지 않았다.
+
+> 남아 있는 것: `useOpenAIImageGenerator.convertBase64ToJpeg` 는 덕테이프(gpt-image-2)의 PNG
+> 응답을 **흰 배경 위에 합성해 JPEG로** 바꾼다. 타일맵은 AI 원본이 불투명한 재질 스와치라
+> 무관하지만, 투명 배경이 필요한 다른 세션을 만든다면 이 변환부터 걷어내야 한다.
+
 - 저장 루트는 `~/Downloads/AI_Gen/` (`paths.ts` `AI_GEN_ROOT_SEGMENT`). 세션별 하위 폴더로 고정(v0.4.4).
 
 ## 회귀 증상별 원인

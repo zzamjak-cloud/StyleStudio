@@ -206,3 +206,11 @@ export function describeSlot(slot: SlotSpec): string {
 
 /** 순수 베이스 지형 타일의 파일명 (그리드 슬롯 밖에서 별도로 내보낸다) */
 export const BASE_TILE_FILENAME = 'tile_base.png';
+
+/**
+ * 베이스 지형 타일 변형의 파일명.
+ * 0번은 기존 이름을 유지해 이미 임포트해 둔 프로젝트가 깨지지 않게 한다.
+ */
+export function baseTileFilename(index: number): string {
+  return index === 0 ? BASE_TILE_FILENAME : `tile_base_${index}.png`;
+}

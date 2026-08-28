@@ -70,6 +70,11 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 룰타일이 서로 안 이어짐 / 격자선이 보임 | `tilemap/overview.md` |
 | 1칸 폭 통로·고립 셀이 사라짐 / 미리보기가 유니티와 다름 | `tilemap/overview.md` |
 | 미리보기 배경이 회색 박스 / 기존 룰타일 세션이 이상함 | `tilemap/overview.md` |
+| 룰타일 64장이 전부 같은 재질로 보임 / 바닥이 한 무늬 반복 | `tilemap/overview.md` |
+| 경계선을 각지게 하고 싶음 / 아웃라인 투명도·이중 테두리 | `tilemap/overview.md` |
+| 룰타일인데 그리드·모델·품질 UI가 안 보임 | `tilemap/overview.md` |
+| 지형을 비웠을 때 투명 처리 / 투명 경계에 검은 테두리 | `tilemap/overview.md` |
+| 저장한 이미지가 .jpg로 나감 / 투명 PNG가 흰 배경으로 보임 | `generator/overview.md` |
 | UI 세션에서 참조 문서 첨부가 안 보임 | `documents/overview.md` |
 | 참조 문서 드롭 영역이 커 보이거나 한 줄로 안 보임 | `documents/overview.md` |
 | PDF/Excel 파싱 결과가 프롬프트에 안 반영됨 | `documents/overview.md` |

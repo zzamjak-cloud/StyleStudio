@@ -45,7 +45,7 @@ function makeSheet(): string {
 
 function Harness() {
   const [tiles, setTiles] = useState<string[] | null>(null);
-  const [baseTile, setBaseTile] = useState<string | null>(null);
+  const [baseTiles, setBaseTiles] = useState<string[]>([]);
   const [style, setStyle] = useState<TilemapEdgeStyle>('blades');
 
   useEffect(() => {
@@ -58,7 +58,7 @@ function Harness() {
       });
       if (cancelled) return;
       setTiles(set.tiles);
-      setBaseTile(set.baseTile);
+      setBaseTiles(set.baseTiles);
     })();
     return () => { cancelled = true; };
   }, [style]);
@@ -79,7 +79,7 @@ function Harness() {
         tiles={tiles}
         mode="ruletile"
         grid="8x8"
-        baseTile={baseTile}
+        baseTiles={baseTiles}
         onClose={() => { /* 하네스에서는 닫지 않는다 */ }}
       />
     </>

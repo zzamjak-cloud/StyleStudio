@@ -36,6 +36,7 @@ import {
 import { buildRuleTileSet } from './ruleTileComposer';
 import { loadImageElement } from './tileSlicer';
 import { DEFAULT_TILEMAP_EDGE_STYLE, TilemapGridLayout } from '../../types/tilemap';
+import { detectImageFormat } from '../utils/imageDataUrl';
 import { formatExportStamp } from './tilemapExporter';
 
 /** 개별 검사 결과 */
@@ -738,7 +739,7 @@ async function checkComposedJoins(): Promise<CheckResult> {
     ctx.drawImage(img, 0, 0);
     buffers.push(ctx.getImageData(0, 0, T, T).data);
   }
-  const baseImg = await loadImageElement(set.baseTile);
+  const baseImg = await loadImageElement(set.baseTiles[0]);
   const baseCanvas = document.createElement('canvas');
   baseCanvas.width = T;
   baseCanvas.height = T;
@@ -840,6 +841,390 @@ function tileStrip(tiles: string[]): HTMLCanvasElement {
   return canvas;
 }
 
+/**
+ * **재질 랜덤성 게이트**: 슬롯마다 다른 텍스처 변형을 쓰되, 변형끼리 이어지는가.
+ *
+ * 두 가지를 동시에 잰다 — 하나만 보면 회귀를 놓친다:
+ * 1) **변 픽셀 동일성**: 모든 변형의 4변이 정규 변형과 **픽셀 단위로 같아야** 한다.
+ *    유니티 Rule Tile은 변형을 런타임에 무작위로 고르므로, 어떤 두 변형이 이웃해도
+ *    접합이 이어져야 하기 때문이다. 어긋나면 격자선이 보인다.
+ * 2) **내부 상이성**: 내부는 실제로 달라야 한다. 같으면 변형이 무의미해지고
+ *    64장이 다시 한 타일의 반복으로 보인다(v4까지의 증상).
+ *
+ * 픽스처는 위치에 따라 톤이 크게 변하는 패널이다 — 균일한 패널을 쓰면 크롭 위치를
+ * 바꿔도 결과가 같아 2)가 항상 통과해 버려 게이트가 무력해진다.
+ */
+async function checkMaterialVariants(): Promise<CheckResult> {
+  const T = 128; // 8x8 → cellSize
+  const S = 1024;
+  // 좌: 베이스 패널 (가로로 톤이 크게 변함) / 우: 오버레이 패널 (세로로 변함)
+  const sheet = makeFixture(S, (x, y) => {
+    const n = hashNoise(x >> 1, y >> 1, 13) * 18;
+    if (x < S / 2) {
+      const t = x / (S / 2);
+      return [60 + t * 90 + n, 110 + t * 40 + n, 50 + t * 30 + n];
+    }
+    const t = y / S;
+    return [190 - t * 40 + n, 150 + t * 50 + n, 100 + t * 60 + n];
+  }).toDataURL('image/png');
+
+  const set = await buildRuleTileSet(sheet, '8x8');
+  const problems: string[] = [];
+  if (set.baseTiles.length < 4) {
+    problems.push(`베이스 타일 변형이 ${set.baseTiles.length}장 — 랜덤성이 사실상 없다`);
+  }
+
+  // 변형들을 픽셀 버퍼로
+  const bufs: Uint8ClampedArray[] = [];
+  for (const dataUrl of set.baseTiles) {
+    const img = await loadImageElement(dataUrl);
+    const c = document.createElement('canvas');
+    c.width = T;
+    c.height = T;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('canvas 2d context를 생성할 수 없습니다');
+    ctx.drawImage(img, 0, 0);
+    bufs.push(ctx.getImageData(0, 0, T, T).data);
+  }
+
+  const at = (b: Uint8ClampedArray, x: number, y: number, ch: number) => b[(y * T + x) * 4 + ch];
+  const chDiff = (a: Uint8ClampedArray, b: Uint8ClampedArray, x: number, y: number) =>
+    (Math.abs(at(a, x, y, 0) - at(b, x, y, 0)) +
+      Math.abs(at(a, x, y, 1) - at(b, x, y, 1)) +
+      Math.abs(at(a, x, y, 2) - at(b, x, y, 2))) / 3;
+
+  // 1) 변 픽셀 동일성 — PNG 왕복의 반올림만 허용
+  const EDGE_TOL = 1;
+  let edgeSamples = 0;
+  let edgeBreaks = 0;
+  let worstEdge = 0;
+  for (let v = 1; v < bufs.length; v++) {
+    for (let i = 0; i < T; i++) {
+      for (const [x, y] of [[i, 0], [i, T - 1], [0, i], [T - 1, i]] as Array<[number, number]>) {
+        const d = chDiff(bufs[0], bufs[v], x, y);
+        edgeSamples++;
+        worstEdge = Math.max(worstEdge, d);
+        if (d > EDGE_TOL) edgeBreaks++;
+      }
+    }
+  }
+  if (edgeBreaks > 0) {
+    problems.push(`변 픽셀 불일치 ${edgeBreaks}/${edgeSamples} (최악 ${worstEdge.toFixed(1)}) — 접합 계약 위반`);
+  }
+
+  // 2) 내부 상이성 — 중앙 절반 영역의 평균 채널 차
+  const INTERIOR_MIN = 2;
+  const q = Math.floor(T / 4);
+  let weakest = Infinity;
+  for (let v = 1; v < bufs.length; v++) {
+    let sum = 0;
+    let n = 0;
+    for (let y = q; y < T - q; y++) {
+      for (let x = q; x < T - q; x++) {
+        sum += chDiff(bufs[0], bufs[v], x, y);
+        n++;
+      }
+    }
+    weakest = Math.min(weakest, sum / n);
+  }
+  if (weakest < INTERIOR_MIN) {
+    problems.push(`내부가 거의 동일하다 (가장 비슷한 변형의 평균 차 ${weakest.toFixed(2)} < ${INTERIOR_MIN})`);
+  }
+
+  return {
+    name: `재질 변형 — 변 픽셀 동일성 + 내부 랜덤성 (베이스 ${set.baseTiles.length}종)`,
+    passed: problems.length === 0,
+    detail:
+      problems.length > 0
+        ? problems.join('\n')
+        : `변 픽셀: 표본 ${edgeSamples}개 전부 일치 (최악 ${worstEdge.toFixed(1)} <= ${EDGE_TOL})\n` +
+          `내부 차이: 가장 비슷한 변형도 평균 ${weakest.toFixed(2)} (하한 ${INTERIOR_MIN})\n` +
+          `변은 공유하고 안쪽만 다른 텍스처 — 어떤 변형끼리 이웃해도 이어지면서 반복이 깨진다`,
+    canvases: [{ label: '베이스 지형 타일 변형들', canvas: tileStrip(set.baseTiles) }],
+  };
+}
+
+/**
+ * **투명 지형 게이트**: 지형 하나를 투명으로 두면 알파가 제대로 나오는가.
+ *
+ * 세 가지를 함께 잰다:
+ * 1) **바닥 타일이 나가지 않는다** — 베이스가 투명이면 칠할 바닥이 없다(`baseTiles` 빈 배열).
+ * 2) **투명 영역이 실제로 알파 0** — 흰색으로 칠해 놓고 투명한 척하면 안 된다.
+ * 3) **검은 테두리(halo)가 없다** — 이게 핵심이다. 스트레이트 알파로 섞으면 투명 픽셀의
+ *    의미 없는 RGB(0,0,0)가 경계 AA와 아웃라인 덮기에 끼어들어 어두운 띠가 생긴다.
+ *    합성이 프리멀티플라이드로 돌아가는지를 이 검사가 지킨다.
+ *
+ *    판정은 "재질/아웃라인 색과 일치하는가"가 **아니라 "어두워졌는가"**다. 아웃라인
+ *    가장자리에는 재질↔아웃라인이 섞인 AA 픽셀이 정상적으로 존재하므로 색 일치로
+ *    재면 그 정상 픽셀까지 위반으로 세어 기준이 무뎌진다. 두 기준색의 볼록 결합은
+ *    휘도가 절대 `min(두 색의 휘도)` 아래로 내려가지 않으므로, 그 아래면 검은색이
+ *    섞여 들어왔다는 뜻이다 — halo만 정확히 잡힌다.
+ *
+ * 아웃라인은 경계선을 중심으로 그리므로 **투명한 쪽으로도 뻗어야** 한다 — 안 그러면
+ * 반쪽짜리 윤곽선이 된다. 그것도 함께 확인한다.
+ *
+ * 마지막으로 **산출물이 실제 PNG 바이트인지**도 본다. 알파를 아무리 정확히 계산해도
+ * 타일을 JPEG로 인코딩하면(예: `toDataURL('image/png')`을 바꾸면) 투명 영역이 흰색으로
+ * 굳어 버린다. 내보내기는 이 바이트를 재인코딩 없이 `.png`로 그대로 쓴다.
+ */
+async function checkTransparentTerrain(): Promise<CheckResult> {
+  const T = 128;
+  const S = 1024;
+  const OVERLAY: [number, number, number] = [220, 150, 60];
+  const OUTLINE: [number, number, number] = [255, 0, 255]; // 재질과 절대 겹치지 않는 마젠타
+
+  // 베이스가 투명이면 시트는 캔버스 전체가 오버레이 스와치 1장이다
+  const sheet = makeFixture(S, () => OVERLAY).toDataURL('image/png');
+  const set = await buildRuleTileSet(sheet, '8x8', {
+    transparentBase: true,
+    outline: { enabled: true, thicknessPx: 4, color: '#ff00ff' },
+  });
+
+  const problems: string[] = [];
+  if (set.baseTiles.length !== 0) {
+    problems.push(`베이스가 투명인데 바닥 타일이 ${set.baseTiles.length}장 나왔다`);
+  }
+  // 산출물이 실제 PNG 바이트여야 알파가 파일까지 살아서 나간다
+  const nonPng = set.tiles.filter((t) => detectImageFormat(t) !== 'png').length;
+  if (nonPng > 0) {
+    problems.push(`타일 ${nonPng}장이 PNG가 아니다 — JPEG로 인코딩되면 투명 영역이 흰색으로 굳는다`);
+  }
+
+  const bufs: Uint8ClampedArray[] = [];
+  for (const dataUrl of set.tiles) {
+    const img = await loadImageElement(dataUrl);
+    const c = document.createElement('canvas');
+    c.width = T;
+    c.height = T;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('canvas 2d context를 생성할 수 없습니다');
+    ctx.drawImage(img, 0, 0);
+    bufs.push(ctx.getImageData(0, 0, T, T).data);
+  }
+
+  const near = (r: number, g: number, b: number, c: [number, number, number], tol: number) =>
+    Math.abs(r - c[0]) <= tol && Math.abs(g - c[1]) <= tol && Math.abs(b - c[2]) <= tol;
+
+  /** ITU-R BT.601 휘도 */
+  const luma = (r: number, g: number, b: number) => 0.299 * r + 0.587 * g + 0.114 * b;
+  // 두 기준색의 볼록 결합이 가질 수 있는 최저 휘도 — 이보다 어두우면 검은색이 섞인 것
+  const HALO_LUMA = Math.min(luma(...OVERLAY), luma(...OUTLINE)) - 15;
+
+  let total = 0;
+  let clear = 0; // 알파 0
+  let opaque = 0; // 알파 255
+  let halo = 0; // 기준색 조합으로는 나올 수 없을 만큼 어두운 (반)불투명 픽셀
+  let darkest = 255; // 관측된 최저 휘도 (여유가 얼마나 남았는지 보려고)
+  let outlineOverClear = 0; // 투명한 쪽으로 뻗은 아웃라인 픽셀
+  for (const buf of bufs) {
+    for (let y = 0; y < T; y++) {
+      for (let x = 0; x < T; x++) {
+        const i = (y * T + x) * 4;
+        const a = buf[i + 3];
+        total++;
+        if (a === 0) {
+          clear++;
+          continue;
+        }
+        if (a === 255) opaque++;
+        const [r, g, b] = [buf[i], buf[i + 1], buf[i + 2]];
+        const y601 = luma(r, g, b);
+        if (y601 < darkest) darkest = y601;
+        if (y601 < HALO_LUMA) halo++;
+        // 아웃라인 픽셀인데 바로 옆이 완전 투명이면 = 투명한 쪽 가장자리까지 뻗었다
+        if (near(r, g, b, OUTLINE, 40) && x + 1 < T && buf[i + 7] === 0) outlineOverClear++;
+      }
+    }
+  }
+
+  const clearRatio = clear / total;
+  if (clearRatio < 0.1) {
+    problems.push(`투명 픽셀이 ${(clearRatio * 100).toFixed(1)}% 뿐이다 — 투명 처리가 안 됐다`);
+  }
+  // halo는 있으면 안 되는 것이므로 비율이 아니라 **개수 0**을 요구한다
+  if (halo > 0) {
+    problems.push(
+      `기준색 조합으로 나올 수 없이 어두운 픽셀 ${halo}개 (최저 휘도 ${darkest.toFixed(1)} < ${HALO_LUMA.toFixed(1)}) ` +
+      `— 프리멀티플라이드 합성이 깨져 검은 테두리가 생겼다`
+    );
+  }
+  if (outlineOverClear === 0) {
+    problems.push('아웃라인이 투명한 쪽으로 뻗지 않았다 — 반쪽짜리 윤곽선이다');
+  }
+
+  return {
+    name: '투명 지형 — 알파 0 · 검은 테두리 없음 · 아웃라인 관통',
+    passed: problems.length === 0,
+    detail:
+      problems.length > 0
+        ? problems.join('\n')
+        : `타일 ${set.tiles.length}장 전부 PNG · 바닥 타일 0장(투명 베이스) · 투명 ${(clearRatio * 100).toFixed(1)}% / ` +
+          `불투명 ${((opaque / total) * 100).toFixed(1)}%\n` +
+          `검은 테두리 0개 · 관측 최저 휘도 ${darkest.toFixed(1)} (한계선 ${HALO_LUMA.toFixed(1)})\n` +
+          `투명한 쪽 경계까지 뻗은 아웃라인 픽셀 ${outlineOverClear}개`,
+    canvases: [{ label: '투명 베이스 + 아웃라인 슬롯 일부', canvas: tileStrip(set.tiles.slice(0, 8)) }],
+  };
+}
+
+/**
+ * **계단식 아웃라인 게이트**: 두 아웃라인이 서로를 감싸지 않고 나란히 놓이는가.
+ *
+ * 예전 방식은 두 아웃라인이 모두 `|SDF| < 반두께`로 경계선을 **가운데 두고** 퍼져서,
+ * 굵은 쪽이 얇은 쪽을 감싸는 동심 구조밖에 나오지 않았다. 지금은 각 띠가 지정한
+ * 한쪽으로만 뻗고 2단계 띠가 1단계 띠 끝에서 이어 시작한다. 이 게이트는 합성기가 쓴 것과
+ * **같은 SDF를 다시 계산해** 픽셀마다 기대 색을 만들고 실제 색과 대조한다:
+ *
+ * ```
+ *   d >= +1        → 오버레이 재질     (아웃라인이 안쪽을 침범하면 안 된다)
+ *   -t1+1..-1      → 1단계 색
+ *   -t1-t2+1..-t1-1→ 2단계 색
+ *   d <= -t1-t2-1  → 베이스 재질
+ * ```
+ * 경계에서 ±1px는 안티에일리어싱 구간이라 표본에서 뺀다.
+ *
+ * 띠 사이 **1px 틈**도 함께 잡는다. 띠를 하나씩 순서대로 합성하면 맞닿는 지점에서 각각
+ * 0.5만 덮어 아래 재질이 25% 비친다 — 투명 베이스에서는 반투명 선으로 보인다. 그래서
+ * 합성기는 기여분을 먼저 합산한 뒤 한 번에 얹는다(`sampleOutline`).
+ *
+ * 판정은 "정확히 50:50인가"가 **아니라 "재질이 섞였는가"**다. 맞닿는 1px 안에서 두 띠의
+ * 혼합 비율은 위치에 따라 연속으로 변하므로(0.85:0.15 ~ 0.15:0.85) 특정 비율을 요구하면
+ * 정상 픽셀이 걸린다. 그래서 두 아웃라인 색이 **공유하는 채널**(둘 다 G=0, B=255)로 본다 —
+ * 두 색의 볼록 결합은 무슨 비율이든 G=0·B=255를 유지하고, 재질(G≈140·B≈60)이 비치는
+ * 순간에만 어긋난다.
+ */
+async function checkSteppedOutline(): Promise<CheckResult> {
+  const grid: TilemapGridLayout = '8x8';
+  const T = 128;
+  const BASE: [number, number, number] = [40, 140, 60];
+  const OVERLAY: [number, number, number] = [220, 150, 60];
+  const STEP1: [number, number, number] = [255, 0, 255]; // 마젠타
+  const STEP2: [number, number, number] = [0, 0, 255]; // 파랑
+  const W1 = 4;
+  const W2 = 6;
+
+  const sheet = makeFixture(1024, (x) => (x < 512 ? BASE : OVERLAY)).toDataURL('image/png');
+  const set = await buildRuleTileSet(sheet, grid, {
+    outline: { enabled: true, thicknessPx: W1, color: '#ff00ff', opacity: 1 },
+    outline2: { enabled: true, thicknessPx: W2, color: '#0000ff', opacity: 1 },
+    outlineSide: 'outer',
+  });
+
+  const buffers: Uint8ClampedArray[] = [];
+  for (const dataUrl of set.tiles) {
+    const img = await loadImageElement(dataUrl);
+    const c = document.createElement('canvas');
+    c.width = T;
+    c.height = T;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('canvas 2d context를 생성할 수 없습니다');
+    ctx.drawImage(img, 0, 0);
+    buffers.push(ctx.getImageData(0, 0, T, T).data);
+  }
+
+  const near = (buf: Uint8ClampedArray, i: number, c: [number, number, number], tol = 10) =>
+    Math.abs(buf[i] - c[0]) <= tol &&
+    Math.abs(buf[i + 1] - c[1]) <= tol &&
+    Math.abs(buf[i + 2] - c[2]) <= tol;
+
+  // 합성기와 **같은** 마스크·시드로 SDF를 다시 계산해 기대 색을 만든다
+  const slots = buildSlotTable(grid);
+  const maskBase = getEdgeStyle(DEFAULT_TILEMAP_EDGE_STYLE).mask;
+
+  let samples = 0;
+  const wrong = { overlay: 0, step1: 0, step2: 0, base: 0 };
+  let seamSamples = 0;
+  let seamLeaks = 0;
+
+  for (let si = 0; si < slots.length; si++) {
+    const buf = buffers[si];
+    const opts = resolveMaskOptions(T, { ...maskBase, warpSeed: slots[si].variant });
+    for (let y = 0; y < T; y++) {
+      for (let x = 0; x < T; x++) {
+        const i = (y * T + x) * 4;
+        const d = warpedTerrainSDFResolved(slots[si].signature, x + 0.5, y + 0.5, T, opts);
+
+        // 1단계 ↔ 2단계 맞닿는 지점: 두 아웃라인 색의 (임의 비율) 혼합이어야 하고 재질이 섞이면 안 된다.
+        // 두 색이 공유하는 채널로 본다 — STEP1·STEP2 모두 G=0·B=255이므로 볼록 결합도 그대로다.
+        if (Math.abs(d + W1) < 0.5) {
+          seamSamples++;
+          if (buf[i + 1] > 12 || buf[i + 2] < 243) seamLeaks++;
+          continue;
+        }
+
+        if (d >= 1) {
+          samples++;
+          if (!near(buf, i, OVERLAY)) wrong.overlay++;
+        } else if (d <= -1 && d >= -W1 + 1) {
+          samples++;
+          if (!near(buf, i, STEP1)) wrong.step1++;
+        } else if (d <= -W1 - 1 && d >= -W1 - W2 + 1) {
+          samples++;
+          if (!near(buf, i, STEP2)) wrong.step2++;
+        } else if (d <= -W1 - W2 - 1) {
+          samples++;
+          if (!near(buf, i, BASE)) wrong.base++;
+        }
+      }
+    }
+  }
+
+  // 반대 방향('inner')도 확인 — 부호만 뒤집혀 오버레이 안쪽에 띠가 생기고 베이스는 그대로여야 한다
+  const innerSet = await buildRuleTileSet(sheet, grid, {
+    outline: { enabled: true, thicknessPx: W1, color: '#ff00ff', opacity: 1 },
+    outlineSide: 'inner',
+  });
+  let innerInside = 0; // 오버레이 안쪽에 칠해진 1단계 색
+  let innerOutside = 0; // 베이스 쪽으로 새어 나간 1단계 색 (0이어야 한다)
+  for (let si = 0; si < slots.length; si++) {
+    const img = await loadImageElement(innerSet.tiles[si]);
+    const c = document.createElement('canvas');
+    c.width = T;
+    c.height = T;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('canvas 2d context를 생성할 수 없습니다');
+    ctx.drawImage(img, 0, 0);
+    const buf = ctx.getImageData(0, 0, T, T).data;
+    const opts = resolveMaskOptions(T, { ...maskBase, warpSeed: slots[si].variant });
+    for (let y = 0; y < T; y++) {
+      for (let x = 0; x < T; x++) {
+        const i = (y * T + x) * 4;
+        if (!near(buf, i, STEP1)) continue;
+        const d = warpedTerrainSDFResolved(slots[si].signature, x + 0.5, y + 0.5, T, opts);
+        if (d >= 1) innerInside++;
+        else if (d <= -1) innerOutside++;
+      }
+    }
+  }
+
+  const problems: string[] = [];
+  if (wrong.overlay > 0) {
+    problems.push(`오버레이 안쪽 ${wrong.overlay}px가 재질이 아니다 — 아웃라인이 경계 안쪽까지 퍼졌다(단방향 아님)`);
+  }
+  if (innerInside === 0) problems.push("방향 'inner'인데 오버레이 안쪽에 띠가 없다");
+  if (innerOutside > 0) {
+    problems.push(`방향 'inner'인데 베이스 쪽으로 ${innerOutside}px 새어 나갔다 — 방향 부호가 적용되지 않았다`);
+  }
+  if (wrong.step1 > 0) problems.push(`1단계 띠 ${wrong.step1}px가 지정 색이 아니다`);
+  if (wrong.step2 > 0) problems.push(`2단계 띠 ${wrong.step2}px가 지정 색이 아니다 — 1단계가 2단계를 감싸고 있을 수 있다`);
+  if (wrong.base > 0) problems.push(`띠 밖 ${wrong.base}px가 베이스 재질이 아니다 — 띠가 지정 폭보다 넓다`);
+  if (seamLeaks > 0) {
+    problems.push(`띠 사이 경계 ${seamLeaks}/${seamSamples}px에 재질이 비친다 — 띠를 순차 합성해 1px 틈이 생겼다`);
+  }
+
+  return {
+    name: `계단식 아웃라인 — 단방향(바깥/안쪽) · ${W1}px + ${W2}px 순서·폭`,
+    passed: problems.length === 0,
+    detail:
+      problems.length > 0
+        ? problems.join('\n')
+        : `표본 ${samples}px 전부 기대 색 일치 (오버레이 / ${W1}px 1단계 / ${W2}px 2단계 / 베이스)\n` +
+          `방향 'inner': 오버레이 안쪽 ${innerInside}px에 띠, 베이스 쪽 유출 0px\n` +
+          `띠 사이 경계 표본 ${seamSamples}px 전부 두 아웃라인 색만의 혼합 — 재질이 비치는 1px 틈 없음\n` +
+          `합성기와 같은 SDF를 다시 계산해 픽셀마다 대조했다`,
+    canvases: [{ label: '계단식 아웃라인 슬롯 일부', canvas: tileStrip(set.tiles.slice(0, 8)) }],
+  };
+}
+
 /** 내보내기 폴더 타임스탬프가 `yymmdd_HHMMSS` 형식인지 (로컬 시각 기준) */
 function checkExportStamp(): CheckResult {
   const problems: string[] = [];
@@ -870,8 +1255,9 @@ function checkExportStamp(): CheckResult {
  *    원리적으로 두 텍스처의 **평균**을 만들므로 아무리 선명한 재질을 넣어도 그 밴드가
  *    탁해졌다. 이제 SDF 부호로 이진 결정하고 1px만 안티에일리어싱하므로, 어느 재질도
  *    아웃라인도 아닌 "중간색" 픽셀은 윤곽선 두께만큼만 존재해야 한다.
- * 2) **아웃라인 연속성**: 아웃라인은 `|SDF| < 반두께`로 그리므로 부호(지형 판정)뿐 아니라
- *    **크기**까지 공유 변에서 일치해야 선이 끊기지 않는다. 실제 맵을 조립해 확인한다.
+ * 2) **아웃라인 연속성**: 아웃라인은 경계선에서 한쪽으로 뻗는 띠이므로 SDF의 부호(지형 판정)뿐
+ *    아니라 **부호 있는 값**이 공유 변에서 일치해야 선이 끊기지 않는다. 실제 맵을 조립해 확인한다.
+ *    (부호는 엣지 계약이, 크기는 이 검사가 지킨다)
  *
  * 두 검사가 같은 합성 결과를 쓰므로, 아웃라인이 선명도를 해치는 상호작용도 함께 잡힌다.
  * (합성 1회가 100만 픽셀이라 검사마다 따로 합성하면 dev 페이지가 분 단위로 느려진다)
@@ -1063,6 +1449,9 @@ export async function runAllTilemapChecks(
     ['경계선 프리셋', () => [checkEdgeStylePresets()]],
     ['경계 품질 (합성 1회)', async () => [await checkBoundaryQuality()]],
     ['맵 배치 접합 (합성 1회)', async () => [await checkComposedJoins()]],
+    ['재질 변형 (합성 1회)', async () => [await checkMaterialVariants()]],
+    ['계단식 아웃라인 (합성 1회)', async () => [await checkSteppedOutline()]],
+    ['투명 지형 (합성 1회)', async () => [await checkTransparentTerrain()]],
   ];
 
   for (const [label, run] of steps) {

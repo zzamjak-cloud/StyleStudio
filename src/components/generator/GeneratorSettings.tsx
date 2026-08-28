@@ -5,7 +5,14 @@ import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { CAMERA_ANGLES } from '../../types/cameraAngle';
 import { CAMERA_LENSES } from '../../types/cameraLens';
-import { TILEMAP_GRID_LAYOUTS, TilemapEdgeStyle, TilemapMode, TilemapOutline } from '../../types/tilemap';
+import {
+  TILEMAP_GRID_LAYOUTS,
+  TILEMAP_RULETILE_GRID,
+  TilemapEdgeStyle,
+  TilemapMode,
+  TilemapOutline,
+  TilemapOutlineSide,
+} from '../../types/tilemap';
 import { EdgeStylePicker } from '../tilemap/EdgeStylePicker';
 import { DocumentManager } from './DocumentManager';
 import {
@@ -38,6 +45,8 @@ interface GeneratorSettingsProps {
   tilemapMode: TilemapMode;
   tilemapEdgeStyle: TilemapEdgeStyle;
   tilemapOutline: TilemapOutline;
+  tilemapOutline2: TilemapOutline;
+  tilemapOutlineSide: TilemapOutlineSide;
   tilemapBaseTerrain: string;
   tilemapOverlayTerrain: string;
   showAdvanced: boolean;
@@ -69,6 +78,8 @@ interface GeneratorSettingsProps {
   onTilemapModeChange: (value: TilemapMode) => void;
   onTilemapEdgeStyleChange: (value: TilemapEdgeStyle) => void;
   onTilemapOutlineChange: (value: TilemapOutline) => void;
+  onTilemapOutline2Change: (value: TilemapOutline) => void;
+  onTilemapOutlineSideChange: (value: TilemapOutlineSide) => void;
   onTilemapBaseTerrainChange: (value: string) => void;
   onTilemapOverlayTerrainChange: (value: string) => void;
   onShowAdvancedChange: (value: boolean) => void;
@@ -100,6 +111,8 @@ function GeneratorSettingsComponent({
   tilemapMode,
   tilemapEdgeStyle,
   tilemapOutline,
+  tilemapOutline2,
+  tilemapOutlineSide,
   tilemapBaseTerrain,
   tilemapOverlayTerrain,
   showAdvanced,
@@ -125,6 +138,8 @@ function GeneratorSettingsComponent({
   onTilemapModeChange,
   onTilemapEdgeStyleChange,
   onTilemapOutlineChange,
+  onTilemapOutline2Change,
+  onTilemapOutlineSideChange,
   onTilemapBaseTerrainChange,
   onTilemapOverlayTerrainChange,
   onShowAdvancedChange,
@@ -244,20 +259,30 @@ function GeneratorSettingsComponent({
               </div>
               {tilemapMode === 'ruletile' && (
                 <div className="mt-3 space-y-2">
-                  <input value={tilemapBaseTerrain} onChange={(e) => onTilemapBaseTerrainChange(e.target.value)} placeholder="베이스 지형 (예: 잔디)" className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
-                  <input value={tilemapOverlayTerrain} onChange={(e) => onTilemapOverlayTerrainChange(e.target.value)} placeholder="오버레이 지형 (예: 흙길)" className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                  <input value={tilemapBaseTerrain} onChange={(e) => onTilemapBaseTerrainChange(e.target.value)} placeholder="베이스 지형 (예: 잔디) · 입력하지 않으면 투명하게 표시됩니다" className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                  <input value={tilemapOverlayTerrain} onChange={(e) => onTilemapOverlayTerrainChange(e.target.value)} placeholder="오버레이 지형 (예: 흙길) · 입력하지 않으면 투명하게 표시됩니다" className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                  {/* 한쪽을 비우면 그 지형이 투명해진다 — 어떤 바닥 타일 위에도 얹을 수 있는 길을 만들 때 쓴다 */}
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    지형을 <span className="font-medium text-gray-600">입력하지 않으면 투명하게 표시됩니다.</span>{' '}
+                    한쪽을 비우고 아웃라인을 켜면 <span className="font-medium text-gray-600">어떤 바닥 타일 위에도 얹을 수 있는 길</span>이 됩니다.
+                    (둘 다 비울 수는 없습니다)
+                  </p>
                   <p className="text-[11px] text-gray-500">
-                    {pixelArtGrid === '8x8'
-                      ? '8x8: 오목 코너·순수 베이스까지 포함한 완전한 Rule Tile 세트'
-                      : '4x4: 코너·엣지·풀 16타일 (오목 코너 없음 — 넓은 영역용)'}
+                    룰타일은 {TILEMAP_RULETILE_GRID}(64타일) 고정입니다 — 오목 코너·1칸 통로·고립 셀까지
+                    포함한 완전한 Rule Tile 세트. 4x4(16타일)는 대각을 구분하지 못해 완전한 룰타일이
+                    되지 않습니다.
                   </p>
 
                   {/* 경계선 모양·아웃라인 — 지형 경계는 코드가 만들므로 재질과 독립적으로 고를 수 있다 */}
                   <EdgeStylePicker
                     value={tilemapEdgeStyle}
                     outline={tilemapOutline}
+                    outline2={tilemapOutline2}
+                    outlineSide={tilemapOutlineSide}
                     onChange={onTilemapEdgeStyleChange}
                     onOutlineChange={onTilemapOutlineChange}
+                    onOutline2Change={onTilemapOutline2Change}
+                    onOutlineSideChange={onTilemapOutlineSideChange}
                   />
                 </div>
               )}
@@ -271,29 +296,35 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
-          {/* 타일맵 전용 그리드 (4x4/8x8만 지원) */}
+          {/* 타일맵 전용 그리드 (4x4/8x8만 지원). 룰타일은 8x8 고정이라 선택지를 노출하지 않는다 */}
           {sessionType === 'TILEMAP' && (
             <div className={getGridSectionStyle(sessionType)}>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
                 그리드
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {TILEMAP_GRID_LAYOUTS.map((grid) => (
-                  <button
-                    key={grid}
-                    onClick={() => onPixelArtGridChange(grid)}
-                    className={`p-2 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(
-                      sessionType,
-                      pixelArtGrid === grid
-                    )}`}
-                  >
-                    <div className="font-bold">{grid}</div>
-                    <div className="text-[10px] opacity-75">
-                      {grid === '4x4' ? '16타일 · 256px' : '64타일 · 128px'}
-                    </div>
-                  </button>
-                ))}
-              </div>
+              {tilemapMode === 'ruletile' ? (
+                <div className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700">
+                  {TILEMAP_RULETILE_GRID} <span className="text-xs text-gray-500">(룰타일 고정 · 64타일 · 128px)</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {TILEMAP_GRID_LAYOUTS.map((grid) => (
+                    <button
+                      key={grid}
+                      onClick={() => onPixelArtGridChange(grid)}
+                      className={`p-2 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(
+                        sessionType,
+                        pixelArtGrid === grid
+                      )}`}
+                    >
+                      <div className="font-bold">{grid}</div>
+                      <div className="text-[10px] opacity-75">
+                        {grid === '4x4' ? '16타일 · 256px' : '64타일 · 128px'}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
               <p className="mt-2 text-[11px] text-gray-500">
                 타일맵은 1:1 비율 · 1K 해상도로 고정됩니다
               </p>
@@ -422,25 +453,16 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
-          {/* 모델 — TILEMAP은 덕테이프 고정이라 선택지를 노출하지 않는다.
-              (나노바나나 계열은 타일맵이 요구하는 레이아웃을 지키지 못한다) */}
+          {/* 모델 — TILEMAP은 덕테이프 고정이라 선택지도 표시도 하지 않는다.
+              (나노바나나 계열은 타일맵이 요구하는 레이아웃을 지키지 못한다)
+              바꿀 수 없는 값을 사이드바에 남겨둘 이유가 없어 제거했고,
+              키가 없을 때의 경고만 남긴다 — 없으면 생성이 그냥 실패한다 */}
           {sessionType === 'TILEMAP' ? (
-            <div>
-              <div className="flex items-center gap-3">
-                <label className="w-20 flex-shrink-0 text-sm font-semibold text-gray-700">모델</label>
-                <div className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700">
-                  덕테이프 <span className="text-xs text-gray-500">(타일맵 고정)</span>
-                </div>
-              </div>
-              <p className="text-[11px] text-gray-500 mt-2">
-                타일맵은 프롬프트가 지정한 시트 레이아웃을 정확히 지켜야 하므로 덕테이프로 고정됩니다.
+            !openaiApiKey.trim() ? (
+              <p className="text-xs text-amber-600">
+                타일맵 생성에는 ChatGPT API Key가 필요합니다. 헤더의 설정 아이콘에서 입력해 주세요.
               </p>
-              {!openaiApiKey.trim() && (
-                <p className="text-xs text-amber-600 mt-1">
-                  타일맵 생성에는 ChatGPT API Key가 필요합니다. 헤더의 설정 아이콘에서 입력해 주세요.
-                </p>
-              )}
-            </div>
+            ) : null
           ) : (
           <div>
             <div className="flex items-center gap-3">
@@ -523,8 +545,10 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
-          {/* 이미지 품질 (덕테이프 전용) */}
-          {imageModel === 'gpt-image-2' && (
+          {/* 이미지 품질 (덕테이프 전용).
+              TILEMAP은 medium 고정이므로 노출하지 않는다 — 재질 스와치는 균질한 필드라
+              high로 올려도 얻는 게 없고 비용·시간만 늘어난다 */}
+          {imageModel === 'gpt-image-2' && sessionType !== 'TILEMAP' && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 품질</label>
               <div className="grid grid-cols-3 gap-2">

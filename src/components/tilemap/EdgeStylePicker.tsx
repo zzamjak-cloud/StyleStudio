@@ -3,23 +3,31 @@ import { ChevronDown } from 'lucide-react';
 import {
   TilemapEdgeStyle,
   TilemapOutline,
+  TilemapOutlineSide,
   TILEMAP_OUTLINE_THICKNESS_RANGE,
+  outlineOpacity,
 } from '../../types/tilemap';
 import { TILEMAP_EDGE_STYLES, getEdgeStyle } from '../../lib/tilemap/edgeStyles';
 import { NEIGHBOR, resolveMaskOptions, warpedTerrainSDFResolved } from '../../lib/tilemap/edgeProfile';
+import {
+  OutlineSample,
+  resolveOutlineBands,
+  sampleOutline,
+} from '../../lib/tilemap/ruleTileComposer';
 
 interface EdgeStylePickerProps {
   value: TilemapEdgeStyle;
   outline: TilemapOutline;
+  outline2: TilemapOutline;
+  outlineSide: TilemapOutlineSide;
   onChange: (value: TilemapEdgeStyle) => void;
   onOutlineChange: (value: TilemapOutline) => void;
+  onOutline2Change: (value: TilemapOutline) => void;
+  onOutlineSideChange: (value: TilemapOutlineSide) => void;
 }
 
 /** 썸네일 한 변 (px). 셀 128px 기준 비율을 유지하려면 실제 타일 크기와 같게 두는 게 정확하다 */
 const THUMB_SIZE = 64;
-
-/** 아웃라인 두께 환산 기준 (ruleTileComposer.OUTLINE_REFERENCE_CELL_PX와 동일) */
-const OUTLINE_REFERENCE_CELL_PX = 128;
 
 /**
  * 썸네일에 쓸 signature.
@@ -31,14 +39,6 @@ const THUMB_SIGNATURE = NEIGHBOR.S | NEIGHBOR.E | NEIGHBOR.SE;
 const THUMB_BASE: [number, number, number] = [92, 138, 78];
 const THUMB_OVERLAY: [number, number, number] = [206, 172, 116];
 
-/** `#RRGGBB` → [r,g,b] */
-function parseHex(hex: string): [number, number, number] {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return [0, 0, 0];
-  const v = parseInt(m[1], 16);
-  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
-}
-
 /**
  * 경계선 모양 썸네일.
  *
@@ -48,10 +48,14 @@ function parseHex(hex: string): [number, number, number] {
 const StyleThumb = memo(function StyleThumb({
   style,
   outline,
+  outline2,
+  outlineSide,
   size = THUMB_SIZE,
 }: {
   style: TilemapEdgeStyle;
   outline: TilemapOutline;
+  outline2: TilemapOutline;
+  outlineSide: TilemapOutlineSide;
   size?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -63,10 +67,9 @@ const StyleThumb = memo(function StyleThumb({
     if (!ctx) return;
 
     const mask = resolveMaskOptions(size, getEdgeStyle(style).mask);
-    const half = outline.enabled
-      ? (outline.thicknessPx * (size / OUTLINE_REFERENCE_CELL_PX)) / 2
-      : 0;
-    const [or, og, ob] = outline.enabled ? parseHex(outline.color) : [0, 0, 0];
+    // 아웃라인 해석·샘플링 모두 합성기의 함수를 그대로 쓴다 — 썸네일이 실제 결과와 어긋나면 안 된다
+    const bands = resolveOutlineBands(size, [outline, outline2], outlineSide);
+    const sample: OutlineSample = { a: 0, r: 0, g: 0, b: 0 };
 
     const img = ctx.createImageData(size, size);
     for (let y = 0; y < size; y++) {
@@ -77,13 +80,12 @@ const StyleThumb = memo(function StyleThumb({
         let r = THUMB_BASE[0] * (1 - w) + THUMB_OVERLAY[0] * w;
         let g = THUMB_BASE[1] * (1 - w) + THUMB_OVERLAY[1] * w;
         let b = THUMB_BASE[2] * (1 - w) + THUMB_OVERLAY[2] * w;
-        if (half > 0) {
-          const cover = Math.max(0, Math.min(1, half + 0.5 - Math.abs(d)));
-          if (cover > 0) {
-            r = r * (1 - cover) + or * cover;
-            g = g * (1 - cover) + og * cover;
-            b = b * (1 - cover) + ob * cover;
-          }
+        sampleOutline(bands, d, sample);
+        if (sample.a > 0) {
+          const keep = 1 - sample.a;
+          r = sample.r + r * keep;
+          g = sample.g + g * keep;
+          b = sample.b + b * keep;
         }
         img.data[i] = r;
         img.data[i + 1] = g;
@@ -92,7 +94,7 @@ const StyleThumb = memo(function StyleThumb({
       }
     }
     ctx.putImageData(img, 0, 0);
-  }, [style, outline, size]);
+  }, [style, outline, outline2, outlineSide, size]);
 
   return (
     <canvas
@@ -105,6 +107,63 @@ const StyleThumb = memo(function StyleThumb({
   );
 });
 
+
+/** 아웃라인 한 벌(두께·색·투명도) 편집 행 */
+const OutlineFields = memo(function OutlineFields({
+  outline,
+  onChange,
+}: {
+  outline: TilemapOutline;
+  onChange: (value: TilemapOutline) => void;
+}) {
+  const { min, max } = TILEMAP_OUTLINE_THICKNESS_RANGE;
+  const opacityPct = Math.round(outlineOpacity(outline) * 100);
+  return (
+    <div className="space-y-2 pl-6">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-gray-600 w-12 shrink-0">폭</span>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={1}
+          value={outline.thicknessPx}
+          onChange={(e) => onChange({ ...outline, thicknessPx: Number(e.target.value) })}
+          className="flex-1 accent-purple-600"
+        />
+        <span className="text-[11px] font-mono text-gray-700 w-10 text-right shrink-0">
+          {outline.thicknessPx}px
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-gray-600 w-12 shrink-0">색</span>
+        <input
+          type="color"
+          value={outline.color}
+          onChange={(e) => onChange({ ...outline, color: e.target.value })}
+          className="h-7 w-12 rounded border border-gray-300 bg-white cursor-pointer"
+        />
+        <span className="text-[11px] font-mono text-gray-600">{outline.color.toUpperCase()}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-gray-600 w-12 shrink-0">투명도</span>
+        <input
+          type="range"
+          min={5}
+          max={100}
+          step={5}
+          value={opacityPct}
+          onChange={(e) => onChange({ ...outline, opacity: Number(e.target.value) / 100 })}
+          className="flex-1 accent-purple-600"
+        />
+        <span className="text-[11px] font-mono text-gray-700 w-10 text-right shrink-0">
+          {opacityPct}%
+        </span>
+      </div>
+    </div>
+  );
+});
+
 /**
  * 경계선 모양 프리셋 선택 드롭다운 + 아웃라인 설정.
  *
@@ -114,8 +173,12 @@ const StyleThumb = memo(function StyleThumb({
 function EdgeStylePickerComponent({
   value,
   outline,
+  outline2,
+  outlineSide,
   onChange,
   onOutlineChange,
+  onOutline2Change,
+  onOutlineSideChange,
 }: EdgeStylePickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -138,8 +201,6 @@ function EdgeStylePickerComponent({
     };
   }, [open]);
 
-  const { min, max } = TILEMAP_OUTLINE_THICKNESS_RANGE;
-
   return (
     <div className="mt-3 space-y-3">
       {/* 경계선 모양 */}
@@ -151,7 +212,7 @@ function EdgeStylePickerComponent({
           aria-expanded={open}
           className="w-full flex items-center gap-2.5 p-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors text-left"
         >
-          <StyleThumb style={value} outline={outline} size={40} />
+          <StyleThumb style={value} outline={outline} outline2={outline2} outlineSide={outlineSide} size={40} />
           <span className="flex-1 min-w-0">
             <span className="block text-sm font-medium text-gray-800 truncate">{selected.label}</span>
             <span className="block text-[11px] text-gray-500 truncate">{selected.hint}</span>
@@ -176,7 +237,7 @@ function EdgeStylePickerComponent({
                       : 'border-transparent hover:bg-gray-50'
                   }`}
                 >
-                  <StyleThumb style={style.id} outline={outline} size={THUMB_SIZE} />
+                  <StyleThumb style={style.id} outline={outline} outline2={outline2} outlineSide={outlineSide} size={THUMB_SIZE} />
                   <span className="text-[11px] font-medium text-gray-800 text-center leading-tight">
                     {style.label}
                   </span>
@@ -190,7 +251,7 @@ function EdgeStylePickerComponent({
         )}
       </div>
 
-      {/* 아웃라인 */}
+      {/* 아웃라인 — 경계선에서 한쪽으로만 뻗는 계단식 띠 (감싸지 않는다) */}
       <div className="p-2.5 bg-gray-50 rounded-lg space-y-2">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -203,37 +264,55 @@ function EdgeStylePickerComponent({
         </label>
 
         {outline.enabled && (
-          <div className="space-y-2 pl-6">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-gray-600 w-10 shrink-0">두께</span>
-              <input
-                type="range"
-                min={min}
-                max={max}
-                step={1}
-                value={outline.thicknessPx}
-                onChange={(e) => onOutlineChange({ ...outline, thicknessPx: Number(e.target.value) })}
-                className="flex-1 accent-purple-600"
-              />
-              <span className="text-[11px] font-mono text-gray-700 w-8 text-right shrink-0">
-                {outline.thicknessPx}px
-              </span>
+          <>
+            {/* 방향 — 경계선을 중심으로 퍼지지 않고 이쪽으로만 뻗는다 */}
+            <div className="pl-6 space-y-1">
+              <span className="block text-[11px] text-gray-600">방향</span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {([
+                  { id: 'outer' as const, label: '바깥쪽', hint: '지형 밖으로' },
+                  { id: 'inner' as const, label: '안쪽', hint: '지형 안으로' },
+                ]).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => onOutlineSideChange(opt.id)}
+                    className={`px-2 py-1.5 rounded-md text-[11px] font-medium border-2 transition-all ${
+                      outlineSide === opt.id
+                        ? 'bg-purple-600 text-white border-purple-700'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
+                    }`}
+                  >
+                    <span className="block font-bold">{opt.label}</span>
+                    <span className="block text-[10px] opacity-75">{opt.hint}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-gray-600 w-10 shrink-0">색</span>
+
+            <span className="block pl-6 text-[11px] font-medium text-gray-600">1단계 띠</span>
+            <OutlineFields outline={outline} onChange={onOutlineChange} />
+
+            <label className="flex items-center gap-2 cursor-pointer pt-1 border-t border-gray-200">
               <input
-                type="color"
-                value={outline.color}
-                onChange={(e) => onOutlineChange({ ...outline, color: e.target.value })}
-                className="h-7 w-12 rounded border border-gray-300 bg-white cursor-pointer"
+                type="checkbox"
+                checked={outline2.enabled}
+                onChange={(e) => onOutline2Change({ ...outline2, enabled: e.target.checked })}
+                className="w-4 h-4 accent-purple-600"
               />
-              <span className="text-[11px] font-mono text-gray-600">{outline.color.toUpperCase()}</span>
-            </div>
+              <span className="text-xs font-semibold text-gray-700">2단계 띠 (이중 아웃라인)</span>
+            </label>
+            {outline2.enabled && (
+              <OutlineFields outline={outline2} onChange={onOutline2Change} />
+            )}
+
             <p className="text-[10px] text-gray-500 leading-relaxed">
-              두께는 셀 128px 기준입니다. 4x4(셀 256px)에서는 자동으로 2배 환산해, 유니티에서 PPU 128로
-              임포트했을 때 같은 두께로 보입니다.
+              아웃라인은 경계선을 가운데 두지 않고 <span className="font-medium text-gray-600">한쪽으로만</span> 뻗습니다.
+              2단계 띠는 1단계가 끝나는 지점에서 이어서 시작하므로, 두 색이 서로를 감싸지 않고
+              계단처럼 단계별로 놓입니다. 폭은 셀 128px 기준이며 4x4(셀 256px)에서는 자동으로 2배 환산해,
+              유니티에서 PPU 128로 임포트했을 때 같은 두께로 보입니다.
             </p>
-          </div>
+          </>
         )}
       </div>
     </div>

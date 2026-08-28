@@ -4,7 +4,8 @@ import { getPixelArtGridInfo } from '../../types/pixelart';
 import { TilemapGridLayout, TilemapMode } from '../../types/tilemap';
 import { getSessionImageFolder } from '../config/paths';
 import { loadImageElement } from './tileSlicer';
-import { BASE_TILE_FILENAME, buildSlotTable, describeSlot } from './autotileSignature';
+import { BASE_TILE_FILENAME, baseTileFilename, buildSlotTable, describeSlot } from './autotileSignature';
+import { dataUrlToBytes as sharedDataUrlToBytes } from '../utils/imageDataUrl';
 import { NEIGHBOR } from './edgeProfile';
 
 /**
@@ -29,16 +30,14 @@ export function formatExportStamp(date: Date = new Date()): string {
 }
 
 /** dataURL → PNG 바이트 배열 */
-function dataUrlToBytes(dataUrl: string): Uint8Array {
-  const base64Data = dataUrl.split(',')[1];
-  if (!base64Data) throw new Error('Data URL 형식이 잘못되었습니다');
-  const binaryString = atob(base64Data);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
+/**
+ * data URL을 **재인코딩 없이** 그대로 바이트로 옮긴다.
+ *
+ * 내보내는 타일은 전부 `canvas.toDataURL('image/png')` 결과이므로, 이 경로가 원본 바이트를
+ * 그대로 파일에 쓰는 한 알파 채널이 온전히 보존된다. 중간에 canvas로 다시 그리거나
+ * JPEG로 변환하면 투명 영역이 흰색으로 굳는다.
+ */
+const dataUrlToBytes = sharedDataUrlToBytes;
 
 /**
  * 교체 반영된 최종 타일들로 1024 시트를 재합성.
@@ -106,7 +105,12 @@ function buildRoleTable(grid: TilemapGridLayout): string {
 }
 
 /** 유니티 임포트 안내 텍스트 */
-function buildImportGuide(grid: TilemapGridLayout, mode: TilemapMode): string {
+function buildImportGuide(
+  grid: TilemapGridLayout,
+  mode: TilemapMode,
+  /** 룰타일: 베이스 지형이 투명이라 바닥 타일이 나가지 않는 경우 */
+  baseTransparent = false
+): string {
   const { cellSize, totalFrames } = getPixelArtGridInfo(grid);
   const baseGuide = `StyleStudio 타일맵 내보내기 — 유니티 임포트 가이드
 =====================================================
@@ -132,8 +136,14 @@ function buildImportGuide(grid: TilemapGridLayout, mode: TilemapMode): string {
 
 개별 PNG(tiles/) 사용 시:
 - 폴더째 임포트 후 전체 선택 → 위와 동일한 Sprite 설정 (4단계까지)
-- ${BASE_TILE_FILENAME} : 순수 베이스 지형 타일. 그리드 슬롯 밖의 별도 타일이며
-  Rule Tile 규칙에는 넣지 않고, 바닥 전체를 칠하는 일반 Tile로 팔레트에 등록합니다.
+${baseTransparent
+  ? `- 베이스 지형이 **투명**이라 바닥 타일(${BASE_TILE_FILENAME})은 나가지 않습니다.
+  이 Rule Tile은 배경이 비어 있으므로, 원하는 바닥 타일맵 **위에 레이어를 하나 더 얹어**
+  그리면 됩니다 (Tilemap Renderer의 Order in Layer를 바닥보다 크게).`
+  : `- ${BASE_TILE_FILENAME} / tile_base_1.png ~ : 순수 베이스 지형 타일과 그 변형들.
+  그리드 슬롯 밖의 별도 타일이며 Rule Tile 규칙에는 넣지 않고, 바닥 전체를 칠하는
+  일반 Tile로 팔레트에 등록합니다. 변형끼리는 서로 이어지므로, Random Tile
+  (2D Tilemap Extras)로 묶어 두면 넓은 바닥에서도 같은 무늬가 반복되지 않습니다.`}
 
 이 세트는 ${isBlob
   ? '대각까지 구분하는 blob 47종 + 자주 쓰이는 조합의 변형 17종'
@@ -159,7 +169,11 @@ ${buildRoleTable(grid)}
 5. "변형" 이 붙은 슬롯들은 같은 규칙의 다른 그림입니다. 해당 Rule 하나에 묶어
    Output: Random 으로 지정하고 스프라이트를 모두 넣으면 반복 무늬가 완화됩니다.
 6. Tile Palette에는 개별 타일이 아닌 이 Rule Tile 애셋 1개만 등록한 뒤 칠합니다.
-   바닥은 ${BASE_TILE_FILENAME}로 먼저 채우고, 그 위에 Rule Tile로 지형을 그리면 됩니다.
+${baseTransparent
+  ? `   베이스가 투명이므로 바닥은 프로젝트의 다른 타일로 채우고, 그 위 레이어에 이 Rule Tile로
+   지형을 그리면 됩니다.`
+  : `   바닥은 베이스 타일(${BASE_TILE_FILENAME} 및 변형)로 먼저 채우고, 그 위에 Rule Tile로
+   지형을 그리면 됩니다.`}
 
 이 타일들은 그림을 잘라 만든 것이 아니라 공통 재질에서 절차적으로 합성된 것이라,
 어떤 순서로 배치해도 경계가 어긋나지 않습니다.
@@ -184,10 +198,10 @@ export async function exportTilemapForUnity(params: {
   grid: TilemapGridLayout;
   tiles: string[];
   mode: TilemapMode;
-  /** 룰타일: 순수 베이스 지형 타일 (그리드 슬롯 밖의 별도 타일) */
-  baseTile?: string | null;
+  /** 룰타일: 순수 베이스 지형 타일 변형 목록 (그리드 슬롯 밖의 별도 타일) */
+  baseTiles?: string[] | null;
 }): Promise<string> {
-  const { sessionName, grid, tiles, mode, baseTile } = params;
+  const { sessionName, grid, tiles, mode, baseTiles } = params;
   const { totalFrames } = getPixelArtGridInfo(grid);
   if (tiles.length !== totalFrames) {
     throw new Error(`타일 수가 그리드와 맞지 않습니다 (${tiles.length}/${totalFrames})`);
@@ -209,13 +223,18 @@ export async function exportTilemapForUnity(params: {
     await writeFile(await join(tilesFolder, name), dataUrlToBytes(tiles[i]));
   }
 
-  // 3) 룰타일 전용: 순수 베이스 지형 타일 (그리드 밖의 별도 타일)
-  if (mode === 'ruletile' && baseTile) {
-    await writeFile(await join(tilesFolder, BASE_TILE_FILENAME), dataUrlToBytes(baseTile));
+  // 3) 룰타일 전용: 순수 베이스 지형 타일 변형들 (그리드 밖의 별도 타일)
+  if (mode === 'ruletile' && baseTiles) {
+    for (let i = 0; i < baseTiles.length; i++) {
+      await writeFile(await join(tilesFolder, baseTileFilename(i)), dataUrlToBytes(baseTiles[i]));
+    }
   }
 
-  // 4) 임포트 가이드
-  await writeTextFile(await join(exportFolder, 'IMPORT_GUIDE.txt'), buildImportGuide(grid, mode));
+  // 4) 임포트 가이드 — 룰타일인데 바닥 타일이 없으면 투명 베이스다
+  await writeTextFile(
+    await join(exportFolder, 'IMPORT_GUIDE.txt'),
+    buildImportGuide(grid, mode, mode === 'ruletile' && (baseTiles?.length ?? 0) === 0)
+  );
 
   return exportFolder;
 }
