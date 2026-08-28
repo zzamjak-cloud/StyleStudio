@@ -149,7 +149,7 @@ function TilemapResultViewComponent({
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="relative flex-1 flex flex-col overflow-hidden">
       {/* 상단 토글 바 */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white">
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
@@ -198,11 +198,21 @@ function TilemapResultViewComponent({
         </div>
       </div>
 
-      {/* 경계 설정 재합성 중 표시 — 생성 API 호출이 아니라 로컬 재합성이다 */}
+      {/*
+        경계 설정 재합성 중 표시 — 생성 API 호출이 아니라 로컬 재합성이다.
+
+        **레이아웃에 영향을 주지 않는 떠 있는 토스트여야 한다.** 인라인 배너로 두면
+        경계선 프리셋·아웃라인을 만질 때마다 배너가 생겼다 사라지며 아래 보기 영역이
+        그만큼 밀려 화면이 위아래로 출렁인다. 아웃라인을 조금씩 바꿔가며 결과를 눈으로
+        비교하는 것이 이 기능의 사용 흐름인데, 그때마다 화면이 흔들리면 비교가 불가능하다.
+        (`absolute` + `pointer-events-none` 이라 스크롤 위치도 클릭도 방해하지 않는다)
+      */}
       {isRecomposing && (
-        <div className="px-6 py-2 border-b border-purple-200 bg-purple-50 text-[12px] text-purple-800 flex items-center gap-2">
-          <span className="inline-block w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full animate-spin shrink-0" />
-          <span>경계 설정을 적용해 타일을 다시 합성하는 중… (재생성 아님)</span>
+        <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 z-20">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-600/95 text-white text-[12px] shadow-lg">
+            <span className="inline-block w-3 h-3 border-2 border-white/80 border-t-transparent rounded-full animate-spin shrink-0" />
+            <span className="whitespace-nowrap">경계 설정 적용 중… (재생성 아님)</span>
+          </div>
         </div>
       )}
 
