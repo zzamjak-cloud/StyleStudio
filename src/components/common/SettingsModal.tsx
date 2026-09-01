@@ -8,20 +8,17 @@ import { useAuth } from '../../hooks/useAuth';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  currentGeminiApiKey: string;
-  currentOpenAIApiKey: string;
-  onSave: (geminiApiKey: string, openaiApiKey: string) => void;
+  currentApiKey: string;
+  onSave: (apiKey: string) => void;
 }
 
 export const SettingsModal = memo(function SettingsModal({
   isOpen,
   onClose,
-  currentGeminiApiKey,
-  currentOpenAIApiKey,
+  currentApiKey,
   onSave,
 }: SettingsModalProps) {
-  const [geminiApiKey, setGeminiApiKey] = useState(currentGeminiApiKey);
-  const [openaiApiKey, setOpenAIApiKey] = useState(currentOpenAIApiKey);
+  const [apiKey, setApiKey] = useState(currentApiKey);
   const [saveNotification, setSaveNotification] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [version, setVersion] = useState('');
@@ -29,9 +26,8 @@ export const SettingsModal = memo(function SettingsModal({
   const { user, logout } = useAuth();
 
   useEffect(() => {
-    setGeminiApiKey(currentGeminiApiKey);
-    setOpenAIApiKey(currentOpenAIApiKey);
-  }, [currentGeminiApiKey, currentOpenAIApiKey]);
+    setApiKey(currentApiKey);
+  }, [currentApiKey]);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => setVersion('0.0.0'));
@@ -54,8 +50,8 @@ export const SettingsModal = memo(function SettingsModal({
   };
 
   const handleSave = () => {
-    if (geminiApiKey.trim()) {
-      onSave(geminiApiKey.trim(), openaiApiKey.trim());
+    if (apiKey.trim()) {
+      onSave(apiKey.trim());
       setSaveNotification('설정이 저장되었습니다');
       setTimeout(() => {
         setSaveNotification(null);
@@ -112,50 +108,25 @@ export const SettingsModal = memo(function SettingsModal({
           {/* API Key 설정 */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Gemini API Key
+              OpenRouter API Key
             </label>
             <input
               type="password"
-              value={geminiApiKey}
-              onChange={(e) => setGeminiApiKey(e.target.value)}
-              placeholder="AIza..."
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-or-..."
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
             <p className="text-xs text-gray-500 mt-2">
               <a
-                href="https://aistudio.google.com/app/apikey"
+                href="https://openrouter.ai/settings/keys"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-purple-600 hover:underline"
               >
-                Google AI Studio
+                OpenRouter
               </a>
-              에서 API 키를 발급받을 수 있습니다.
-            </p>
-          </div>
-
-          {/* OpenAI API Key 설정 */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              ChatGPT API Key
-            </label>
-            <input
-              type="password"
-              value={openaiApiKey}
-              onChange={(e) => setOpenAIApiKey(e.target.value)}
-              placeholder="sk-..."
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              <a
-                href="https://platform.openai.com/api-keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-purple-600 hover:underline"
-              >
-                OpenAI Developers
-              </a>
-              에서 API 키를 발급받을 수 있습니다.
+              에서 발급한 통합 키 하나로 Gemini/OpenAI 모델을 모두 사용합니다.
             </p>
           </div>
 

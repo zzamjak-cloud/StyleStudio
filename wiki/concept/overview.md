@@ -21,7 +21,7 @@ ConceptSessionData = {
   referenceGames?: string[],     // 레퍼런스 게임
   artStyles: string[],           // 아트 스타일 (로우폴리, 카툰 ...)
   generationSettings: {
-    model, ratio: '1:1'|'16:9'|'9:16'|'4:3'|'3:4'|'1:3'|'3:1',
+    model, ratio: '1:1'|'16:9'|'9:16'|'4:3'|'3:4',
     size: '1k'|'2k'|'3k', quality?, grid: '1x1'|'2x2'|'3x3'|'4x4'
   },
   history: ConceptGenerationEntry[]
@@ -51,7 +51,7 @@ ART_STYLE_PRESETS = 로우 폴리 / 카툰 렌더 / 셀 셰이딩 / 소프트 3D
 
 `ConceptRightPanel.tsx`:
 - 프롬프트 textarea 도 uncontrolled(ref). 히스토리 선택 시 `promptValue` 를 ref 에 직접 반영(:62).
-- 모델 옵션: `나노바나나 프로`(gemini-3-pro-image-preview) / `나노바나나 2`(gemini-3.1-flash-image-preview) / `덕테이프`(gpt-image-2, OpenAI Key 있을 때만).
+- 모델 옵션: `나노바나나 프로`/`나노바나나 2`/`나노바나나 2 라이트`/`덕테이프` — OpenRouter 통합 키로 전부 사용 가능(`getAvailableImageModels()`).
 - 비율·크기·그리드는 `getImageModelDefinition(settings.model)` 의 지원 목록 기준으로 활성화. 크기 2K/3K 클릭 시 **비용 경고 팝업**(2K≈4배, 3K≈9배) 확인 후 적용.
 
 ## 세션 저장 정책
@@ -60,7 +60,7 @@ ART_STYLE_PRESETS = 로우 폴리 / 카툰 렌더 / 셀 셰이딩 / 소프트 3D
 - 상태는 로컬 `conceptData`. `saveToSession`(:83)은 이미지 생성·히스토리 삭제 시점에만 호출.
 - **언마운트 시 경량 저장**(:92): `onSessionSaveOnly`(있으면) 로 `startTransition`/`setCurrentSession` 을 우회해 딜레이 없이 저장.
 - 히스토리 삭제 시 IndexedDB orphan 정리: `deleteImage("{session.id}-concept-{id}")`.
-- 모델 변경으로 지원 안 하는 비율/크기가 되면 effect 로 첫 지원값으로 자동 보정(:116). OpenAI Key 없이 `gpt-image-2` 면 Gemini 로 폴백(:107).
+- 모델 변경으로 지원 안 하는 비율/크기가 되면 effect 로 첫 지원값으로 자동 보정. 레거시 모델 ID 는 `normalizeImageModelId` effect 로 현재 슬러그 정규화.
 
 ## 히스토리
 
@@ -78,6 +78,6 @@ ART_STYLE_PRESETS = 로우 폴리 / 카툰 렌더 / 셀 셰이딩 / 소프트 3D
 | 세션 전환 후 입력값 사라짐 | 매 입력 저장 안 함 → 언마운트 경량 저장/명시 저장 경로 확인 |
 | 히스토리 복원 시 모델이 기본값으로 | `entry.settings.model` 이 화이트리스트 밖 → pro 로 fallback(의도됨) |
 | 커스텀 장르/스타일이 세션마다 사라짐 | localStorage 저장 실패 → `CUSTOM_GENRES_KEY`/`CUSTOM_STYLES_KEY` |
-| OpenAI Key 없이 덕테이프 생성 실패 | 모델 폴백 미동작 → `ConceptPanel.tsx:107` effect |
+| 구세션 모델 ID 로 생성 실패 | 레거시 ID 정규화 effect(`normalizeImageModelId`) 미동작 |
 | 히스토리 삭제 후 저장 용량 안 줄어듦 | IndexedDB orphan 미정리 → `deleteImage("{id}-concept-{entryId}")` |
 | 지원 안 하는 비율 선택 상태 유지 | 모델 변경 후 자동 보정 effect 누락(`ConceptPanel.tsx:116`) |

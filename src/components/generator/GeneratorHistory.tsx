@@ -81,10 +81,6 @@ function GeneratorHistoryComponent({
                 tooltipParts.push(`그리드: ${entry.settings.pixelArtGrid}`);
               }
 
-              if (entry.settings.seed !== undefined) {
-                tooltipParts.push(`Seed: ${entry.settings.seed}`);
-              }
-
               if (entry.referenceDocumentIds && entry.referenceDocumentIds.length > 0) {
                 tooltipParts.push(`📄 참조 문서: ${entry.referenceDocumentIds.length}개`);
               }

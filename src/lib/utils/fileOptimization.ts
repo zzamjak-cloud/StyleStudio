@@ -2,6 +2,7 @@
 
 import { logger } from '../logger';
 import { GEMINI_FLASH_TEXT_MODEL } from '../../types/constants';
+import { chatComplete } from '../api/openrouter';
 
 /**
  * 파일 크기 제한 상수 (토큰 기준으로 대략 계산)
@@ -84,38 +85,19 @@ ${contentToSummarize}
 
     logger.debug('📄 파일 요약 생성 시작:', fileName);
 
-    // Gemini 3.7 Flash API 사용
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
-
-    const requestBody = {
-      contents: [
-        {
-          parts: [
-            {
-              text: prompt,
-            },
-          ],
-        },
-      ],
-      // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error('❌ 요약 API 오류:', response.status, errorText);
+    // OpenRouter chat completions (Gemini Flash) 사용
+    let summary = '';
+    try {
+      summary = (
+        await chatComplete(apiKey, {
+          model: GEMINI_FLASH_TEXT_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+        })
+      ).trim();
+    } catch (apiError) {
+      logger.error('❌ 요약 API 오류:', apiError);
       return generateSimpleSummary(content);
     }
-
-    const result = await response.json();
-    const summary = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 
     if (!summary) {
       logger.warn('⚠️ 요약 생성 실패, 간단 요약 사용');

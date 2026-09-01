@@ -5,10 +5,10 @@ import { getPixelArtGridInfo } from '../types/pixelart';
 import { ReferenceDocument } from '../types/referenceDocument';
 import { logger } from '../lib/logger';
 import { loadImage } from '../lib/imageStorage';
-import { CHAT_SIGNATURE_KEY_MARKER } from '../lib/storage';
 import { GEMINI_FLASH_TEXT_MODEL } from '../types/constants';
-import { isOpenAIModel } from './api/imageModels';
-import { useOpenAIImageGenerator } from './api/useOpenAIImageGenerator';
+import { chatComplete, generateImageViaOpenRouter } from '../lib/api/openrouter';
+import { getImageModelDefinition, normalizeImageModelId } from './api/imageModels';
+import { convertBase64ToJpeg, formatImageApiError } from './api/useImageGenerator';
 
 // 사용자 메시지 앞에 그리드 힌트를 prefix로 결합해 모델이 반영하도록 유도
 function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): string {
@@ -29,11 +29,15 @@ function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): stri
 const MAX_RETRIES = 2;
 // 재시도 대기 시간 (ms)
 const RETRY_DELAY = 5000;
+// 프롬프트에 결합할 최근 대화 턴 수 (Image API는 멀티턴 대화가 없어 텍스트로 맥락 전달)
+const MAX_CONTEXT_TURNS = 6;
+// 참조 이미지 상한 (OpenRouter input_references 한도)
+const MAX_REFERENCES = 14;
 
 interface GenerationResult {
   content: string;
   images: string[];
-  imageSignatures: string[]; // AI 생성 이미지의 thought_signature (images와 1:1 대응)
+  imageSignatures: string[]; // 레거시 필드 — OpenRouter 전환 후 항상 빈 배열 (저장 포맷 호환용)
   isGeneratedImage: boolean;
 }
 
@@ -46,151 +50,71 @@ interface UseChatImageGenerationReturn {
 
 export function useChatImageGeneration(
   session: Session,
-  geminiApiKey: string,
-  openaiApiKey: string
+  apiKey: string
 ): UseChatImageGenerationReturn {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
-  const { generateImage: generateOpenAIImage } = useOpenAIImageGenerator();
   const chatData = session.chatData;
 
-  // multi-turn contents 배열 구성 (히스토리 이미지·signature가 IndexedDB 키일 수 있음 → API 직전에 복원)
-  const buildContents = useCallback(
-    async (additionalUserText?: string, additionalUserImages?: string[]) => {
-      const contents: Array<{ role: string; parts: Array<Record<string, unknown>> }> = [];
+  // 요약 + 최근 대화 텍스트를 프롬프트 컨텍스트로 결합
+  // (기존 Gemini 멀티턴 contents는 OpenRouter Image API가 지원하지 않아 텍스트 요약으로 대체)
+  const buildConversationContext = useCallback((): string => {
+    const sections: string[] = [];
 
-      // 요약이 있으면 첫 번째 컨텍스트로 추가
-      if (chatData?.summary) {
-        contents.push({
-          role: 'user',
-          parts: [{ text: `[이전 대화 요약]\n${chatData.summary}\n\n위 내용은 이전 대화의 요약입니다. 이 맥락을 기반으로 대화를 이어가주세요.` }],
-        });
-        contents.push({
-          role: 'model',
-          parts: [{ text: '네, 이전 대화 내용을 이해했습니다. 이어서 도와드리겠습니다.' }],
-        });
-      }
+    if (chatData?.summary) {
+      sections.push(`[이전 대화 요약]\n${chatData.summary}`);
+    }
 
-      // 요약 이후의 메시지들만 포함
-      const startIndex = (chatData?.summarizedUpTo ?? -1) + 1;
-      const messages = chatData?.messages?.slice(startIndex) ?? [];
+    const startIndex = (chatData?.summarizedUpTo ?? -1) + 1;
+    const messages = (chatData?.messages?.slice(startIndex) ?? []).filter(
+      (m) => m.role !== 'summary' && m.content?.trim()
+    );
+    const recent = messages.slice(-MAX_CONTEXT_TURNS);
+    if (recent.length > 0) {
+      const lines = recent.map((m) => {
+        const role = m.role === 'user' ? '사용자' : 'AI';
+        const imageNote = m.images?.length ? ` [이미지 ${m.images.length}개]` : '';
+        return `${role}: ${m.content}${imageNote}`;
+      });
+      sections.push(`[최근 대화]\n${lines.join('\n')}`);
+    }
 
-      for (const msg of messages) {
-        if (msg.role === 'summary') continue;
-        const resolvedImages = msg.images && msg.images.length > 0
-          ? await Promise.all(
-              msg.images.map(async (img) => {
-                if (img.startsWith('data:')) return img;
-                return (await loadImage(img)) ?? img;
-              })
-            )
-          : [];
+    return sections.length > 0
+      ? `${sections.join('\n\n')}\n\n위 대화 맥락을 반영하여 아래 요청을 수행하세요.\n\n---\n\n`
+      : '';
+  }, [chatData]);
 
-        // signature 없는 생성 이미지(OpenAI/어노테이션 결과)는 model 역할로 inline_data 전송 시
-        // Gemini가 400을 반환하므로, "사용자가 첨부한 참고 이미지"처럼 user 보조 턴으로 분리해서 보냄
-        const hasUsableSignatures = !!msg.imageSignatures && msg.imageSignatures.some((s) => !!s);
-        const isOrphanGeneratedImage = msg.isGeneratedImage && !hasUsableSignatures && resolvedImages.length > 0;
+  // 직전 생성 이미지를 참조로 복원 (이어지는 편집이 직전 결과를 기준으로 하도록)
+  const resolveLatestGeneratedImage = useCallback(async (): Promise<string | null> => {
+    const startIndex = (chatData?.summarizedUpTo ?? -1) + 1;
+    const messages = chatData?.messages?.slice(startIndex) ?? [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === 'summary' || !msg.isGeneratedImage) continue;
+      const img = msg.images?.[msg.images.length - 1];
+      if (!img) continue;
+      if (img.startsWith('data:')) return img;
+      return (await loadImage(img)) ?? null;
+    }
+    return null;
+  }, [chatData]);
 
-        if (isOrphanGeneratedImage) {
-          // 1) user 역할로 직전 생성 이미지를 컨텍스트 첨부
-          const userParts: Array<Record<string, unknown>> = [
-            { text: '[직전 채팅에서 생성된 이미지입니다. 이어지는 작업의 기준 이미지로 참고하세요.]' },
-          ];
-          for (const img of resolvedImages) {
-            const base64Data = img.includes(',') ? img.split(',')[1] : img;
-            const mimeMatch = img.match(/data:([^;]+);base64/);
-            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-            userParts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
-          }
-          contents.push({ role: 'user', parts: userParts });
-          // 2) model 역할로 짧은 텍스트 응답을 끼워 turn 페어 유지 (Gemini는 user→model 교차 권장)
-          const ack = msg.content?.trim() || '확인했습니다. 이어서 도와드리겠습니다.';
-          contents.push({ role: 'model', parts: [{ text: ack }] });
-          continue;
-        }
-
-        const parts: Array<Record<string, unknown>> = [];
-        if (msg.content) {
-          parts.push({ text: msg.content });
-        }
-        if (resolvedImages.length > 0) {
-          if (msg.isGeneratedImage) {
-            // signature가 있는 Gemini 생성 이미지: thought_signature와 함께 model 역할로 전송
-            const resolvedSigs = await Promise.all(
-              (msg.imageSignatures ?? []).map(async (sig) => {
-                if (!sig) return sig;
-                if (sig.includes(CHAT_SIGNATURE_KEY_MARKER)) {
-                  return (await loadImage(sig)) ?? sig;
-                }
-                return sig;
-              })
-            );
-            for (let i = 0; i < resolvedImages.length; i++) {
-              const img = resolvedImages[i];
-              const signature = resolvedSigs[i];
-              const base64Data = img.includes(',') ? img.split(',')[1] : img;
-              const mimeMatch = img.match(/data:([^;]+);base64/);
-              const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-              const part: Record<string, unknown> = {
-                inline_data: { mime_type: mimeType, data: base64Data },
-              };
-              if (signature) {
-                part.thought_signature = signature;
-              }
-              parts.push(part);
-            }
-          } else {
-            for (const img of resolvedImages) {
-              const base64Data = img.includes(',') ? img.split(',')[1] : img;
-              const mimeMatch = img.match(/data:([^;]+);base64/);
-              const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-              parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
-            }
-          }
-        }
-        if (parts.length > 0) {
-          contents.push({ role: msg.role === 'user' ? 'user' : 'model', parts });
-        }
-      }
-
-      // 현재 사용자 메시지 추가
-      if (additionalUserText || (additionalUserImages && additionalUserImages.length > 0)) {
-        const userParts: Array<Record<string, unknown>> = [];
-        if (additionalUserText) {
-          userParts.push({ text: additionalUserText });
-        }
-        if (additionalUserImages) {
-          for (const img of additionalUserImages) {
-            const base64Data = img.includes(',') ? img.split(',')[1] : img;
-            const mimeMatch = img.match(/data:([^;]+);base64/);
-            const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-            userParts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
-          }
-        }
-        contents.push({ role: 'user', parts: userParts });
-      }
-
-      return contents;
-    },
-    [chatData]
-  );
-
-  // 채팅 기반 이미지/텍스트 생성
+  // 채팅 기반 이미지 생성 (OpenRouter Image API)
   const generateFromChat = useCallback(async (
     userMessage: string,
     userImages?: string[],
     userDocuments?: ReferenceDocument[]
   ): Promise<GenerationResult> => {
-    console.log('🎨 generateFromChat 호출됨');
     setIsGenerating(true);
     setGenerationStatus('응답 생성 중...');
 
     const settings = chatData?.settings;
-    const imageModel = settings?.imageModel ?? 'gemini-3-pro-image-preview';
-    const useOpenAI = isOpenAIModel(imageModel);
-    const selectedApiKey = useOpenAI ? openaiApiKey : geminiApiKey;
-    if (!selectedApiKey) {
-      throw new Error(useOpenAI ? 'ChatGPT API 키가 설정되지 않았습니다.' : 'Gemini API 키가 설정되지 않았습니다.');
+    const imageModel = normalizeImageModelId(settings?.imageModel);
+    const modelDef = getImageModelDefinition(imageModel);
+    if (!apiKey) {
+      setIsGenerating(false);
+      setGenerationStatus('');
+      throw new Error('OpenRouter API 키가 설정되지 않았습니다.');
     }
     const aspectRatio = settings?.aspectRatio ?? '1:1';
     const imageSize = settings?.imageSize ?? '1K';
@@ -224,131 +148,94 @@ export function useChatImageGeneration(
       ? `${documentContext}\n\n---\n\n${basePrompt}`
       : basePrompt;
 
-    const effectiveUserMessage = prefix ? prefix + withDocContext : withDocContext;
+    const conversationContext = buildConversationContext();
+    const effectiveUserMessage =
+      conversationContext + (prefix ? prefix + withDocContext : withDocContext);
 
-    // 사용자 이미지 + 문서 추출 이미지 합산하여 Gemini에 참조로 전달
-    const allImages = [...(userImages ?? []), ...documentImages];
-    const contents = await buildContents(effectiveUserMessage, allImages.length > 0 ? allImages : undefined);
-
-    if (useOpenAI) {
-      const openAIResult = await new Promise<GenerationResult>((resolve, reject) => {
-        void generateOpenAIImage(
-          selectedApiKey,
-          {
-            prompt: effectiveUserMessage,
-            aspectRatio,
-            imageSize,
-            quality: imageQuality,
-            referenceImages: allImages.length > 0 ? allImages : undefined,
-          },
-          {
-            onProgress: (message) => setGenerationStatus(message),
-            onComplete: (imageBase64) =>
-              resolve({
-                content: '',
-                images: [`data:image/jpeg;base64,${imageBase64}`],
-                imageSignatures: [],
-                isGeneratedImage: true,
-              }),
-            onError: reject,
-          }
-        );
-      });
-      setIsGenerating(false);
-      setGenerationStatus('');
-      return openAIResult;
-    }
-
-    const requestBody = {
-      contents,
-      generationConfig: {
-        responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: { aspectRatio, imageSize },
-      },
-    };
+    // 참조 이미지: 직전 생성 이미지(기준 이미지) + 사용자 첨부 + 문서 추출 이미지
+    const latestGenerated = await resolveLatestGeneratedImage();
+    const allImages = [
+      ...(latestGenerated ? [latestGenerated] : []),
+      ...(userImages ?? []),
+      ...documentImages,
+    ].slice(0, MAX_REFERENCES);
 
     logger.debug('🎨 Chat 이미지 생성 요청:', {
       imageModel,
       aspectRatio,
       imageSize,
+      referenceCount: allImages.length,
       pixelArtGrid: settings?.pixelArtGrid,
       prefixApplied: !!prefix,
     });
 
     let lastError: Error | null = null;
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        if (attempt > 0) {
-          setGenerationStatus(`재시도 중... (${attempt}/${MAX_RETRIES})`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-        }
-
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent?key=${selectedApiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
+    try {
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          if (attempt > 0) {
+            setGenerationStatus(`재시도 중... (${attempt}/${MAX_RETRIES})`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
           }
-        );
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          const errorMessage = (errorData as Record<string, Record<string, string>>)?.error?.message || `HTTP ${response.status}`;
-          if (response.status >= 500 && attempt < MAX_RETRIES) {
-            logger.warn(`⚠️ 서버 에러 (${response.status}), 재시도 예정...`);
-            lastError = new Error(errorMessage);
+          setGenerationStatus(`${modelDef.label} 모델이 이미지를 생성하고 있습니다...`);
+
+          const generated = await generateImageViaOpenRouter(apiKey, {
+            model: imageModel,
+            prompt: effectiveUserMessage,
+            aspectRatio,
+            resolution: modelDef.provider === 'gemini' ? imageSize : undefined,
+            quality: modelDef.provider === 'openai' ? imageQuality : undefined,
+            inputReferences: allImages.length > 0 ? allImages : undefined,
+          });
+
+          // 내부 표준 JPEG로 통일 (자동 저장/썸네일 파이프라인 호환)
+          const jpegBase64 = await convertBase64ToJpeg(generated.base64, generated.mediaType);
+
+          setIsGenerating(false);
+          setGenerationStatus('');
+          return {
+            content: '',
+            images: [`data:image/jpeg;base64,${jpegBase64}`],
+            imageSignatures: [],
+            isGeneratedImage: true,
+          };
+        } catch (error) {
+          const message = (error as Error).message ?? String(error);
+          const statusMatch = message.match(/\((\d{3})\)/);
+          const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+
+          if (status >= 500 && attempt < MAX_RETRIES) {
+            logger.warn(`⚠️ 서버 에러 (${status}), 재시도 예정...`);
+            lastError = error as Error;
             continue;
           }
-          throw new Error(errorMessage);
-        }
 
-        const data = await response.json();
-        const candidate = (data as Record<string, Array<Record<string, Record<string, Array<Record<string, unknown>>>>>>)?.candidates?.[0];
-        if (!candidate?.content?.parts) {
-          throw new Error('응답에서 콘텐츠를 찾을 수 없습니다.');
-        }
-
-        let textContent = '';
-        const generatedImages: string[] = [];
-        const imageSignatures: string[] = [];
-
-        for (const part of candidate.content.parts) {
-          if (part.text) {
-            textContent += part.text as string;
+          // 사용자 친화적 메시지로 변환
+          if (status > 0 && status < 500) {
+            throw new Error(formatImageApiError(status, message.replace(/^.*?\):\s*/, '')));
           }
-          if (part.inlineData) {
-            const inlineData = part.inlineData as Record<string, string>;
-            // Gemini API는 JPEG를 반환하므로 MIME 타입을 강제로 설정
-            // API가 잘못된 mimeType을 반환하는 경우를 대비
-            const mimeType = 'image/jpeg';
-            generatedImages.push(`data:${mimeType};base64,${inlineData.data}`);
-            // thought_signature 보존 (다음 요청 시 이미지 재전송에 필요)
-            imageSignatures.push((part.thoughtSignature as string) ?? '');
-          }
+          throw error;
         }
-
-        setIsGenerating(false);
-        setGenerationStatus('');
-        return { content: textContent, images: generatedImages, imageSignatures, isGeneratedImage: generatedImages.length > 0 };
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        if (attempt >= MAX_RETRIES) break;
       }
+    } catch (error) {
+      setIsGenerating(false);
+      setGenerationStatus('');
+      throw error;
     }
 
     setIsGenerating(false);
     setGenerationStatus('');
     throw lastError || new Error('이미지 생성에 실패했습니다.');
-  }, [geminiApiKey, openaiApiKey, chatData, buildContents, generateOpenAIImage]);
+  }, [apiKey, chatData, buildConversationContext, resolveLatestGeneratedImage]);
 
-  // 메시지 요약 (Gemini 3.7 Flash 사용)
+  // 메시지 요약 (Gemini Flash · chat completions)
   const summarizeMessages = useCallback(async (
     messagesToSummarize: ChatMessage[],
     existingSummary?: string
   ): Promise<string> => {
-    if (!geminiApiKey) throw new Error('Gemini API 키가 설정되지 않았습니다.');
+    if (!apiKey) throw new Error('OpenRouter API 키가 설정되지 않았습니다.');
 
     const conversationText = messagesToSummarize
       .filter(m => m.role !== 'summary')
@@ -364,24 +251,10 @@ export function useChatImageGeneration(
       : `다음 대화를 한국어로 핵심 내용 3-5문장으로 요약해주세요. 이미지 생성 요청과 결과도 포함해주세요.\n\n${conversationText}`;
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseModalities: ['TEXT'] },
-          }),
-        }
-      );
-
-      if (!response.ok) throw new Error(`요약 실패: HTTP ${response.status}`);
-
-      const data = await response.json();
-      const text = (data as Record<string, Array<Record<string, Record<string, Array<Record<string, string>>>>>>)
-        ?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error('요약 응답이 비어있습니다.');
+      const text = await chatComplete(apiKey, {
+        model: GEMINI_FLASH_TEXT_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+      });
 
       logger.info('📝 대화 요약 생성 완료');
       return text;
@@ -389,7 +262,7 @@ export function useChatImageGeneration(
       logger.error('❌ 대화 요약 실패:', error);
       throw error;
     }
-  }, [geminiApiKey]);
+  }, [apiKey]);
 
   return { isGenerating, generationStatus, generateFromChat, summarizeMessages };
 }

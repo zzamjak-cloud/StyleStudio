@@ -1,8 +1,7 @@
 import { useState, useCallback } from 'react';
 import { ConceptSessionData } from '../types/concept';
-import { useGeminiImageGenerator, ImageGenerationModel } from './api/useGeminiImageGenerator';
-import { isOpenAIModel } from './api/imageModels';
-import { useOpenAIImageGenerator } from './api/useOpenAIImageGenerator';
+import { useImageGenerator } from './api/useImageGenerator';
+import { normalizeImageModelId } from './api/imageModels';
 
 interface ConceptGenerationParams {
   prompt: string;
@@ -20,10 +19,9 @@ interface ConceptGenerationResult {
 }
 
 /** 컨셉 이미지 생성 훅 */
-export function useConceptGeneration(geminiApiKey: string, openaiApiKey: string) {
+export function useConceptGeneration(apiKey: string) {
   const [isGenerating, setIsGenerating] = useState(false);
-  const { generateImage } = useGeminiImageGenerator();
-  const { generateImage: generateOpenAIImage } = useOpenAIImageGenerator();
+  const { generateImage } = useImageGenerator();
 
   const generateConcept = useCallback(async (params: ConceptGenerationParams): Promise<ConceptGenerationResult> => {
     setIsGenerating(true);
@@ -77,53 +75,22 @@ export function useConceptGeneration(geminiApiKey: string, openaiApiKey: string)
         // 앱 UI의 3k 옵션은 공용 이미지 훅 규격에 맞춰 4K로 매핑
         '3k': '4K',
       };
-      const selectedModel = params.settings.model;
-      const useOpenAI = isOpenAIModel(selectedModel);
-      const selectedApiKey = useOpenAI ? openaiApiKey : geminiApiKey;
-      if (!selectedApiKey.trim()) {
-        throw new Error(
-          useOpenAI
-            ? 'ChatGPT API 키가 비어 있습니다. 설정에서 API 키를 확인해주세요.'
-            : 'Gemini API 키가 비어 있습니다. 설정에서 API 키를 확인해주세요.'
-        );
+      const selectedModel = normalizeImageModelId(params.settings.model);
+      if (!apiKey.trim()) {
+        throw new Error('OpenRouter API 키가 비어 있습니다. 설정에서 API 키를 확인해주세요.');
       }
 
       const imageBase64 = await new Promise<string>((resolve, reject) => {
-        if (useOpenAI) {
-          void generateOpenAIImage(
-            selectedApiKey,
-            {
-              prompt: finalPrompt,
-              aspectRatio: params.settings.ratio,
-              imageSize: sizeMap[params.settings.size],
-              quality: params.settings.quality ?? 'medium',
-              referenceImages: params.referenceImage ? [params.referenceImage] : undefined,
-            },
-            {
-              onComplete: (generatedImageBase64) => {
-                resolve(`data:image/jpeg;base64,${generatedImageBase64}`);
-              },
-              onError: (error) => {
-                reject(error);
-              },
-            }
-          );
-          return;
-        }
-
-        const geminiModel = selectedModel as ImageGenerationModel;
         void generateImage(
-          selectedApiKey,
+          apiKey,
           {
             prompt: finalPrompt,
             referenceImages: params.referenceImage ? [params.referenceImage] : [],
             aspectRatio: params.settings.ratio,
             imageSize: sizeMap[params.settings.size],
+            quality: params.settings.quality ?? 'medium',
             sessionType: 'CONCEPT',
-            imageModel: geminiModel,
-            temperature: 0.8,
-            topK: 40,
-            topP: 0.95,
+            imageModel: selectedModel,
           },
           {
             onComplete: (generatedImageBase64) => {
@@ -143,7 +110,7 @@ export function useConceptGeneration(geminiApiKey: string, openaiApiKey: string)
     } finally {
       setIsGenerating(false);
     }
-  }, [geminiApiKey, openaiApiKey, generateImage, generateOpenAIImage]);
+  }, [apiKey, generateImage]);
 
   return {
     isGenerating,

@@ -1,12 +1,12 @@
 # 이미지 생성 API·입력 처리
 
-이미지 생성을 실제로 수행하는 API 훅(Gemini/OpenAI)과 모델 정의, 그리고 참조 이미지의 업로드·붙여넣기·다운스케일 처리를 정리한다. 두 훅 모두 `onProgress`/`onComplete`/`onError` 콜백 인터페이스를 공유하며, `ImageGeneratorPanel.handleGenerate`가 provider에 따라 분기 호출한다.
+이미지 생성을 실제로 수행하는 통합 훅과 모델 정의, 그리고 참조 이미지의 업로드·붙여넣기·다운스케일 처리를 정리한다. **v0.6부터 모든 모델(Gemini/OpenAI)이 OpenRouter Image API(`POST /api/v1/images`) 단일 경로**를 사용하며, `ImageGeneratorPanel.handleGenerate` 는 provider 분기 없이 `useImageGenerator.generateImage` 하나를 호출한다.
 
 ## 관련 파일
 
-- `src/hooks/api/imageModels.ts` — 모델 카탈로그(`IMAGE_MODELS`)·옵션 타입·`getImageModelDefinition`/`isOpenAIModel`/`getAvailableImageModels`/`DEFAULT_IMAGE_MODEL`.
-- `src/hooks/api/useGeminiImageGenerator.ts` — Gemini `generateContent` 호출(`generateImage` → 내부 `generateImageInternal`).
-- `src/hooks/api/useOpenAIImageGenerator.ts` — OpenAI images API(`generateImage`/`editWithMask`).
+- `src/lib/api/openrouter.ts` — OpenRouter 공통 클라이언트. `chatComplete`(텍스트/비전), `generateImageViaOpenRouter`(이미지 생성), Bearer 헤더(`openrouterHeaders`).
+- `src/hooks/api/imageModels.ts` — 모델 카탈로그(`IMAGE_MODELS`, OpenRouter 슬러그)·옵션 타입·`getImageModelDefinition`/`isOpenAIModel`/`getAvailableImageModels`/`normalizeImageModelId`/`DEFAULT_IMAGE_MODEL`.
+- `src/hooks/api/useImageGenerator.ts` — 통합 생성 훅(`generateImage`). 프롬프트 조립 → Image API 호출 → JPEG 통일. `convertBase64ToJpeg`/`formatImageApiError` export.
 - `src/components/generator/ImageUpload.tsx` — 참조 이미지 업로드 표면(Tauri).
 - `src/hooks/useImageHandling.ts` — 업로드 이미지 배열 상태·전역 드롭 리스너·최대 14장.
 - `src/hooks/useImagePaste.ts` — 클립보드 이미지 붙여넣기 훅.
@@ -15,40 +15,42 @@
 ## 모델 정의 (imageModels.ts)
 
 ```
-ImageGenerationModel = 'gemini-3-pro-image-preview' | 'gemini-3.1-flash-image-preview' | 'gpt-image-2'
+ImageGenerationModel =
+  | 'google/gemini-3-pro-image-preview'      // 나노바나나 프로
+  | 'google/gemini-3.1-flash-image-preview'  // 나노바나나2
+  | 'google/gemini-3.1-flash-lite-image'     // 나노바나나 2 라이트 (1K 전용)
+  | 'openai/gpt-image-2'                     // 덕테이프
 ImageModelDefinition = {
   id, label, provider: 'gemini'|'openai',
-  supports: { aspectRatios, imageSizes, qualities, geminiAdvancedControls }
+  supports: { aspectRatios, imageSizes, qualities }
 }
 ```
 
-- `IMAGE_MODELS`: 나노바나나 프로(gemini-3-pro)·나노바나나2(gemini-3.1-flash)·덕테이프(gpt-image-2).
-- `getAvailableImageModels(hasOpenAIApiKey)`: OpenAI 키 없으면 Gemini 모델만(`GEMINI_IMAGE_MODELS`) 반환.
-- `getImageModelDefinition(id)`: 미매칭 시 첫 모델 fallback. `isOpenAIModel(id)`로 provider 분기.
-- 모델별 지원 비율/해상도/품질 표는 [settings.md](./settings.md#모델-선택).
+- 비율은 전 모델 공통 5종(`1:1·16:9·9:16·4:3·3:4`). **극단 비율 1:3/3:1은 OpenRouter 미지원으로 제거.**
+- `getAvailableImageModels()`: 통합 키 하나로 전 모델 사용 가능 — 인자 없음(기존 `hasOpenAIApiKey` 필터 제거).
+- `normalizeImageModelId(id)`: 구버전 세션/히스토리에 저장된 레거시 ID(`gemini-3-pro-image-preview` 등)를 현재 슬러그로 매핑. 미매칭 시 기본 모델.
+- `TILEMAP_FIXED_IMAGE_MODEL = 'openai/gpt-image-2'` (레이아웃 준수 때문 — 기존과 동일).
 
-## Gemini 생성 (useGeminiImageGenerator)
+## 통합 생성 (useImageGenerator)
 
-- 엔드포인트: `POST .../v1beta/models/{MODEL}:generateContent?key=...`.
-- **재시도**: 500 에러 시 최대 2회, 5초 간격(`MAX_RETRIES`/`RETRY_DELAY_MS`). 500 이외/마지막 시도면 throw.
-- **모델 가용성 체크**: `seed === undefined`(첫 생성 간주)일 때만 모델 GET으로 존재 확인, 실패 시 사용 가능 모델 목록 로깅.
-- **요청 구성**: `contents[0].parts = [참조 이미지들..., { text: 프롬프트 }]`.
-  - 참조 이미지는 **최대 10장**(`Math.min(len,10)`). data URL prefix 제거 후 `inline_data{mime_type,data}`. MIME는 data URL에서 추출(없으면 png).
-  - 총 이미지 20MB 초과/요청 20MB 초과 시 경고 로깅(500 위험).
-  - `sessionType === 'ILLUSTRATION'`이면 이미 완성된 프롬프트를 그대로 사용, 아니면 훅 내부에서 다시 `buildPromptForSession`으로 감싼다(패널과 이중 안전장치).
-  - `negativePrompt`가 있으면 프롬프트 끝에 `Avoid: ...` 추가.
-- **generationConfig**: `responseModalities:['IMAGE']`, `imageConfig{aspectRatio,imageSize}`, 값 있을 때만 `seed`/`temperature`/`topK`/`topP`.
-- **referenceStrength 미전달**: Gemini 공식 미지원이라 주석 처리(`useGeminiImageGenerator.ts:245`). UI 값은 무시된다.
-- **응답 파싱**: `candidates[0].content.parts`에서 `inlineData.data`(base64)를 이미지로, `text`를 텍스트 응답으로. 이미지 없으면 throw. 패널은 이를 `data:image/jpeg;base64,`로 감싼다.
+- 엔드포인트: `POST https://openrouter.ai/api/v1/images`, `Authorization: Bearer {OpenRouter Key}`.
+- **요청 필드**: `model`(슬러그), `prompt`, `aspect_ratio`, Gemini 계열만 `resolution`('1K'|'2K'|'4K'), gpt-image 계열만 `quality`('low'|'medium'|'high'), 참조는 `input_references[]`(`{type:'image_url', image_url:{url: dataURL}}`).
+- **참조 이미지 최대 14장**(`MAX_REFERENCE_IMAGES`) — 업로드 한도(14장)와 동일해져 "업로드 14장/전송 10장" 불일치가 해소됐다.
+- **프롬프트 조립**: `sessionType === 'ILLUSTRATION'` 이면 완성 프롬프트 그대로, 아니면 `buildPromptForSession` 재조립(기존과 동일). `negativePrompt` 는 `Avoid: ...` 로 덧붙임(별도 API 필드 없음).
+- **재시도**: 5xx(500/502/503) 시 최대 2회, 5초 간격. OpenRouter는 실패한 생성을 502로 반환하며 과금하지 않음. 4xx는 `formatImageApiError` 로 한국어 메시지 변환(401 키, 402 크레딧 부족, 403 안전 차단, 429 한도, 413 용량).
+- **응답 파싱**: `data[0].b64_json`(+`media_type`) → `convertBase64ToJpeg`(흰 배경 합성, 0.92)로 **내부 표준 JPEG 통일** 후 `onComplete(jpegBase64)`. 투명이 필요한 흐름은 이후 `removeWhiteBackground` 단계가 처리.
+- 콜백 인터페이스(`onProgress`/`onComplete`/`onError`)는 기존 두 훅과 동일하게 유지.
 
-## OpenAI 생성 (useOpenAIImageGenerator)
+### OpenRouter 전환으로 제거된 기능
 
-- 참조 이미지가 없으면 `POST /v1/images/generations`(JSON), 있으면 `POST /v1/images/edits`(FormData, `image[]` 최대 10장).
-- 요청 필드: `model: 'gpt-image-2'`, `prompt`, `size`(=`mapToOpenAISize(aspectRatio)`), `quality`(기본 medium), `n:1`.
-- **응답 정규화**: `data[0].b64_json` 우선, 없으면 `data[0].url`을 fetch해 base64화(`fetchImageUrlToBase64`, 16KB 청크).
-- **JPEG 통일**: gpt-image-2는 PNG로 응답하지만 `convertBase64ToJpeg`가 흰 배경 위에 합성 후 JPEG(0.92)로 변환해 `onComplete`. 원래 목적("자동 저장이 `.jpg` 확장자를 쓰므로 헤더를 맞춘다")은 **사라졌다** — 저장 확장자가 이제 실제 바이트를 따른다(`lib/utils/imageDataUrl.ts`). 남긴 이유는 저장 용량이다(PNG 원본은 JPEG 0.92보다 훨씬 크고 채팅 이미지는 IndexedDB에 쌓인다). **투명 배경이 필요한 세션을 만든다면 이 변환이 알파를 흰색으로 굳히므로 먼저 걷어내야 한다.** 타일맵은 AI 원본이 불투명한 재질 스와치이고 타일은 코드가 PNG로 합성하므로 영향이 없다.
-- **에러 한국어화**(`formatOpenAIError`): `moderation_blocked`(안전 차단, Gemini 전환 권유)·`content_policy_violation`·401(키)·429(한도)·413/too large(용량) 등 상세 메시지.
-- **`editWithMask`**: 사용자 마스크(흰=편집/검=보존)로 `/v1/images/edits` 부분 편집(생성기 본 플로우 외 부분 편집용).
+| 제거 항목 | 사유 |
+|-----------|------|
+| Seed / Temperature / Top-K / Top-P 고급 설정 | Image API 미지원 — UI·상태·히스토리 저장 모두 제거 |
+| referenceStrength | 원래 미전달 dead 값 — 완전 제거 |
+| OpenAI `/v1/images/edits` 마스크 편집(`editWithMask`) | OpenRouter 미지원 + 호출부 없던 dead code |
+| Gemini 모델 가용성 GET 체크·`listGeminiModels()` 콘솔 유틸 | generativelanguage 전용 (`src/utils/checkGeminiModels.ts` 삭제) |
+| 극단 비율 1:3 / 3:1 | OpenRouter 비율 enum 미지원 |
+| `thought_signature` 멀티턴 (채팅) | Image API 미지원 → `wiki/chat/overview.md` 참고 |
 
 ## 참조 이미지 입력
 
@@ -77,11 +79,11 @@ ImageModelDefinition = {
 
 | 증상 | 원인 |
 |------|------|
-| 참조 11장 이상인데 일부만 반영 | 두 API 모두 **최대 10장** 전송(`Math.min(len,10)`). 업로드는 14장까지 되지만 전송은 10장 |
-| Gemini 500 에러 반복 | 참조/요청 페이로드 과대(20MB 경고). 이미지 수·해상도 축소 필요. 500은 5초 간격 2회 재시도 |
-| gpt-image-2 결과가 항상 JPEG | PNG 응답을 `convertBase64ToJpeg`로 강제 JPEG화(썸네일 호환). 투명도는 흰 배경으로 합성됨 |
-| OpenAI "안전 시스템 차단" | `moderation_blocked` — 참조/프롬프트 민감성. Gemini 전환 권유 메시지 |
+| 서버 에러 반복 | 참조/요청 페이로드 과대(20MB 경고 로깅). 5xx는 5초 간격 2회 재시도. 실패 생성은 502 + 미과금 |
+| 결과가 항상 JPEG | 모든 모델 응답을 `convertBase64ToJpeg` 로 강제 JPEG화(저장 용량·썸네일 호환). 투명도는 흰 배경으로 합성됨 |
+| "안전 시스템 차단" | 403/moderation — 참조/프롬프트 민감성. 프롬프트·참조 조정 후 재시도 |
+| 402 에러 | OpenRouter 크레딧 부족 |
+| 구세션 생성 시 모델 오류 | 레거시 모델 ID → `normalizeImageModelId` 로 정규화 (미매칭 시 기본 모델 fallback) |
 | 드롭 시 이미지가 2장씩 추가 | 500ms 중복 방지(`lastDropTimeRef`)가 걸러줌. 미동작 시 여기 확인 |
 | Ctrl+V가 텍스트만 붙음 | 클립보드에 이미지 item 없음. 이미지가 있으면 `preventDefault`로 이미지 우선 |
 | 업로드 후 화질 저하 | 1280px/0.85 다운스케일(의도). 원본 유지 필요 시 `handleImageSelect`/paste 경로 조정 |
-| referenceStrength 무효 | Gemini API 미전달(주석 처리), OpenAI 파라미터에도 없음 |

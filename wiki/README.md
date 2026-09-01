@@ -43,14 +43,14 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 핀 눌러도 즐겨찾기 고정 안 됨 / 삭제 버튼 없음 | `generator/history.md` |
 | 히스토리 복원했는데 재생성 안 됨 | `generator/history.md` |
 | 히스토리 삭제해도 폴더에 파일이 남음 | `generator/history.md` |
-| 참조 11장 이상인데 일부만 반영됨(최대 10장 전송) | `generator/image-generation-api.md` |
-| Gemini 500 에러 반복(페이로드 과대) | `generator/image-generation-api.md` |
-| OpenAI "안전 시스템 차단" 오류 | `generator/image-generation-api.md` |
+| OpenRouter 전환·모델 슬러그·레거시 세션 마이그레이션 | `generator/image-generation-api.md` |
+| 이미지 생성 5xx 반복 / 402 크레딧 부족 | `generator/image-generation-api.md` |
+| "안전 시스템 차단"(403/moderation) 오류 | `generator/image-generation-api.md` |
 | Ctrl+V가 텍스트만 붙고 이미지가 안 붙음 | `generator/image-generation-api.md` |
 | 캐릭터가 참조와 다르게 생성됨 | `prompts/overview.md` |
 | 생성 이미지 재편집 시 Gemini 400 / 이어지는 편집이 직전 이미지 반영 못 함 | `chat/overview.md` |
 | 대화 요약 후에도 토큰/저장용량 안 줄어듦 | `chat/overview.md` |
-| OpenAI Key 없이 gpt-image-2 선택, 극단 비율(1:3) 오류 | `chat/overview.md` |
+| 구세션 모델 ID·극단 비율 마이그레이션 / 이어지는 편집 | `chat/overview.md` |
 | 결과 이미지에 어노테이션 컬러 라인/마커가 그대로 남음 | `chat/annotation.md` |
 | 부분 편집 영역이 엉뚱한 곳에 적용 / 편집 버튼 안 보임 | `chat/annotation.md` |
 | 어노테이션 캔버스에서 이미지가 잘림 / 확대·축소 안 됨 | `chat/annotation.md` |
@@ -89,7 +89,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 로그인 콜백이 앱에 안 돌아옴 / 포트 9528 충돌 | `auth/overview.md` |
 | "loadcomplete.com 사용자만" 거부 / "Invalid state parameter" | `auth/overview.md` |
 | 재시작 후 매번 재로그인 요구 / 로그인 5분 후 자동 실패 | `auth/overview.md` |
-| API 에러가 영문 raw로 노출 / 429·할당량 메시지 안 뜸 | `api/overview.md` |
+| API 에러가 영문 raw로 노출 / 402·429 메시지 안 뜸 | `api/overview.md` |
 | 번역이 원문 그대로 나옴 / 배치 번역 순서 어긋남 / API 키 없이 호출 | `api/overview.md` |
 | 확인창이 안 뜨거나 무한 대기 / Enter·ESC 무반응 | `ui/overview.md` |
 | 설정 저장 버튼 눌러도 안 닫힘 / 이미지가 placeholder에서 안 넘어감 | `ui/overview.md` |
@@ -122,7 +122,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 파일 | 내용 |
 |------|------|
 | `overview.md` | 생성 패널 구조·생성 흐름(handleGenerate)·저장 |
-| `settings.md` | 모델/비율/해상도/품질/카메라/그리드/고급 설정 전체 |
+| `settings.md` | 모델/비율/해상도/품질/카메라/그리드 설정 전체 |
 | `history.md` | 생성 히스토리·즐겨찾기(핀)·복원·자동 저장 경로 |
 | `image-generation-api.md` | Gemini/OpenAI 생성 훅·모델 정의·이미지 업로드/붙여넣기/다운스케일 |
 
@@ -198,15 +198,15 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 폴더 상태·이동·import·복원 훅 | `src/hooks/useFolderManagement.ts` |
 | 세션/폴더 트리 UI·드래그앤드롭·rename | `src/components/common/Sidebar.tsx` |
 | 세션 타입별 설정 | `src/lib/config/sessionConfig.ts` |
-| Gemini 분석 API·프롬프트 선택 | `src/hooks/api/useGeminiAnalyzer.ts` |
+| 참조 분석 API·프롬프트 선택 | `src/hooks/api/useGeminiAnalyzer.ts` |
 | 분석 결과 패널·카드 렌더 | `src/components/analysis/AnalysisPanel.tsx` |
 | 생성 오케스트레이션(handleGenerate) | `src/components/generator/ImageGeneratorPanel.tsx` |
 | 세션별 프롬프트 진입점 | `src/lib/prompts/sessionPrompts.ts` |
 | 분석→통합 프롬프트 조립 | `src/lib/promptBuilder.ts` |
-| Gemini 이미지 생성 훅(참조 최대 10장) | `src/hooks/api/useGeminiImageGenerator.ts` |
-| OpenAI 이미지 생성 훅 | `src/hooks/api/useOpenAIImageGenerator.ts` |
+| 통합 이미지 생성 훅(OpenRouter, 참조 최대 14장) | `src/hooks/api/useImageGenerator.ts` |
+| OpenRouter 공통 클라이언트(chat/images) | `src/lib/api/openrouter.ts` |
 | 이미지 모델 카탈로그 | `src/hooks/api/imageModels.ts` |
-| 채팅 멀티턴 구성(buildContents) | `src/hooks/useChatImageGeneration.ts` |
+| 채팅 생성(컨텍스트+직전 이미지 참조) | `src/hooks/useChatImageGeneration.ts` |
 | 어노테이션 마스크 export | `src/lib/utils/annotationExport.ts` |
 | 컨셉 자동 프롬프트·크기 매핑 | `src/hooks/useConceptGeneration.ts` |
 | 일러스트 위치 기반 드롭 판정 | `src/components/illustration/IllustrationSetupPanel.tsx` |
@@ -234,11 +234,10 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 - **`Header.tsx` 는 미사용** — App 은 Sidebar 헤더의 설정 버튼을 쓴다.
 - **저장 디바운스는 상수(`SESSION_LIMITS.AUTO_SAVE_INTERVAL`)가 아니라** `sessionHelpers`의 500ms + App의 1000ms 타이머 조합이 실제 동작.
 - **세션 소속 권위는 `Session.folderId`가 아니라 `session_folder_map`** 이며, 아이콘 매핑이 `SESSION_CONFIG`(이모지)와 `getSessionTypeInfo`(lucide) 두 곳으로 분리 — 타입 추가 시 양쪽 갱신 필요.
-- **`referenceStrength`(참조 영향력)는 UI에만 존재**, Gemini/OpenAI API에 실제 전달 안 됨(공식 미지원).
-- **참조 이미지는 업로드 14장까지 가능하나 API 전송은 양쪽 provider 모두 최대 10장.**
+- **모든 AI 호출은 OpenRouter 통합 키 하나**(store `openrouter_api_key`)로 나간다. 구버전 Gemini/OpenAI 키는 자동 이관되지 않음. Seed/Temperature/Top-K/Top-P·마스크 편집·극단 비율(1:3/3:1)은 OpenRouter 미지원으로 제거됨.
 - **스프라이트 시트는 canvas 분할/합성 코드가 없다** — 프롬프트 지시만으로 모델이 단일 이미지에 격자 배치.
 - **`pixelArtUpscaler.ts` 함수는 dead code** — 레포 어디서도 호출 안 됨.
 - **`PixelArtGridLayout` 타입 중복 정의** — `types/pixelart.ts`, `sessionConfig.ts`.
 - **히스토리의 `imageBase64`와 디스크 자동 저장 파일(`~/Downloads/AI_Gen/`)은 독립** — 히스토리 삭제가 파일을 지우지 않음.
 - **`useWindowState()` 는 정의만 있고 호출부 없음** — 창은 `tauri.conf.json`의 `maximized:true`로만 시작.
-- **Gemini API 키는 `.env`가 아니라 SettingsModal 입력→store 영속.** `.env`의 `VITE_GOOGLE_*`는 OAuth 전용.
+- **OpenRouter API 키는 `.env`가 아니라 SettingsModal 입력→store 영속.** `.env`의 `VITE_GOOGLE_*`는 OAuth 전용.

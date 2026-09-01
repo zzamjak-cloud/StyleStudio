@@ -1,11 +1,13 @@
 import { logger } from '../../lib/logger';
 import { GEMINI_FLASH_TEXT_MODEL } from '../../types/constants';
+import { chatComplete } from '../../lib/api/openrouter';
 
 /**
- * Gemini API를 사용한 한국어-영어 자동 번역 Hook
+ * 한국어-영어 자동 번역 Hook (OpenRouter chat completions · Gemini Flash)
  *
  * 사용자가 한국어로 프롬프트를 입력하면 자동으로 영어로 번역하여 반환합니다.
  * 이미지 생성 API는 영어 프롬프트를 사용하지만, 사용자는 한국어로 입력할 수 있습니다.
+ * 실패 시 원본 텍스트를 그대로 반환한다 (throw 안 함).
  */
 
 export function useGeminiTranslator() {
@@ -17,34 +19,36 @@ export function useGeminiTranslator() {
     return koreanRegex.test(text);
   };
 
+  /** 단일 프롬프트 번역 호출 공통부 — 실패 시 fallback 반환 */
+  const translate = async (apiKey: string, prompt: string, fallback: string): Promise<string> => {
+    try {
+      const text = await chatComplete(apiKey, {
+        model: GEMINI_FLASH_TEXT_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return text.trim() || fallback;
+    } catch (error) {
+      logger.error('❌ 번역 오류:', error);
+      return fallback;
+    }
+  };
+
   /**
    * 영어 텍스트를 한국어로 번역 (화면 표시용)
    */
-  const translateToKorean = async (
-    apiKey: string,
-    englishText: string
-  ): Promise<string> => {
-    try {
-      if (!englishText.trim()) {
-        return '';
-      }
+  const translateToKorean = async (apiKey: string, englishText: string): Promise<string> => {
+    if (!englishText.trim()) {
+      return '';
+    }
 
-      // 이미 한국어가 포함되어 있으면 그대로 반환
-      if (containsKorean(englishText)) {
-        return englishText;
-      }
+    // 이미 한국어가 포함되어 있으면 그대로 반환
+    if (containsKorean(englishText)) {
+      return englishText;
+    }
 
-      logger.debug('🌐 영어 → 한국어 번역 시작 (화면 표시용)');
+    logger.debug('🌐 영어 → 한국어 번역 시작 (화면 표시용)');
 
-      // Gemini 3.7 Flash API 사용
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
-
-      const requestBody = {
-        contents: [
-          {
-            parts: [
-              {
-                text: `You are a professional translator specializing in image generation prompts. Translate the following English AI image generation prompt into natural Korean.
+    const prompt = `You are a professional translator specializing in image generation prompts. Translate the following English AI image generation prompt into natural Korean.
 
 IMPORTANT RULES:
 1. Translate naturally and fluently in Korean
@@ -56,68 +60,29 @@ IMPORTANT RULES:
 English prompt to translate:
 ${englishText}
 
-Korean translation:`,
-              },
-            ],
-          },
-        ],
-        // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
-      };
+Korean translation:`;
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error('❌ 번역 API 오류:', response.status, errorText);
-        return englishText;
-      }
-
-      const result = await response.json();
-      const translatedText =
-        result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || englishText;
-
-      logger.debug('✅ 한국어 번역 완료');
-      return translatedText;
-    } catch (error) {
-      logger.error('❌ 번역 오류:', error);
-      return englishText;
-    }
+    const translated = await translate(apiKey, prompt, englishText);
+    logger.debug('✅ 한국어 번역 완료');
+    return translated;
   };
 
   /**
    * 한국어 텍스트를 영어로 번역 (API 전달용)
    */
-  const translateToEnglish = async (
-    apiKey: string,
-    koreanText: string
-  ): Promise<string> => {
-    try {
-      if (!koreanText.trim()) {
-        return '';
-      }
+  const translateToEnglish = async (apiKey: string, koreanText: string): Promise<string> => {
+    if (!koreanText.trim()) {
+      return '';
+    }
 
-      // 한국어가 포함되어 있지 않으면 그대로 반환
-      if (!containsKorean(koreanText)) {
-        return koreanText;
-      }
+    // 한국어가 포함되어 있지 않으면 그대로 반환
+    if (!containsKorean(koreanText)) {
+      return koreanText;
+    }
 
-      logger.debug('🌐 한국어 → 영어 번역 시작:', koreanText);
+    logger.debug('🌐 한국어 → 영어 번역 시작:', koreanText);
 
-      // Gemini 3.7 Flash API 사용
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
-
-      const requestBody = {
-        contents: [
-          {
-            parts: [
-              {
-                text: `You are a professional translator specializing in image generation prompts. Translate the following Korean text into English for use in an AI image generation system.
+    const prompt = `You are a professional translator specializing in image generation prompts. Translate the following Korean text into English for use in an AI image generation system.
 
 IMPORTANT RULES:
 1. Translate naturally and accurately
@@ -130,40 +95,30 @@ IMPORTANT RULES:
 Korean text to translate:
 ${koreanText}
 
-English translation:`,
-              },
-            ],
-          },
-        ],
-        // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
-      };
+English translation:`;
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+    const translated = await translate(apiKey, prompt, koreanText);
+    logger.debug('✅ 번역 완료:', translated);
+    return translated;
+  };
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error('❌ 번역 API 오류:', response.status, errorText);
-        // 번역 실패 시 원본 텍스트 반환
-        return koreanText;
+  /** `[번호]` 프리픽스 응답을 인덱스별 배열로 파싱 — 매칭 실패 시 해당 인덱스는 원본 유지 */
+  const parseBatchResult = (translatedText: string, originals: string[]): string[] => {
+    const lines = translatedText.split('\n').filter((line: string) => line.trim());
+    const translations: string[] = [];
+
+    for (let i = 0; i < originals.length; i++) {
+      const linePrefix = `[${i + 1}]`;
+      const matchingLine = lines.find((line: string) => line.startsWith(linePrefix));
+
+      if (matchingLine) {
+        translations.push(matchingLine.replace(linePrefix, '').trim());
+      } else {
+        translations.push(originals[i]);
       }
-
-      const result = await response.json();
-      const translatedText =
-        result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || koreanText;
-
-      logger.debug('✅ 번역 완료:', translatedText);
-      return translatedText;
-    } catch (error) {
-      logger.error('❌ 번역 오류:', error);
-      // 오류 발생 시 원본 텍스트 반환
-      return koreanText;
     }
+
+    return translations;
   };
 
   /**
@@ -173,26 +128,15 @@ English translation:`,
     apiKey: string,
     koreanTexts: string[]
   ): Promise<string[]> => {
-    try {
-      if (koreanTexts.length === 0) {
-        return [];
-      }
+    if (koreanTexts.length === 0) {
+      return [];
+    }
 
-      logger.debug(`🌐 배치 번역 시작 (한국어→영어, ${koreanTexts.length}개 텍스트)`);
+    logger.debug(`🌐 배치 번역 시작 (한국어→영어, ${koreanTexts.length}개 텍스트)`);
 
-      // 모든 텍스트를 하나의 프롬프트로 결합
-      const combinedText = koreanTexts
-        .map((text, idx) => `[${idx + 1}] ${text}`)
-        .join('\n');
+    const combinedText = koreanTexts.map((text, idx) => `[${idx + 1}] ${text}`).join('\n');
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
-
-      const requestBody = {
-        contents: [
-          {
-            parts: [
-              {
-                text: `You are a professional translator specializing in image generation prompts. Translate the following Korean texts into English for use in an AI image generation system. Keep the format exactly as shown with [number] prefix.
+    const prompt = `You are a professional translator specializing in image generation prompts. Translate the following Korean texts into English for use in an AI image generation system. Keep the format exactly as shown with [number] prefix.
 
 IMPORTANT RULES:
 1. Translate each line naturally and accurately
@@ -206,54 +150,15 @@ IMPORTANT RULES:
 Korean texts to translate:
 ${combinedText}
 
-English translations (keep [number] prefix):`,
-              },
-            ],
-          },
-        ],
-        // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
-      };
+English translations (keep [number] prefix):`;
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error('❌ 배치 번역 API 오류:', response.status, errorText);
-        return koreanTexts; // 실패 시 원본 반환
-      }
-
-      const result = await response.json();
-      const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-
-      // 결과를 파싱하여 배열로 변환
-      const lines = translatedText.split('\n').filter((line: string) => line.trim());
-      const translations: string[] = [];
-
-      for (let i = 0; i < koreanTexts.length; i++) {
-        const linePrefix = `[${i + 1}]`;
-        const matchingLine = lines.find((line: string) => line.startsWith(linePrefix));
-
-        if (matchingLine) {
-          // [숫자] 제거하고 텍스트만 추출
-          translations.push(matchingLine.replace(linePrefix, '').trim());
-        } else {
-          // 매칭 실패 시 원본 사용
-          translations.push(koreanTexts[i]);
-        }
-      }
-
-      logger.debug('✅ 배치 번역 완료 (한국어→영어)');
-      return translations;
-    } catch (error) {
-      logger.error('❌ 배치 번역 오류:', error);
-      return koreanTexts; // 오류 시 원본 반환
+    const translatedText = await translate(apiKey, prompt, '');
+    if (!translatedText) {
+      return koreanTexts; // 실패 시 원본 반환
     }
+
+    logger.debug('✅ 배치 번역 완료 (한국어→영어)');
+    return parseBatchResult(translatedText, koreanTexts);
   };
 
   /**
@@ -263,26 +168,15 @@ English translations (keep [number] prefix):`,
     apiKey: string,
     englishTexts: string[]
   ): Promise<string[]> => {
-    try {
-      if (englishTexts.length === 0) {
-        return [];
-      }
+    if (englishTexts.length === 0) {
+      return [];
+    }
 
-      logger.debug(`🌐 배치 번역 시작 (${englishTexts.length}개 텍스트)`);
+    logger.debug(`🌐 배치 번역 시작 (${englishTexts.length}개 텍스트)`);
 
-      // 모든 텍스트를 하나의 프롬프트로 결합
-      const combinedText = englishTexts
-        .map((text, idx) => `[${idx + 1}] ${text}`)
-        .join('\n');
+    const combinedText = englishTexts.map((text, idx) => `[${idx + 1}] ${text}`).join('\n');
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_TEXT_MODEL}:generateContent?key=${apiKey}`;
-
-      const requestBody = {
-        contents: [
-          {
-            parts: [
-              {
-                text: `You are a professional translator. Translate the following English texts into natural Korean. Keep the format exactly as shown with [number] prefix.
+    const prompt = `You are a professional translator. Translate the following English texts into natural Korean. Keep the format exactly as shown with [number] prefix.
 
 IMPORTANT RULES:
 1. Translate each line naturally and fluently in Korean
@@ -294,54 +188,15 @@ IMPORTANT RULES:
 English texts to translate:
 ${combinedText}
 
-Korean translations (keep [number] prefix):`,
-              },
-            ],
-          },
-        ],
-        // Gemini 3.x: temperature/topK/topP 지원 중단으로 generationConfig 제거
-      };
+Korean translations (keep [number] prefix):`;
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error('❌ 배치 번역 API 오류:', response.status, errorText);
-        return englishTexts; // 실패 시 원본 반환
-      }
-
-      const result = await response.json();
-      const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-
-      // 결과를 파싱하여 배열로 변환
-      const lines = translatedText.split('\n').filter((line: string) => line.trim());
-      const translations: string[] = [];
-
-      for (let i = 0; i < englishTexts.length; i++) {
-        const linePrefix = `[${i + 1}]`;
-        const matchingLine = lines.find((line: string) => line.startsWith(linePrefix));
-
-        if (matchingLine) {
-          // [숫자] 제거하고 텍스트만 추출
-          translations.push(matchingLine.replace(linePrefix, '').trim());
-        } else {
-          // 매칭 실패 시 원본 사용
-          translations.push(englishTexts[i]);
-        }
-      }
-
-      logger.debug('✅ 배치 번역 완료');
-      return translations;
-    } catch (error) {
-      logger.error('❌ 배치 번역 오류:', error);
-      return englishTexts; // 오류 시 원본 반환
+    const translatedText = await translate(apiKey, prompt, '');
+    if (!translatedText) {
+      return englishTexts; // 실패 시 원본 반환
     }
+
+    logger.debug('✅ 배치 번역 완료');
+    return parseBatchResult(translatedText, englishTexts);
   };
 
   return {

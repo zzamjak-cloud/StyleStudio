@@ -29,7 +29,6 @@ import { AnalysisPanel } from './components/analysis/AnalysisPanel';
 import {
   ANALYSIS_MODELS,
   DEFAULT_ANALYSIS_MODEL,
-  LEGACY_DEFAULT_ANALYSIS_MODEL,
   AnalysisModelId,
 } from './types/constants';
 import { SettingsModal } from './components/common/SettingsModal';
@@ -152,12 +151,9 @@ function App() {
   const [infoDialog, setInfoDialog] = useState<{ title: string; message: string } | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
 
-  // 분석에 사용할 Gemini 모델 (localStorage 유지)
+  // 분석에 사용할 모델 (localStorage 유지 · 레거시/미지원 ID는 기본값으로 폴백)
   const [analysisModel, setAnalysisModel] = useState<AnalysisModelId>(() => {
     const stored = localStorage.getItem('analysisModel');
-    if (stored === LEGACY_DEFAULT_ANALYSIS_MODEL) {
-      return DEFAULT_ANALYSIS_MODEL;
-    }
     return ANALYSIS_MODELS.some((m) => m.id === stored)
       ? (stored as AnalysisModelId)
       : DEFAULT_ANALYSIS_MODEL;
@@ -191,8 +187,7 @@ function App() {
     useImageHandling();
 
   const {
-    geminiApiKey,
-    openaiApiKey,
+    apiKey,
     sessions,
     setSessions,
     currentSession,
@@ -211,7 +206,6 @@ function App() {
     handleDocumentDelete,
     saveSessionWithoutTranslation,
   } = useSessionManagement();
-  const apiKey = geminiApiKey;
   const { analyzeImages } = useGeminiAnalyzer();
 
   // 폴더 관리 Hook
@@ -1072,7 +1066,7 @@ function App() {
         totalTokenCount: 0,
         settings: {
           aspectRatio: '1:1',
-          imageModel: 'gemini-3-pro-image-preview',
+          imageModel: 'google/gemini-3-pro-image-preview',
           imageSize: '1K',
             imageQuality: 'medium',
           pixelArtGrid: '1x1',
@@ -1086,7 +1080,7 @@ function App() {
         gameGenres: [],
         artStyles: [],
         generationSettings: {
-          model: 'gemini-3-pro-image-preview',
+          model: 'google/gemini-3-pro-image-preview',
           ratio: '9:16',
           size: '1k',
           quality: 'medium',
@@ -1370,16 +1364,14 @@ function App() {
           <ChatPanel
             key={currentSession.id}
             session={currentSession}
-            geminiApiKey={geminiApiKey}
-            openaiApiKey={openaiApiKey}
+            apiKey={apiKey}
             onSessionUpdate={handleSessionUpdate}
           />
         ) : currentSession?.type === 'CONCEPT' ? (
           <ConceptPanel
             key={currentSession.id}
             session={currentSession}
-            geminiApiKey={geminiApiKey}
-            openaiApiKey={openaiApiKey}
+            apiKey={apiKey}
             onSessionUpdate={handleSessionUpdate}
             onSessionSaveOnly={handleSessionSaveOnly}
           />
@@ -1402,7 +1394,7 @@ function App() {
                       data={currentSession.illustrationData || { characters: [], backgroundImages: [] }}
                       onDataChange={handleIllustrationDataChange}
                       disabled={false}
-                      geminiApiKey={geminiApiKey}
+                      apiKey={apiKey}
                     />
                   </div>
                   {/* 이미지 생성으로 이동 버튼 */}
@@ -1430,8 +1422,7 @@ function App() {
           ) : (
             analysisResult && (
               <ImageGeneratorPanel
-                geminiApiKey={geminiApiKey}
-                openaiApiKey={openaiApiKey}
+                apiKey={apiKey}
                 analysis={analysisResult}
                 referenceImages={currentSession.illustrationData?.characters.flatMap(c => c.images) || []}
                 sessionType="ILLUSTRATION"
@@ -1511,8 +1502,7 @@ function App() {
           ) : (
             analysisResult && (
               <ImageGeneratorPanel
-                geminiApiKey={geminiApiKey}
-                openaiApiKey={openaiApiKey}
+                apiKey={apiKey}
                 analysis={analysisResult}
                 referenceImages={uploadedImages}
                 sessionType={currentSession?.type || 'STYLE'}
@@ -1541,8 +1531,7 @@ function App() {
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-        currentGeminiApiKey={geminiApiKey}
-        currentOpenAIApiKey={openaiApiKey}
+        currentApiKey={apiKey}
         onSave={handleSaveApiKeys}
       />
 

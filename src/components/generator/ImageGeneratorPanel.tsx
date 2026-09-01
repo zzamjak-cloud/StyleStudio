@@ -26,8 +26,7 @@ import { getCameraAnglePrompt } from '../../types/cameraAngle';
 import { getCameraLensPrompt } from '../../types/cameraLens';
 import { buildUnifiedPrompt } from '../../lib/promptBuilder';
 import { buildPromptForSession } from '../../lib/prompts/sessionPrompts';
-import { useGeminiImageGenerator } from '../../hooks/api/useGeminiImageGenerator';
-import { useOpenAIImageGenerator } from '../../hooks/api/useOpenAIImageGenerator';
+import { useImageGenerator } from '../../hooks/api/useImageGenerator';
 import { useGeminiTranslator } from '../../hooks/api/useGeminiTranslator';
 import { useTilemapProcessing } from '../../hooks/useTilemapProcessing';
 import { logger } from '../../lib/logger';
@@ -39,12 +38,10 @@ import { GeneratorPreview } from './GeneratorPreview';
 import { GeneratorHistory } from './GeneratorHistory';
 import { TilemapResultView } from '../tilemap/TilemapResultView';
 import {
-  getAvailableImageModels,
   DEFAULT_IMAGE_MODEL,
   TILEMAP_FIXED_IMAGE_MODEL,
-  type GeminiImageGenerationModel,
+  getAvailableImageModels,
   getImageModelDefinition,
-  isOpenAIModel,
   type ImageGenerationModel,
   type ImageQualityOption,
   type AspectRatioOption,
@@ -52,7 +49,6 @@ import {
 } from '../../hooks/api/imageModels';
 import {
   IMAGE_GENERATION_DEFAULTS,
-  ADVANCED_SETTINGS_DEFAULTS,
   HISTORY_PANEL,
 } from '../../types/constants';
 
@@ -339,8 +335,7 @@ async function removeWhiteBackground(imageDataUrl: string, threshold: number = 2
 }
 
 interface ImageGeneratorPanelProps {
-  geminiApiKey: string;
-  openaiApiKey: string;
+  apiKey: string;
   analysis: ImageAnalysisResult;
   referenceImages: string[];
   sessionType: SessionType;
@@ -381,21 +376,14 @@ interface GeneratorState {
   zoomLevel: 'fit' | 'actual' | number;
   showZoomMenu: boolean;
   showPathTooltip: boolean;
-  showAdvanced: boolean;
   showHelp: boolean;
-  seed: number | undefined;
-  temperature: number;
-  topK: number;
-  topP: number;
-  referenceStrength: number;
   historyHeight: number;
   imageModel: ImageGenerationModel;
   imageQuality: ImageQualityOption;
 }
 
 export function ImageGeneratorPanel({
-  geminiApiKey,
-  openaiApiKey,
+  apiKey,
   analysis,
   referenceImages,
   sessionType,
@@ -416,10 +404,8 @@ export function ImageGeneratorPanel({
     () => buildUnifiedPrompt(analysis),
     [analysis]
   );
-  const { generateImage } = useGeminiImageGenerator();
-  const { generateImage: generateOpenAIImage } = useOpenAIImageGenerator();
+  const { generateImage } = useImageGenerator();
   const { translateToEnglish, containsKorean } = useGeminiTranslator();
-  const hasOpenAIApiKey = openaiApiKey.trim().length > 0;
 
   // 통합 상태 관리
   const [state, setState] = useState<GeneratorState>({
@@ -448,13 +434,7 @@ export function ImageGeneratorPanel({
     zoomLevel: 'fit',
     showZoomMenu: false,
     showPathTooltip: false,
-    showAdvanced: false,
     showHelp: false,
-    seed: undefined,
-    temperature: ADVANCED_SETTINGS_DEFAULTS.TEMPERATURE,
-    topK: ADVANCED_SETTINGS_DEFAULTS.TOP_K,
-    topP: ADVANCED_SETTINGS_DEFAULTS.TOP_P,
-    referenceStrength: ADVANCED_SETTINGS_DEFAULTS.REFERENCE_STRENGTH,
     historyHeight: HISTORY_PANEL.DEFAULT_HEIGHT,
     // TILEMAP은 덕테이프(gpt-image-2) 고정 — 나노바나나 계열은 머티리얼 시트 레이아웃을
     // 제대로 지키지 못해 정상적인 타일 세트가 나오지 않는다
@@ -490,13 +470,7 @@ export function ImageGeneratorPanel({
     zoomLevel,
     showZoomMenu,
     showPathTooltip,
-    showAdvanced,
     showHelp,
-    seed,
-    temperature,
-    topK,
-    topP,
-    referenceStrength,
     historyHeight,
     imageModel,
     imageQuality,
@@ -549,12 +523,7 @@ export function ImageGeneratorPanel({
   const setZoomLevel = useCallback((value: 'fit' | 'actual' | number) => updateState({ zoomLevel: value }), [updateState]);
   const setShowZoomMenu = useCallback((value: boolean) => updateState({ showZoomMenu: value }), [updateState]);
   const setShowPathTooltip = useCallback((value: boolean) => updateState({ showPathTooltip: value }), [updateState]);
-  const setShowAdvanced = useCallback((value: boolean) => updateState({ showAdvanced: value }), [updateState]);
   const setShowHelp = useCallback((value: boolean) => updateState({ showHelp: value }), [updateState]);
-  const setSeed = useCallback((value: number | undefined) => updateState({ seed: value }), [updateState]);
-  const setTemperature = useCallback((value: number) => updateState({ temperature: value }), [updateState]);
-  const setTopK = useCallback((value: number) => updateState({ topK: value }), [updateState]);
-  const setTopP = useCallback((value: number) => updateState({ topP: value }), [updateState]);
   const setImageModel = useCallback((value: ImageGenerationModel) => updateState({ imageModel: value }), [updateState]);
   const setImageQuality = useCallback((value: ImageQualityOption) => updateState({ imageQuality: value }), [updateState]);
 
@@ -621,16 +590,8 @@ export function ImageGeneratorPanel({
 
 
   const handleGenerate = async () => {
-    const selectedModel = getImageModelDefinition(imageModel);
-    const useOpenAI = isOpenAIModel(imageModel);
-    const selectedApiKey = useOpenAI ? openaiApiKey : geminiApiKey;
-
-    if (!selectedApiKey) {
-      alert(
-        useOpenAI
-          ? 'ChatGPT API 키를 먼저 설정해주세요. Style Studio 헤더의 설정 아이콘에서 입력할 수 있습니다.'
-          : 'Gemini API 키를 먼저 설정해주세요. Style Studio 헤더의 설정 아이콘에서 입력할 수 있습니다.'
-      );
+    if (!apiKey) {
+      alert('OpenRouter API 키를 먼저 설정해주세요. Style Studio 헤더의 설정 아이콘에서 입력할 수 있습니다.');
       return;
     }
 
@@ -657,7 +618,7 @@ export function ImageGeneratorPanel({
       if (additionalPrompt.trim()) {
         if (containsKorean(additionalPrompt.trim())) {
           logger.debug('🌐 추가 프롬프트 번역 중...');
-          translatedAdditionalPrompt = await translateToEnglish(geminiApiKey, additionalPrompt.trim());
+          translatedAdditionalPrompt = await translateToEnglish(apiKey, additionalPrompt.trim());
         } else {
           translatedAdditionalPrompt = additionalPrompt.trim();
         }
@@ -668,10 +629,10 @@ export function ImageGeneratorPanel({
       let translatedOverlayTerrain = tilemapOverlayTerrain.trim();
       if (isRuletile) {
         if (containsKorean(translatedBaseTerrain)) {
-          translatedBaseTerrain = (await translateToEnglish(geminiApiKey, translatedBaseTerrain)).trim() || translatedBaseTerrain;
+          translatedBaseTerrain = (await translateToEnglish(apiKey, translatedBaseTerrain)).trim() || translatedBaseTerrain;
         }
         if (containsKorean(translatedOverlayTerrain)) {
-          translatedOverlayTerrain = (await translateToEnglish(geminiApiKey, translatedOverlayTerrain)).trim() || translatedOverlayTerrain;
+          translatedOverlayTerrain = (await translateToEnglish(apiKey, translatedOverlayTerrain)).trim() || translatedOverlayTerrain;
         }
       }
 
@@ -837,11 +798,6 @@ export function ImageGeneratorPanel({
                 settings: {
                   aspectRatio: aspectRatio,
                   imageSize: imageSize,
-                  seed: seed,
-                  temperature: temperature,
-                  topK: topK,
-                  topP: topP,
-                  referenceStrength: referenceStrength,
                   useReferenceImages: sessionType === 'CHARACTER' || useReferenceImages,
                   pixelArtGrid: pixelArtGrid, // 스프라이트 그리드 레이아웃
                   cameraAngle: cameraAngle !== 'none' ? cameraAngle : undefined, // 카메라 앵글
@@ -898,45 +854,26 @@ export function ImageGeneratorPanel({
         },
       };
 
-      if (selectedModel.provider === 'openai') {
-        await generateOpenAIImage(
-          selectedApiKey,
-          {
-            prompt: finalPrompt,
-            aspectRatio: aspectRatio,
-            imageSize: imageSize,
-            quality: imageQuality,
-            referenceImages: finalReferenceImages,
-          },
-          callbacks
-        );
-      } else {
-        const geminiModel = imageModel as GeminiImageGenerationModel;
-        await generateImage(
-          selectedApiKey,
-          {
-            prompt: finalPrompt,
-            negativePrompt: negativePrompt,
-            referenceImages: finalReferenceImages,
-            aspectRatio: aspectRatio,
-            imageSize: imageSize,
-            sessionType: sessionType,
-            // 고급 설정
-            seed: seed,
-            temperature: temperature,
-            topK: topK,
-            topP: topP,
-            referenceStrength: referenceStrength,
-            // 픽셀아트 전용 설정
-            analysis: analysis, // 이미지 분석 결과 (픽셀아트 해상도 추출용)
-            pixelArtGrid: pixelArtGrid, // 픽셀아트 그리드 레이아웃
-            // UI 세션 전용 설정
-            referenceDocuments: referenceDocuments, // 참조 문서 (UI 세션에서 기획 내용 반영)
-            imageModel: geminiModel, // 이미지 생성 모델
-          },
-          callbacks
-        );
-      }
+      // OpenRouter Image API 단일 경로 — provider별 파라미터 매핑은 훅 내부에서 처리
+      await generateImage(
+        apiKey,
+        {
+          prompt: finalPrompt,
+          negativePrompt: negativePrompt,
+          referenceImages: finalReferenceImages,
+          aspectRatio: aspectRatio,
+          imageSize: imageSize,
+          quality: imageQuality,
+          sessionType: sessionType,
+          // 픽셀아트 전용 설정
+          analysis: analysis, // 이미지 분석 결과 (픽셀아트 해상도 추출용)
+          pixelArtGrid: pixelArtGrid, // 픽셀아트 그리드 레이아웃
+          // UI 세션 전용 설정
+          referenceDocuments: referenceDocuments, // 참조 문서 (UI 세션에서 기획 내용 반영)
+          imageModel: imageModel, // 이미지 생성 모델
+        },
+        callbacks
+      );
     } catch (error) {
       setIsGenerating(false);
       setIsTranslating(false);
@@ -1135,11 +1072,6 @@ export function ImageGeneratorPanel({
       aspectRatio: entry.settings.aspectRatio,
       imageSize: entry.settings.imageSize,
       useReferenceImages: entry.settings.useReferenceImages,
-      seed: entry.settings.seed,
-      temperature: entry.settings.temperature ?? 1.0,
-      topK: entry.settings.topK ?? 40,
-      topP: entry.settings.topP ?? 0.95,
-      referenceStrength: entry.settings.referenceStrength ?? 1.0,
       pixelArtGrid: entry.settings.pixelArtGrid ?? prev.pixelArtGrid,
       cameraAngle: entry.settings.cameraAngle ?? 'none',
       cameraLens: entry.settings.cameraLens ?? 'none',
@@ -1338,8 +1270,7 @@ export function ImageGeneratorPanel({
 
         {/* 오른쪽: 설정 패널 */}
         <GeneratorSettings
-          geminiApiKey={geminiApiKey}
-          openaiApiKey={openaiApiKey}
+          apiKey={apiKey}
           sessionType={sessionType}
           additionalPrompt={additionalPrompt}
           isGenerating={isGenerating}
@@ -1356,15 +1287,10 @@ export function ImageGeneratorPanel({
           tilemapOutline={tilemapOutline}
           tilemapOutline2={tilemapOutline2}
           tilemapOutlineSide={tilemapOutlineSide}
-          showAdvanced={showAdvanced}
           showHelp={showHelp}
-          seed={seed}
-          temperature={temperature}
-          topK={topK}
-          topP={topP}
           imageModel={imageModel}
           imageQuality={imageQuality}
-          availableModels={getAvailableImageModels(hasOpenAIApiKey)}
+          availableModels={getAvailableImageModels()}
           supportedAspectRatios={getImageModelDefinition(imageModel).supports.aspectRatios}
           supportedImageSizes={getImageModelDefinition(imageModel).supports.imageSizes}
           cameraAngle={cameraAngle}
@@ -1383,12 +1309,7 @@ export function ImageGeneratorPanel({
           onTilemapOutlineChange={setTilemapOutline}
           onTilemapOutline2Change={setTilemapOutline2}
           onTilemapOutlineSideChange={setTilemapOutlineSide}
-          onShowAdvancedChange={setShowAdvanced}
           onShowHelpChange={setShowHelp}
-          onSeedChange={setSeed}
-          onTemperatureChange={setTemperature}
-          onTopKChange={setTopK}
-          onTopPChange={setTopP}
           onImageModelChange={setImageModel}
           onImageQualityChange={setImageQuality}
           onCameraAngleChange={setCameraAngle}

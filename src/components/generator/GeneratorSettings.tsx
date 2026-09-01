@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { Languages, Wand2, Dices, HelpCircle, X, Award, AlertTriangle, Camera, ChevronDown } from 'lucide-react';
+import { Languages, Wand2, HelpCircle, X, AlertTriangle, Camera, ChevronDown } from 'lucide-react';
 import { SessionType } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
@@ -30,8 +30,7 @@ import {
 
 interface GeneratorSettingsProps {
   // 기본 정보
-  geminiApiKey: string;
-  openaiApiKey: string;
+  apiKey: string;
   sessionType: SessionType;
   // 상태
   additionalPrompt: string;
@@ -49,12 +48,7 @@ interface GeneratorSettingsProps {
   tilemapOutlineSide: TilemapOutlineSide;
   tilemapBaseTerrain: string;
   tilemapOverlayTerrain: string;
-  showAdvanced: boolean;
   showHelp: boolean;
-  seed: number | undefined;
-  temperature: number;
-  topK: number;
-  topP: number;
   imageModel: ImageGenerationModel;
   imageQuality: ImageQualityOption;
   availableModels: ImageModelDefinition[];
@@ -82,12 +76,7 @@ interface GeneratorSettingsProps {
   onTilemapOutlineSideChange: (value: TilemapOutlineSide) => void;
   onTilemapBaseTerrainChange: (value: string) => void;
   onTilemapOverlayTerrainChange: (value: string) => void;
-  onShowAdvancedChange: (value: boolean) => void;
   onShowHelpChange: (value: boolean) => void;
-  onSeedChange: (value: number | undefined) => void;
-  onTemperatureChange: (value: number) => void;
-  onTopKChange: (value: number) => void;
-  onTopPChange: (value: number) => void;
   onImageModelChange: (value: ImageGenerationModel) => void;
   onImageQualityChange: (value: ImageQualityOption) => void;
   onCameraAngleChange: (value: string) => void;
@@ -97,8 +86,7 @@ interface GeneratorSettingsProps {
 }
 
 function GeneratorSettingsComponent({
-  geminiApiKey,
-  openaiApiKey,
+  apiKey,
   sessionType,
   additionalPrompt,
   isGenerating,
@@ -115,12 +103,7 @@ function GeneratorSettingsComponent({
   tilemapOutlineSide,
   tilemapBaseTerrain,
   tilemapOverlayTerrain,
-  showAdvanced,
   showHelp,
-  seed,
-  temperature,
-  topK,
-  topP,
   imageModel,
   imageQuality,
   availableModels,
@@ -142,12 +125,7 @@ function GeneratorSettingsComponent({
   onTilemapOutlineSideChange,
   onTilemapBaseTerrainChange,
   onTilemapOverlayTerrainChange,
-  onShowAdvancedChange,
   onShowHelpChange,
-  onSeedChange,
-  onTemperatureChange,
-  onTopKChange,
-  onTopPChange,
   onImageModelChange,
   onImageQualityChange,
   onCameraAngleChange,
@@ -236,7 +214,7 @@ function GeneratorSettingsComponent({
             <div className="space-y-2">
               <DocumentManager
                 documents={referenceDocuments}
-                apiKey={geminiApiKey}
+                apiKey={apiKey}
                 onAdd={onDocumentAdd || (() => {})}
                 onDelete={onDocumentDelete || (() => {})}
               />
@@ -458,9 +436,9 @@ function GeneratorSettingsComponent({
               바꿀 수 없는 값을 사이드바에 남겨둘 이유가 없어 제거했고,
               키가 없을 때의 경고만 남긴다 — 없으면 생성이 그냥 실패한다 */}
           {sessionType === 'TILEMAP' ? (
-            !openaiApiKey.trim() ? (
+            !apiKey.trim() ? (
               <p className="text-xs text-amber-600">
-                타일맵 생성에는 ChatGPT API Key가 필요합니다. 헤더의 설정 아이콘에서 입력해 주세요.
+                이미지 생성에는 OpenRouter API Key가 필요합니다. 헤더의 설정 아이콘에서 입력해 주세요.
               </p>
             ) : null
           ) : (
@@ -485,9 +463,6 @@ function GeneratorSettingsComponent({
                 />
               </div>
             </div>
-            {!openaiApiKey.trim() && (
-              <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
-            )}
           </div>
           )}
 
@@ -496,29 +471,20 @@ function GeneratorSettingsComponent({
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 비율</label>
               <div className="flex flex-nowrap gap-1">
-                {supportedAspectRatios.map((ratio) => {
-                  const isExtreme = ratio === '1:3' || ratio === '3:1';
-                  return (
-                    <button
-                      key={ratio}
-                      onClick={() => onAspectRatioChange(ratio)}
-                      title={isExtreme ? '극단적 비율(베타) — 배너/파노라마용' : undefined}
-                      className={`min-w-0 flex-1 px-1 py-1.5 rounded-md text-[11px] font-medium border transition-all ${
-                        aspectRatio === ratio
-                          ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
-                          : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
-                      }`}
-                    >
-                      {ratio}
-                    </button>
-                  );
-                })}
+                {supportedAspectRatios.map((ratio) => (
+                  <button
+                    key={ratio}
+                    onClick={() => onAspectRatioChange(ratio)}
+                    className={`min-w-0 flex-1 px-1 py-1.5 rounded-md text-[11px] font-medium border transition-all ${
+                      aspectRatio === ratio
+                        ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
+                    }`}
+                  >
+                    {ratio}
+                  </button>
+                ))}
               </div>
-              {(aspectRatio === '1:3' || aspectRatio === '3:1') && (
-                <p className="text-xs text-amber-600 mt-1">
-                  극단적 비율(베타) — 배너/파노라마 전용 · Gemini 모델에서만 지원
-                </p>
-              )}
             </div>
           )}
 
@@ -548,7 +514,7 @@ function GeneratorSettingsComponent({
           {/* 이미지 품질 (덕테이프 전용).
               TILEMAP은 medium 고정이므로 노출하지 않는다 — 재질 스와치는 균질한 필드라
               high로 올려도 얻는 게 없고 비용·시간만 늘어난다 */}
-          {imageModel === 'gpt-image-2' && sessionType !== 'TILEMAP' && (
+          {imageModel === 'openai/gpt-image-2' && sessionType !== 'TILEMAP' && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 품질</label>
               <div className="grid grid-cols-3 gap-2">
@@ -590,121 +556,15 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
-          {/* 고급 설정 — 덕테이프 고정인 TILEMAP에서는 지원 옵션이 없어 아예 숨긴다 */}
-          {sessionType !== 'TILEMAP' && (
-          <div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onShowAdvancedChange(!showAdvanced)}
-                className="flex-1 flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <Award size={16} className="text-gray-600" />
-                  <span className="text-sm font-semibold text-gray-700">고급 설정</span>
-                </div>
-                <span className="text-xs text-gray-500">{showAdvanced ? '▲ 접기' : '▼ 펼치기'}</span>
-              </button>
-              <button
-                onClick={() => onShowHelpChange(true)}
-                className="p-3 bg-gray-50 hover:bg-purple-100 rounded-lg transition-colors"
-                title="고급 설정 도움말"
-              >
-                <HelpCircle size={16} className="text-purple-600" />
-              </button>
-            </div>
-
-            {showAdvanced && imageModel !== 'gpt-image-2' && (
-              <div className="mt-3 space-y-4 p-4 bg-gray-50 rounded-lg">
-                {/* Seed */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-semibold text-gray-700">Seed (재현성)</label>
-                    <button
-                      onClick={() => onSeedChange(Math.floor(Math.random() * 1000000))}
-                      className="flex items-center gap-1 px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100 transition-colors"
-                      title="랜덤 Seed 생성"
-                    >
-                      <Dices size={14} />
-                      <span>랜덤</span>
-                    </button>
-                  </div>
-                  <input
-                    type="number"
-                    value={seed ?? ''}
-                    onChange={(e) => onSeedChange(e.target.value ? parseInt(e.target.value) : undefined)}
-                    placeholder="비어있음 (랜덤)"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">동일한 Seed는 동일한 결과를 보장합니다</p>
-                </div>
-
-                {/* Temperature */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Temperature: {temperature.toFixed(2)}
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    value={temperature}
-                    onChange={(e) => onTemperatureChange(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>일관성 (0.0)</span>
-                    <span>창의성 (2.0)</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    낮을수록 일관적이고 예측 가능한 결과, 높을수록 창의적이고 다양한 결과
-                  </p>
-                </div>
-
-                {/* Top-K */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Top-K: {topK}</label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    step="1"
-                    value={topK}
-                    onChange={(e) => onTopKChange(parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    샘플링할 상위 K개의 토큰 수 (낮을수록 보수적, 높을수록 다양함)
-                  </p>
-                </div>
-
-                {/* Top-P */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Top-P: {topP.toFixed(2)}
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={topP}
-                    onChange={(e) => onTopPChange(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    누적 확률 임계값 (낮을수록 보수적, 높을수록 다양함)
-                  </p>
-                </div>
-              </div>
-            )}
-            {showAdvanced && imageModel === 'gpt-image-2' && (
-              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-                덕테이프 모델에서는 Seed/Temperature/Top-K/Top-P 고급 설정이 지원되지 않습니다.
-              </div>
-            )}
-          </div>
-          )}
+          {/* 도움말 (OpenRouter Image API는 Seed/Temperature/Top-K/Top-P를 지원하지 않아 고급 설정을 제거) */}
+          <button
+            onClick={() => onShowHelpChange(true)}
+            className="w-full flex items-center justify-center gap-2 p-3 bg-gray-50 hover:bg-purple-100 rounded-lg transition-colors"
+            title="이미지 생성 도움말"
+          >
+            <HelpCircle size={16} className="text-purple-600" />
+            <span className="text-sm font-semibold text-gray-700">이미지 생성 도움말</span>
+          </button>
 
           {/* 진행 상태 */}
           {progressMessage && (
@@ -753,8 +613,6 @@ function GeneratorSettingsComponent({
                   <li>9:16 - 세로형 (모바일 배경, 스토리)</li>
                   <li>4:3 - 가로형 (일반 사진)</li>
                   <li>3:4 - 세로형 (인물 사진)</li>
-                  <li>3:1 - 가로 파노라마 (헤더/와이드 배너) · Gemini 전용</li>
-                  <li>1:3 - 세로 배너 (모바일 광고/스토리) · Gemini 전용</li>
                 </ul>
               </div>
               <div>
@@ -764,18 +622,6 @@ function GeneratorSettingsComponent({
                   <li>2K - 고화질 필요 시 (비용 증가)</li>
                   <li>4K - 최고 품질 (비용 크게 증가, 신중히 선택)</li>
                 </ul>
-              </div>
-              <div>
-                <h4 className="font-semibold text-gray-800 mb-2">⚙️ 고급 설정</h4>
-                <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
-                  <li><span className="font-medium">Seed</span> - 동일한 값으로 같은 결과 재현 가능</li>
-                  <li><span className="font-medium">Temperature</span> - 낮을수록 일관적, 높을수록 창의적 (기본: 1.0)</li>
-                  <li><span className="font-medium">Top-K</span> - 샘플링할 토큰 수 (기본: 40)</li>
-                  <li><span className="font-medium">Top-P</span> - 누적 확률 임계값 (기본: 0.95)</li>
-                </ul>
-                <p className="text-xs text-gray-500 mt-2">
-                  💡 일반적으로 기본값을 사용하는 것을 권장합니다. 결과가 너무 비슷하면 Temperature를 높이고, 너무 다양하면 낮추세요.
-                </p>
               </div>
             </div>
             <div className="sticky bottom-0 bg-gray-50 px-6 py-4 border-t border-gray-200">

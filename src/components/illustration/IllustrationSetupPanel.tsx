@@ -22,14 +22,14 @@ interface IllustrationSetupPanelProps {
   data: IllustrationSessionData;
   onDataChange: (data: IllustrationSessionData) => void;
   disabled?: boolean;
-  geminiApiKey?: string;
+  apiKey?: string;
 }
 
 export function IllustrationSetupPanel({
   data,
   onDataChange,
   disabled = false,
-  geminiApiKey = '',
+  apiKey = '',
 }: IllustrationSetupPanelProps) {
   // 구도 스케치 모달 상태
   const [sketchOpen, setSketchOpen] = useState(false);
@@ -475,7 +475,7 @@ export function IllustrationSetupPanel({
       {/* 구도 스케치 모달 */}
       <ConceptSketchPanel
         open={sketchOpen}
-        geminiApiKey={geminiApiKey}
+        apiKey={apiKey}
         characters={data.characters}
         initial={data.conceptSketch}
         onClose={() => setSketchOpen(false)}

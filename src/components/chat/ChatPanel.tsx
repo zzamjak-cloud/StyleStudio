@@ -14,18 +14,17 @@ import { ChatInput } from './ChatInput';
 import { ChatAISettings } from './ChatAISettings';
 import { ImageAnnotator } from './annotation/ImageAnnotator';
 import { logger } from '../../lib/logger';
-import { getImageModelDefinition } from '../../hooks/api/imageModels';
+import { getImageModelDefinition, normalizeImageModelId } from '../../hooks/api/imageModels';
 import { serializeColorInstructions, AnnotationResult } from '../../types/annotation';
 
 interface ChatPanelProps {
   session: Session;
-  geminiApiKey: string;
-  openaiApiKey: string;
+  apiKey: string;
   onSessionUpdate: (session: Session) => void;
 }
 
 /** 채팅 패널 메인 컴포넌트 */
-function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpdate }: ChatPanelProps) {
+function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps) {
   const {
     messages,
     attachedDocuments,
@@ -41,15 +40,16 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
 
   const { isGenerating, generateFromChat, summarizeMessages } = useChatImageGeneration(
     session,
-    geminiApiKey,
-    openaiApiKey
+    apiKey
   );
 
+  // 레거시 모델 ID(OpenRouter 이전에 저장된 세션) → 현재 슬러그로 정규화
   useEffect(() => {
-    if (!openaiApiKey.trim() && settings.imageModel === 'gpt-image-2') {
-      updateSettings({ imageModel: 'gemini-3-pro-image-preview' });
+    const normalized = normalizeImageModelId(settings.imageModel);
+    if (normalized !== settings.imageModel) {
+      updateSettings({ imageModel: normalized });
     }
-  }, [openaiApiKey, settings.imageModel, updateSettings]);
+  }, [settings.imageModel, updateSettings]);
 
   useEffect(() => {
     const modelDef = getImageModelDefinition(settings.imageModel);
@@ -322,7 +322,7 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
               onDelete={deleteMessage}
               onImageClick={setPreviewImage}
               onAnnotateImage={
-                openaiApiKey.trim()
+                apiKey.trim()
                   ? (messageId, imageBase64) => setAnnotationTarget({ messageId, imageBase64 })
                   : undefined
               }
@@ -347,7 +347,7 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
           <ChatInput
             onSend={handleSend}
             isGenerating={isGenerating}
-            disabled={!geminiApiKey && !openaiApiKey}
+            disabled={!apiKey}
           />
         </div>
       </div>
@@ -355,10 +355,9 @@ function ChatPanelComponent({ session, geminiApiKey, openaiApiKey, onSessionUpda
       {/* 우측 AI 설정 패널 */}
       <ChatAISettings
         settings={settings}
-        hasOpenAIApiKey={openaiApiKey.trim().length > 0}
         onSettingsChange={updateSettings}
         attachedDocuments={attachedDocuments}
-        documentApiKey={geminiApiKey}
+        documentApiKey={apiKey}
         onDocumentAdd={(doc) => {
           const exists = attachedDocuments.some((d) => d.filePath === doc.filePath);
           if (exists) return;

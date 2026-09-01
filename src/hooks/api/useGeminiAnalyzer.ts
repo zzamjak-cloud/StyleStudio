@@ -1,3 +1,6 @@
+// 참조 이미지 분석 훅 — OpenRouter chat completions(비전)로 Gemini 계열 모델을 호출한다.
+// 프롬프트 선택 → 이미지 첨부 → JSON 파싱/검증 흐름은 기존과 동일.
+
 import {
   STYLE_ANALYZER_PROMPT,
   MULTI_IMAGE_ANALYZER_PROMPT,
@@ -12,10 +15,11 @@ import {
   ILLUSTRATION_BACKGROUND_ANALYZER_PROMPT,
 } from '../../lib/gemini/analysisPrompt';
 import { ImageAnalysisResult } from '../../types/analysis';
-import { DEFAULT_ANALYSIS_MODEL } from '../../types/constants';
+import { ANALYSIS_MODELS, DEFAULT_ANALYSIS_MODEL } from '../../types/constants';
 import { SessionType } from '../../types/session';
 import { IllustrationCharacterAnalysis, BackgroundAnalysisResult } from '../../types/illustration';
 import { logger } from '../../lib/logger';
+import { chatComplete, toImagePart, ChatContentPart } from '../../lib/api/openrouter';
 
 interface AnalysisCallbacks {
   onProgress: (message: string) => void;
@@ -25,7 +29,52 @@ interface AnalysisCallbacks {
 
 interface AnalysisOptions {
   previousAnalysis?: ImageAnalysisResult; // 기존 분석 결과 (분석 강화 모드용)
-  model?: string; // 분석에 사용할 Gemini 모델 (미지정 시 기본 모델)
+  model?: string; // 분석에 사용할 모델 (미지정 시 기본 모델)
+}
+
+// JSON 응답 잘림 방지
+const ANALYSIS_MAX_TOKENS = 8192;
+
+/** 저장된 (레거시 포함) 분석 모델 ID를 OpenRouter 슬러그로 정규화 */
+function normalizeAnalysisModel(model: string | undefined): string {
+  if (!model) return DEFAULT_ANALYSIS_MODEL;
+  if (ANALYSIS_MODELS.some((m) => m.id === model)) return model;
+  // 레거시 ID (예: 'gemini-3.7-flash') → 'google/' 접두어 부여
+  if (!model.includes('/')) return `google/${model}`;
+  return model;
+}
+
+/** 프롬프트 + 이미지 배열을 chat completions 사용자 메시지 콘텐츠로 변환 */
+function buildVisionContent(prompt: string, imageBase64Array: string[]): ChatContentPart[] {
+  return [{ type: 'text', text: prompt }, ...imageBase64Array.map(toImagePart)];
+}
+
+/** 모델 응답 텍스트에서 JSON 객체를 추출·클린업 후 파싱 */
+function parseJsonFromText(text: string): unknown {
+  let jsonText = text;
+
+  // 1단계: ```json ``` 또는 ``` ``` 코드 블록 제거
+  if (text.includes('```')) {
+    const jsonBlockMatch =
+      text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
+    if (jsonBlockMatch) {
+      jsonText = jsonBlockMatch[1];
+    } else {
+      jsonText = text.replace(/```json|```/g, '');
+    }
+  }
+
+  // 2단계: JSON 객체만 추출 (첫 { 부터 마지막 } 까지)
+  const firstBrace = jsonText.indexOf('{');
+  const lastBrace = jsonText.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+  }
+
+  // 3단계: trailing commas 제거
+  jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1');
+
+  return JSON.parse(jsonText.trim());
 }
 
 export function useGeminiAnalyzer() {
@@ -43,11 +92,6 @@ export function useGeminiAnalyzer() {
         throw new Error('API Key가 비어있습니다');
       }
 
-      logger.debug('🔑 API Key 정보:');
-      logger.debug('   - 키 길이:', cleanApiKey.length);
-      logger.debug('   - 키 시작:', cleanApiKey.substring(0, 15) + '...');
-      logger.debug('   - 키 형식 확인:', cleanApiKey.startsWith('AIza') ? '✅ 올바른 형식' : '⚠️ 잘못된 형식');
-
       // 이미지 배열 검증
       if (!imageBase64Array || imageBase64Array.length === 0) {
         throw new Error('분석할 이미지가 없습니다');
@@ -56,28 +100,7 @@ export function useGeminiAnalyzer() {
       logger.debug('📷 이미지 정보:');
       logger.debug('   - 이미지 개수:', imageBase64Array.length);
 
-      callbacks.onProgress(`${imageBase64Array.length}개의 이미지를 Gemini에 전송 중...`);
-
-      // 여러 이미지를 parts 배열로 변환
-      const imageParts = imageBase64Array.map((imageBase64) => {
-        // Base64에서 data URL prefix 제거
-        const base64Data = imageBase64.includes(',')
-          ? imageBase64.split(',')[1]
-          : imageBase64;
-
-        // 이미지 MIME 타입 추출
-        const mimeMatch = imageBase64.match(/data:([^;]+);base64/);
-        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-
-        return {
-          inline_data: {
-            mime_type: mimeType,
-            data: base64Data,
-          },
-        };
-      });
-
-      logger.debug('   - 처리된 이미지 parts:', imageParts.length);
+      callbacks.onProgress(`${imageBase64Array.length}개의 이미지를 분석 모델에 전송 중...`);
 
       // 프롬프트 선택 로직
       let analysisPrompt: string;
@@ -87,160 +110,46 @@ export function useGeminiAnalyzer() {
       if (sessionType === 'LOGO') {
         analysisPrompt = LOGO_ANALYZER_PROMPT;
         promptType = 'LOGO';
-        logger.debug('📋 프롬프트 선택: LOGO (게임 로고 전용, Typography/Material 중심)');
       } else if (sessionType === 'UI') {
         analysisPrompt = UI_ANALYZER_PROMPT;
         promptType = 'UI';
-        logger.debug('📋 프롬프트 선택: UI (UI 디자인 전용, 캐릭터 제외, Flat UI 생성)');
       } else if (sessionType === 'BACKGROUND') {
-        // 배경 타입 체크 (캐릭터 제외)
         analysisPrompt = BACKGROUND_ANALYZER_PROMPT;
         promptType = 'BACKGROUND';
-        logger.debug('📋 프롬프트 선택: BACKGROUND (배경 전용, 캐릭터 제외)');
       } else if (sessionType === 'TILEMAP') {
         analysisPrompt = TILEMAP_ANALYZER_PROMPT;
         promptType = 'TILEMAP';
-        logger.debug('📋 프롬프트 선택: TILEMAP (손맵 타일 전용, 캐릭터 제외)');
       } else if (sessionType === 'PIXELART_BACKGROUND') {
         analysisPrompt = PIXELART_BACKGROUND_ANALYZER_PROMPT;
         promptType = 'PIXELART_BACKGROUND';
-        logger.debug('📋 프롬프트 선택: PIXELART_BACKGROUND (픽셀아트 배경 전용, 캐릭터 제외)');
       } else if (sessionType === 'PIXELART_CHARACTER' || sessionType === 'PIXELART_ICON') {
-        // 픽셀아트 캐릭터/아이콘 타입이면 픽셀아트 전용 프롬프트 사용
         analysisPrompt = PIXELART_ANALYZER_PROMPT;
         promptType = 'PIXELART';
-        logger.debug('📋 프롬프트 선택: PIXELART (픽셀아트 특화 분석)');
       } else if (options?.previousAnalysis) {
         // 분석 강화 모드: 기존 분석 결과를 포함한 프롬프트 사용
         const previousAnalysisJson = JSON.stringify(options.previousAnalysis, null, 2);
         analysisPrompt = REFINEMENT_ANALYZER_PROMPT(previousAnalysisJson);
         promptType = 'REFINEMENT';
-        logger.debug('📋 프롬프트 선택: REFINEMENT (분석 강화 모드)');
-        logger.debug('   - 기존 분석 결과 포함');
       } else {
         // 일반 분석 모드: 이미지 개수에 따라 프롬프트 선택
         analysisPrompt =
           imageBase64Array.length > 1 ? MULTI_IMAGE_ANALYZER_PROMPT : STYLE_ANALYZER_PROMPT;
         promptType = imageBase64Array.length > 1 ? 'MULTI_IMAGE' : 'SINGLE_IMAGE';
-        logger.debug('📋 프롬프트 선택:', promptType);
       }
+      logger.debug('📋 프롬프트 선택:', promptType);
 
-      // Gemini API 엔드포인트 (사용자 선택 모델, 미지정 시 기본 모델)
-      const analysisModel = options?.model || DEFAULT_ANALYSIS_MODEL;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${analysisModel}:generateContent?key=${cleanApiKey}`;
+      const analysisModel = normalizeAnalysisModel(options?.model);
+      logger.debug('🌐 분석 모델:', analysisModel);
 
-      logger.debug('🌐 API 요청 정보:');
-      logger.debug('   - URL:', url.replace(cleanApiKey, 'API_KEY_MASKED'));
-      logger.debug('   - 모델:', analysisModel);
+      callbacks.onProgress('이미지를 분석하고 있습니다...');
 
-      callbacks.onProgress('Gemini가 이미지를 분석하고 있습니다...');
-
-      // parts 배열 구성: [프롬프트, 이미지1, 이미지2, ...]
-      const parts = [
-        { text: analysisPrompt },
-        ...imageParts,
-      ];
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: parts,
-            },
-          ],
-          // Gemini 3.x: temperature/topK/topP 지원 중단
-          generationConfig: {
-            maxOutputTokens: 8192, // JSON 응답 잘림 방지를 위해 증가
-          },
-        }),
+      const text = await chatComplete(cleanApiKey, {
+        model: analysisModel,
+        messages: [{ role: 'user', content: buildVisionContent(analysisPrompt, imageBase64Array) }],
+        maxTokens: ANALYSIS_MAX_TOKENS,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error('❌ API 오류 발생:');
-        logger.error('   - 상태 코드:', response.status);
-        logger.error('   - 상태 텍스트:', response.statusText);
-        logger.error('   - 응답 내용:', errorText);
-
-        // 에러 내용 파싱 시도
-        try {
-          const errorJson = JSON.parse(errorText);
-          logger.error('   - 파싱된 오류:', JSON.stringify(errorJson, null, 2));
-        } catch {
-          logger.error('   - 원본 오류:', errorText);
-        }
-
-        throw new Error(`API 오류 (${response.status}): ${errorText}`);
-      }
-
       callbacks.onProgress('분석 결과를 처리하고 있습니다...');
-
-      const result = await response.json();
-      logger.debug('✅ Gemini 응답 수신 성공');
-      logger.debug('   - 전체 응답:', JSON.stringify(result, null, 2));
-
-      // 응답에서 텍스트 추출
-      const candidate = result.candidates?.[0];
-
-      // 응답 차단 확인
-      if (!candidate) {
-        logger.error('❌ candidates가 없습니다');
-        throw new Error('Gemini 응답에 candidates가 없습니다. API 키나 요청을 확인하세요.');
-      }
-
-      // finishReason 확인
-      const finishReason = candidate.finishReason;
-      logger.debug('   - finishReason:', finishReason);
-
-      if (finishReason === 'SAFETY') {
-        logger.error('❌ 안전 필터에 의해 차단됨');
-        logger.error('   - safetyRatings:', candidate.safetyRatings);
-        throw new Error('이미지가 안전 필터에 의해 차단되었습니다. 다른 이미지로 시도해주세요.');
-      }
-
-      if (finishReason === 'RECITATION') {
-        logger.error('❌ 저작권 관련 차단');
-        throw new Error('저작권 관련 문제로 분석이 차단되었습니다.');
-      }
-
-      if (finishReason === 'MAX_TOKENS') {
-        logger.error('❌ 최대 토큰 수 초과로 응답 잘림');
-        throw new Error('응답이 너무 길어서 잘렸습니다. 이미지 개수를 줄이거나 다시 시도해주세요.');
-      }
-
-      if (finishReason === 'OTHER' || finishReason === 'BLOCKLIST') {
-        logger.error('❌ 기타 이유로 차단됨:', finishReason);
-        throw new Error(`응답이 차단되었습니다: ${finishReason}`);
-      }
-
-      if (finishReason !== 'STOP') {
-        logger.warn('⚠️ 비정상적인 finishReason:', finishReason);
-        logger.warn('   - 응답이 완전하지 않을 수 있습니다');
-      }
-
-      const text = candidate.content?.parts?.[0]?.text;
-      if (!text) {
-        logger.error('❌ 텍스트 추출 실패:');
-        logger.error('   - candidate:', JSON.stringify(candidate, null, 2));
-        logger.error('   - content:', candidate.content);
-        logger.error('   - parts:', candidate.content?.parts);
-        logger.error('   - finishReason:', finishReason);
-        logger.error('   - safetyRatings:', candidate.safetyRatings);
-
-        // promptFeedback 확인
-        if (result.promptFeedback) {
-          logger.error('   - promptFeedback:', result.promptFeedback);
-          if (result.promptFeedback.blockReason) {
-            throw new Error(`프롬프트가 차단되었습니다: ${result.promptFeedback.blockReason}`);
-          }
-        }
-
-        throw new Error('Gemini 응답에 텍스트가 없습니다. 이미지를 확인하거나 다시 시도해주세요.');
-      }
 
       logger.debug('📝 추출된 텍스트:');
       logger.debug('   - 길이:', text.length);
@@ -248,82 +157,17 @@ export function useGeminiAnalyzer() {
 
       // JSON 파싱
       let analysisResult: ImageAnalysisResult;
-      let jsonText = text; // catch 블록에서도 접근 가능하도록 try 블록 밖에서 선언
       try {
-        logger.debug('🔍 JSON 파싱 시도...');
-
-        // 1단계: ```json ``` 또는 ``` ``` 코드 블록 제거
-        if (text.includes('```')) {
-          logger.debug('   - 코드 블록 감지, 제거 중...');
-          // ```json ... ``` 패턴 매칭
-          const jsonBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-          if (jsonBlockMatch) {
-            jsonText = jsonBlockMatch[1];
-            logger.debug('   - ```json``` 블록 추출 성공');
-          } else {
-            // ``` ... ``` 패턴 매칭
-            const codeBlockMatch = text.match(/```\s*([\s\S]*?)\s*```/);
-            if (codeBlockMatch) {
-              jsonText = codeBlockMatch[1];
-              logger.debug('   - ``` 블록 추출 성공');
-            } else {
-              // 백틱만 제거
-              jsonText = text.replace(/```json|```/g, '');
-              logger.debug('   - 백틱 수동 제거');
-            }
-          }
-        }
-
-        // 2단계: JSON 객체만 추출 (첫 { 부터 마지막 } 까지)
-        const firstBrace = jsonText.indexOf('{');
-        const lastBrace = jsonText.lastIndexOf('}');
-
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-          jsonText = jsonText.substring(firstBrace, lastBrace + 1);
-          logger.debug('   - JSON 객체 추출 성공');
-        }
-
-        // 3단계: JSON 클린업 - trailing commas 제거
-        // ,} 또는 ,] 패턴을 } 또는 ]로 변경
-        jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1');
-        logger.debug('   - Trailing commas 제거 완료');
-
-        logger.debug('   - 최종 JSON 텍스트 (앞 300자):', jsonText.substring(0, 300));
-        logger.debug('   - 최종 JSON 텍스트 (전체 길이):', jsonText.length);
-
-        // 4단계: JSON 파싱
-        analysisResult = JSON.parse(jsonText.trim());
+        analysisResult = parseJsonFromText(text) as ImageAnalysisResult;
         logger.debug('✅ JSON 파싱 성공');
-        logger.debug('   - 결과:', JSON.stringify(analysisResult, null, 2));
       } catch (parseError) {
         logger.error('❌ JSON 파싱 실패:', parseError);
-
-        // 에러 위치 정보 추출 (처리된 jsonText 기준)
-        const errorMessage = (parseError as Error).message;
-        const positionMatch = errorMessage.match(/position (\d+)/);
-
-        if (positionMatch) {
-          const errorPos = parseInt(positionMatch[1]);
-          const start = Math.max(0, errorPos - 100);
-          const end = Math.min(jsonText.length, errorPos + 100);
-
-          logger.error('   - 에러 발생 위치 주변 (±100자):', jsonText.substring(start, end));
-          logger.error('   - 에러 위치:', errorPos);
-        }
-
-        // 전체 JSON 텍스트 출력 (처리된 jsonText)
-        logger.error('   - 파싱 시도한 전체 JSON (길이:', jsonText.length, '):');
-        logger.error(jsonText);
-
-        // 원본 텍스트도 출력
-        logger.error('   - 원본 Gemini 응답 (길이:', text.length, '):');
+        logger.error('   - 원본 응답 (길이:', text.length, '):');
         logger.error(text);
-
-        throw new Error('분석 결과를 JSON으로 파싱할 수 없습니다. Gemini 응답 형식을 확인하세요.');
+        throw new Error('분석 결과를 JSON으로 파싱할 수 없습니다. 모델 응답 형식을 확인하세요.');
       }
 
       // 결과 검증
-      logger.debug('🔎 결과 검증 중...');
       if (
         !analysisResult.style ||
         !analysisResult.character ||
@@ -345,12 +189,7 @@ export function useGeminiAnalyzer() {
         !analysisResult.character.torso_shape ||
         !analysisResult.character.hand_style
       ) {
-        logger.warn('⚠️ 일부 필드 누락:');
-        logger.warn('   - body_proportions:', analysisResult.character.body_proportions);
-        logger.warn('   - limb_proportions:', analysisResult.character.limb_proportions);
-        logger.warn('   - torso_shape:', analysisResult.character.torso_shape);
-        logger.warn('   - hand_style:', analysisResult.character.hand_style);
-        // 누락된 필드에 기본값 설정
+        logger.warn('⚠️ 일부 필드 누락 — 기본값 설정');
         if (!analysisResult.character.body_proportions) {
           analysisResult.character.body_proportions = 'not specified';
         }
@@ -371,7 +210,7 @@ export function useGeminiAnalyzer() {
       logger.debug('✅ 분석 완료!');
       callbacks.onComplete(analysisResult);
     } catch (error) {
-      logger.error('Gemini 분석 오류:', error);
+      logger.error('이미지 분석 오류:', error);
       callbacks.onError(
         error instanceof Error ? error : new Error('알 수 없는 오류가 발생했습니다')
       );
@@ -400,78 +239,29 @@ export function useGeminiAnalyzer() {
     logger.debug(`🎭 캐릭터 분석 시작: "${characterName}" (${imageBase64Array.length}장)`);
     onProgress?.(`"${characterName}" 캐릭터를 분석하고 있습니다...`);
 
-    // 이미지를 parts 배열로 변환
-    const imageParts = imageBase64Array.map((imageBase64) => {
-      const base64Data = imageBase64.includes(',')
-        ? imageBase64.split(',')[1]
-        : imageBase64;
-      const mimeMatch = imageBase64.match(/data:([^;]+);base64/);
-      const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-
-      return {
-        inline_data: {
-          mime_type: mimeType,
-          data: base64Data,
+    const text = await chatComplete(cleanApiKey, {
+      model: DEFAULT_ANALYSIS_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: buildVisionContent(
+            ILLUSTRATION_CHARACTER_ANALYZER_PROMPT(characterName),
+            imageBase64Array
+          ),
         },
-      };
+      ],
+      maxTokens: ANALYSIS_MAX_TOKENS,
     });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_ANALYSIS_MODEL}:generateContent?key=${cleanApiKey}`;
-
-    const parts = [
-      { text: ILLUSTRATION_CHARACTER_ANALYZER_PROMPT(characterName) },
-      ...imageParts,
-    ];
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        // Gemini 3.x: temperature/topK/topP 지원 중단
-        generationConfig: {
-          maxOutputTokens: 8192,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API 오류 (${response.status}): ${errorText}`);
-    }
-
-    const result = await response.json();
-    const candidate = result.candidates?.[0];
-
-    if (!candidate || candidate.finishReason === 'SAFETY') {
-      throw new Error('이미지가 안전 필터에 의해 차단되었습니다.');
-    }
-
-    const text = candidate.content?.parts?.[0]?.text;
-    if (!text) {
-      throw new Error('Gemini 응답에 텍스트가 없습니다.');
-    }
-
-    // JSON 파싱
-    let jsonText = text;
-    if (text.includes('```')) {
-      const jsonBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
-      if (jsonBlockMatch) jsonText = jsonBlockMatch[1];
-    }
-
-    const firstBrace = jsonText.indexOf('{');
-    const lastBrace = jsonText.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      jsonText = jsonText.substring(firstBrace, lastBrace + 1);
-    }
-    jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1');
-
-    const parsed = JSON.parse(jsonText.trim());
+    const parsed = parseJsonFromText(text) as {
+      character: IllustrationCharacterAnalysis;
+      negative_prompt?: string;
+    };
 
     logger.debug(`✅ 캐릭터 "${characterName}" 분석 완료`);
 
     return {
-      analysis: parsed.character as IllustrationCharacterAnalysis,
+      analysis: parsed.character,
       negativePrompt: parsed.negative_prompt || '',
     };
   };
@@ -497,78 +287,26 @@ export function useGeminiAnalyzer() {
     logger.debug(`🖼️ 배경 분석 시작: ${imageBase64Array.length}장`);
     onProgress?.('배경 스타일을 분석하고 있습니다...');
 
-    // 이미지를 parts 배열로 변환
-    const imageParts = imageBase64Array.map((imageBase64) => {
-      const base64Data = imageBase64.includes(',')
-        ? imageBase64.split(',')[1]
-        : imageBase64;
-      const mimeMatch = imageBase64.match(/data:([^;]+);base64/);
-      const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-
-      return {
-        inline_data: {
-          mime_type: mimeType,
-          data: base64Data,
+    const text = await chatComplete(cleanApiKey, {
+      model: DEFAULT_ANALYSIS_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: buildVisionContent(ILLUSTRATION_BACKGROUND_ANALYZER_PROMPT, imageBase64Array),
         },
-      };
+      ],
+      maxTokens: ANALYSIS_MAX_TOKENS,
     });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_ANALYSIS_MODEL}:generateContent?key=${cleanApiKey}`;
-
-    const parts = [
-      { text: ILLUSTRATION_BACKGROUND_ANALYZER_PROMPT },
-      ...imageParts,
-    ];
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        // Gemini 3.x: temperature/topK/topP 지원 중단
-        generationConfig: {
-          maxOutputTokens: 8192,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API 오류 (${response.status}): ${errorText}`);
-    }
-
-    const result = await response.json();
-    const candidate = result.candidates?.[0];
-
-    if (!candidate || candidate.finishReason === 'SAFETY') {
-      throw new Error('이미지가 안전 필터에 의해 차단되었습니다.');
-    }
-
-    const text = candidate.content?.parts?.[0]?.text;
-    if (!text) {
-      throw new Error('Gemini 응답에 텍스트가 없습니다.');
-    }
-
-    // JSON 파싱
-    let jsonText = text;
-    if (text.includes('```')) {
-      const jsonBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
-      if (jsonBlockMatch) jsonText = jsonBlockMatch[1];
-    }
-
-    const firstBrace = jsonText.indexOf('{');
-    const lastBrace = jsonText.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      jsonText = jsonText.substring(firstBrace, lastBrace + 1);
-    }
-    jsonText = jsonText.replace(/,(\s*[}\]])/g, '$1');
-
-    const parsed = JSON.parse(jsonText.trim());
+    const parsed = parseJsonFromText(text) as {
+      background: BackgroundAnalysisResult;
+      negative_prompt?: string;
+    };
 
     logger.debug('✅ 배경 분석 완료');
 
     return {
-      analysis: parsed.background as BackgroundAnalysisResult,
+      analysis: parsed.background,
       negativePrompt: parsed.negative_prompt || '',
     };
   };

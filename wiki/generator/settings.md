@@ -1,6 +1,6 @@
 # 생성 설정 (GeneratorSettings)
 
-우측 설정 사이드바(`w-96`). 프롬프트·생성 버튼을 상단 고정 영역에 두고, 스크롤 영역에서 참조 문서(UI 세션)·그리드·카메라 앵글/렌즈·모델·비율·해상도·품질·참조 이미지 토글·고급 설정(seed/temperature/top-K/top-P)을 입력받는다. 상태는 부모 `ImageGeneratorPanel`이 소유하고, 이 컴포넌트는 값+`on*Change` 콜백을 props로 받는 프레젠테이션 컴포넌트다(`React.memo`).
+우측 설정 사이드바(`w-96`). 프롬프트·생성 버튼을 상단 고정 영역에 두고, 스크롤 영역에서 참조 문서(UI 세션)·그리드·카메라 앵글/렌즈·모델·비율·해상도·품질·참조 이미지 토글·도움말 버튼을 입력받는다. (고급 설정 seed/temperature/top-K/top-P는 OpenRouter 미지원으로 v0.6에서 제거) 상태는 부모 `ImageGeneratorPanel`이 소유하고, 이 컴포넌트는 값+`on*Change` 콜백을 props로 받는 프레젠테이션 컴포넌트다(`React.memo`).
 
 ## 관련 파일
 
@@ -21,14 +21,14 @@
 | `gemini-3.1-flash-lite-image` | 나노바나나 2 라이트 | gemini | 7종 | 1K/2K/4K | medium | ✓ |
 | `gpt-image-2` | 덕테이프 | openai | 1:1/16:9/9:16 | 1K | low/medium/high | ✗ |
 
-- Gemini 비율 7종: `1:1 16:9 9:16 4:3 3:4` + 극단 비율 `1:3`(세로 배너)·`3:1`(가로 파노라마). OpenAI는 3종만.
+- 전 모델 공통 5종: `1:1 16:9 9:16 4:3 3:4` (극단 비율 1:3/3:1은 OpenRouter 미지원으로 제거).
 - 기본 모델은 `DEFAULT_IMAGE_MODEL`(`gemini-3-pro-image-preview`).
 
 ## 이미지 비율 (aspectRatio)
 
-- `supportedAspectRatios`(모델별) 기반 버튼. **모든 비율이 한 줄에 들어가도록** `flex-nowrap` + `text-[11px]` 조밀 버튼으로 렌더한다. 극단 비율 `1:3`/`3:1`은 베타/Gemini 전용 표기 + 툴팁.
+- `supportedAspectRatios`(모델별) 기반 버튼. **모든 비율이 한 줄에 들어가도록** `flex-nowrap` + `text-[11px]` 조밀 버튼으로 렌더한다.
 - 기본값 `IMAGE_GENERATION_DEFAULTS.ASPECT_RATIO`(`1:1`).
-- Gemini는 `imageConfig.aspectRatio`로 직접 전달. OpenAI는 `mapToOpenAISize`로 픽셀 크기 문자열에 매핑(16:9/4:3/3:1→`1792x1024`, 9:16/3:4/1:3→`1024x1792`, 그 외→`1024x1024`).
+- 모든 모델이 OpenRouter Image API `aspect_ratio` 필드로 직접 전달 (구 `mapToOpenAISize` 픽셀 매핑 제거).
 
 ## 이미지 크기 (imageSize)
 
@@ -68,9 +68,9 @@
 - 자동 확장 textarea(72~200px 클램프). 라벨은 `프롬프트`이고 placeholder는 `getPromptPlaceholder(sessionType)`.
 - **번역 버튼/설명 문구 없음**: 한글을 넣으면 생성 시 자동으로 영어 번역(`useGeminiTranslator`). 번역 중 진행 상자에 `Languages` 아이콘.
 
-## 고급 설정 (showAdvanced)
+## 도움말
 
-접이식 섹션 + 도움말(`?`) 버튼(부모 `showHelp` 모달 오픈). 모델이 gpt-image-2가 아닐 때만 컨트롤 표시(아니면 "고급 설정 미지원" 안내).
+"이미지 생성 도움말" 버튼이 부모 `showHelp` 모달을 연다. 고급 설정(seed/temperature/top-K/top-P) 접이식 섹션은 OpenRouter Image API 미지원으로 제거됐다.
 
 | 항목 | 기본값 | 범위(STEP) | API 전달 |
 |------|--------|-----------|----------|
@@ -98,4 +98,4 @@
 | 품질(low/high) 옵션이 없음 | Gemini 모델은 medium 고정 — gpt-image-2 선택 시에만 노출 |
 | 2K/4K 눌러도 안 바뀜 | 비용 확인 모달에서 미확인. 확인해야 적용 |
 | seed 고정했는데 모델 체크가 안 뜸 | seed가 있으면 첫 생성이 아니라고 보고 모델 가용성 체크 스킵 |
-| 고급 슬라이더가 사라짐 | gpt-image-2 선택 시 고급 제어(`geminiAdvancedControls:false`) 미지원 안내로 대체 |
+| 고급 슬라이더가 안 보임 | v0.6에서 제거됨(OpenRouter 미지원) — 의도된 동작 |

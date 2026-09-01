@@ -5,7 +5,7 @@
 ## 관련 파일
 
 - `src/components/generator/ImageGeneratorPanel.tsx` — 생성기 메인 패널. 통합 상태(`GeneratorState`)·생성 플로우(`handleGenerate`)·자동/수동 저장(`autoSaveImage`/`handleManualSave`)·히스토리 복원(`handleRestoreFromHistory`)·핀 토글(`handleTogglePin`) 소유. 흰 배경 제거 유틸(`removeWhiteBackground`)도 여기 정의(현재 대상 세션 없음).
-- `src/components/generator/GeneratorSettings.tsx` — 우측 설정 사이드바(프롬프트·생성 버튼·그리드·모델·비율·해상도·품질·카메라·참조·고급 설정). 상세는 [settings.md](./settings.md).
+- `src/components/generator/GeneratorSettings.tsx` — 우측 설정 사이드바(프롬프트·생성 버튼·그리드·모델·비율·해상도·품질·카메라·참조). 상세는 [settings.md](./settings.md).
 - `src/components/generator/GeneratorPreview.tsx` — 중앙 결과 표시(로딩/이미지/빈 상태), 줌(fit/actual/%), 다운로드 버튼.
 - `src/components/generator/GeneratorHistory.tsx` — 하단 히스토리 그리드(썸네일·핀·복원·삭제·리사이즈). 상세는 [history.md](./history.md).
 - `src/components/generator/ImageUpload.tsx` — 참조 이미지 업로드 표면(Tauri 드래그드롭·파일선택·붙여넣기). 상세는 [image-generation-api.md](./image-generation-api.md).
@@ -61,7 +61,7 @@ SessionType = BASIC | STYLE | CHARACTER | BACKGROUND | ICON
 - **하단 `GeneratorHistory`** — 리사이즈 가능한 썸네일 그리드. 초기 높이 `HISTORY_PANEL.DEFAULT_HEIGHT`(192px), 리사이즈 범위 120~600px(`handleHistoryResize`, `ImageGeneratorPanel.tsx:518`).
 - **우측 `GeneratorSettings`** (`w-96`) — 모든 입력 옵션과 생성 버튼. 생성 결과 공간을 먼저 확보하기 위해 기존 좌측 사이드바에서 우측 사이드바로 이동했다.
 - 헤더: 세션 타입 라벨 · 모델 라벨, `AI_Gen` 저장 폴더 열기 버튼(`openPath(getAiGenRoot())`), 생성 이미지가 있을 때 줌 드롭다운.
-- 고급 설정 도움말 모달(`showHelp`)은 Seed/Temperature/Top-K/Top-P/Reference Strength 설명과 프리셋 팁을 담는다.
+- 도움말 모달(`showHelp`)은 프롬프트 팁·비율·크기 설명을 담는다(고급 설정 항목은 제거됨).
 
 ## 저장·자동 저장
 
@@ -99,7 +99,7 @@ SessionType = BASIC | STYLE | CHARACTER | BACKGROUND | ICON
 | 증상 | 원인 |
 |------|------|
 | 모델 바꿨더니 비율/해상도가 리셋됨 | 모델별 지원 목록에 없는 값이면 `useEffect`(`ImageGeneratorPanel.tsx:501`)가 첫 지원 값으로 자동 보정 — 의도된 동작 |
-| gpt-image-2(덕테이프) 모델이 목록에 안 보임 | ChatGPT API 키 미설정 시 `getAvailableImageModels(false)`가 Gemini 모델만 반환 |
+| 모델 목록 이상 | `getAvailableImageModels()`는 통합 키 체제에서 항상 전 모델 반환 — 레거시 ID는 `normalizeImageModelId` 확인 |
 | 참조 이미지를 넣었는데 분석 프롬프트가 안 들어감 | 참조 있으면(`hasRefImages`) 분석 `positivePrompt`를 basePrompt에 넣지 않음(세션 프롬프트가 "참조 복제"를 지시) — 의도 |
 | 한글 프롬프트가 그대로 전송됨 | `containsKorean` 미검출 또는 번역 실패. 번역은 항상 Gemini 키 사용(모델이 OpenAI여도) |
 | 생성 이미지 색이 이상/투명 안 됨 | 응답을 항상 JPEG로 간주(`data:image/jpeg`). 투명 배경 대상 세션은 현재 `TRANSPARENT_BACKGROUND_SESSION_TYPES` 빈 배열이라 없음 |

@@ -14,7 +14,7 @@ import { logger } from '../../../lib/logger';
 
 interface ConceptSketchPanelProps {
   open: boolean;
-  geminiApiKey: string;
+  apiKey: string;
   characters: IllustrationCharacter[];
   initial?: ConceptSketch;
   onClose: () => void;
@@ -51,7 +51,7 @@ function estimateTextWidth(text: string, fontSize: number): number {
 
 export function ConceptSketchPanel({
   open,
-  geminiApiKey,
+  apiKey,
   characters,
   initial,
   onClose,
@@ -167,7 +167,7 @@ export function ConceptSketchPanel({
 
   const handleAnalyze = useCallback(async () => {
     if (!stageRef.current) return;
-    if (!geminiApiKey) {
+    if (!apiKey) {
       alert('Gemini API Key가 필요합니다.');
       return;
     }
@@ -177,7 +177,7 @@ export function ConceptSketchPanel({
         stageRef.current as unknown as { toDataURL: Konva.Stage['toDataURL'] }
       );
       const result = await analyzeCompositionSketch({
-        apiKey: geminiApiKey,
+        apiKey: apiKey,
         sketchPng,
         labels,
         characters,
@@ -189,7 +189,7 @@ export function ConceptSketchPanel({
     } finally {
       setIsAnalyzing(false);
     }
-  }, [characters, geminiApiKey, labels]);
+  }, [characters, apiKey, labels]);
 
   const handleSave = useCallback(() => {
     if (!sketchLayerRef.current) return;
@@ -476,9 +476,9 @@ export function ConceptSketchPanel({
           <div className="flex gap-2">
             <button
               onClick={handleAnalyze}
-              disabled={isAnalyzing || !geminiApiKey}
+              disabled={isAnalyzing || !apiKey}
               className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg font-medium text-sm"
-              title={!geminiApiKey ? 'Gemini API Key가 필요합니다' : '스케치를 분석하여 layout/perspective/placements 추출'}
+              title={!apiKey ? 'OpenRouter API Key가 필요합니다' : '스케치를 분석하여 layout/perspective/placements 추출'}
             >
               {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               {isAnalyzing ? '분석 중...' : 'AI로 분석'}

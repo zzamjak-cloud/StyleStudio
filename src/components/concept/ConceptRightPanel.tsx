@@ -5,7 +5,6 @@ import { getAvailableImageModels, getImageModelDefinition } from '../../hooks/ap
 
 interface ConceptRightPanelProps {
   settings: ConceptSessionData['generationSettings'];
-  hasOpenAIApiKey: boolean;
   onSettingsChange: (settings: ConceptSessionData['generationSettings']) => void;
   onGenerate: (prompt: string) => void;
   isGenerating: boolean;
@@ -17,7 +16,6 @@ interface ConceptRightPanelProps {
 /** 컨셉 세션 우측 생성 패널 */
 export const ConceptRightPanel = memo(({
   settings,
-  hasOpenAIApiKey,
   onSettingsChange,
   onGenerate,
   isGenerating,
@@ -27,7 +25,7 @@ export const ConceptRightPanel = memo(({
 }: ConceptRightPanelProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [costWarning, setCostWarning] = useState<{ size: '2k' | '3k' } | null>(null);
-  const availableModels = getAvailableImageModels(hasOpenAIApiKey);
+  const availableModels = getAvailableImageModels();
   const modelDef = getImageModelDefinition(settings.model);
   const supportedRatios = modelDef.supports.aspectRatios as ConceptSessionData['generationSettings']['ratio'][];
   const supportedSizes = modelDef.supports.imageSizes.map((size) => {
@@ -171,9 +169,6 @@ export const ConceptRightPanel = memo(({
                 </option>
               ))}
             </select>
-            {!hasOpenAIApiKey && (
-              <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
-            )}
           </div>
 
           {/* 비율 선택 */}
@@ -223,15 +218,10 @@ export const ConceptRightPanel = memo(({
             <p className="text-xs text-gray-500 mt-1">
               <span className="text-green-600 font-medium">1K 권장</span> · 2K/3K는 비용이 크게 증가합니다
             </p>
-            {settings.model === 'gpt-image-2' && (
-              <p className="text-xs text-gray-500 mt-1">
-                덕테이프는 내부적으로 1024x1024, 1792x1024, 1024x1792 규격으로 처리됩니다.
-              </p>
-            )}
           </div>
 
           {/* 품질 선택 (덕테이프 전용) */}
-          {settings.model === 'gpt-image-2' && (
+          {settings.model === 'openai/gpt-image-2' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">이미지 품질</label>
               <div className="grid grid-cols-3 gap-2">

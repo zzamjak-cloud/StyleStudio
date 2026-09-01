@@ -7,7 +7,7 @@
 - `src/components/chat/annotation/ImageAnnotator.tsx` — 어노테이션 모달(`ImageAnnotator`). Konva `Stage`(3개 Layer: 원본/펜/마스크), 펜·지우개·색상·굵기 툴바, 우측 색상별 지시문 입력, `handleSubmit` 에서 `AnnotationResult` 조립
 - `src/types/annotation.ts` — `AnnotationStroke`/`AnnotationResult`/`ColorRegion` 타입, `ANNOTATION_COLORS`, `serializeColorInstructions`(색상별 지시문→좌표 포함 자연어), `getColorLabel`
 - `src/lib/utils/annotationExport.ts` — Konva 노드 → dataURL 추출(`exportNodeToDataUrl`), 마스크를 OpenAI edits 규격(편집=흰색/보존=검정 binary)으로 정규화(`normalizeMaskToOpenAI`)
-- `src/components/chat/ChatPanel.tsx` — `handleAnnotationSubmit`(:193): `AnnotationResult` 를 편집 prompt 로 직렬화해 `handleSend(prompt, [원본])` 호출. 진입 조건은 **OpenAI Key 존재 + `isGeneratedImage`**
+- `src/components/chat/ChatPanel.tsx` — `handleAnnotationSubmit`(:193): `AnnotationResult` 를 편집 prompt 로 직렬화해 `handleSend(prompt, [원본])` 호출. 진입 조건은 **API Key 존재 + `isGeneratedImage`**
 
 ## 데이터 모델
 
@@ -77,7 +77,7 @@ ANNOTATION_COLORS = 빨강 #ff3b30 / 노랑 #ffcc00 / 파랑 #0a84ff / 초록 #3
 | 편집 영역이 엉뚱한 곳에 적용 | `colorRegions` 정규화 오류(stroke points→stage 크기 나눗셈) 확인 |
 | 사용 안 한 색상 지시문이 전송됨 | `usedColors` 필터 누락 → `serializeColorInstructions` 가 채워진 항목만 포함 |
 | 지시문 textarea 가 계속 비활성 | 해당 색으로 실제 그리지 않음(`usedColors` 미포함) |
-| 어노테이션 버튼(연필) 안 보임 | OpenAI Key 없음 또는 `isGeneratedImage=false`(user 첨부 이미지) |
+| 어노테이션 버튼(연필) 안 보임 | API Key 없음 또는 `isGeneratedImage=false`(user 첨부 이미지) |
 | OpenAI 마스크 편집이 반대로 적용 | 마스크 흑백 반전 → `normalizeMaskToOpenAI` 편집=흰색 규칙 확인 |
 | 큰 이미지에서 캔버스 느림/메모리 | `MAX_CANVAS_DIM=1280` 다운스케일 누락 |
 | 이미지가 모달 화면에 다 안 들어오고 잘림 | fit 배율(`fitScale`) 미적용 또는 캔버스 래퍼가 `flex 중앙정렬+overflow` 로 회귀(자식 `m-auto` 여야 함) |

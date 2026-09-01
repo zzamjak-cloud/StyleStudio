@@ -43,13 +43,8 @@ export interface GenerationHistoryEntry {
 
 // 생성 설정
 export interface GenerationSettings {
-  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '1:3' | '3:1';
+  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
   imageSize: '1K' | '2K' | '4K';
-  seed?: number;
-  temperature?: number;
-  topK?: number;
-  topP?: number;
-  referenceStrength?: number; // 참조 이미지 영향력 (0.0 ~ 1.0)
   useReferenceImages: boolean;
   pixelArtGrid?: PixelArtGridLayout; // 스프라이트 그리드 레이아웃 (1x1, 2x2, 4x4, 6x6, 8x8)
   cameraAngle?: string; // 카메라 앵글 프리셋 ID

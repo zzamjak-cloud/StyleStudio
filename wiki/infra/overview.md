@@ -60,7 +60,7 @@ StyleStudio 는 **Tauri 2 + React 19 + Vite 7** 데스크톱 앱이다. 프런�
 ## 권한 모델 (capabilities/default.json)
 
 메인 윈도우에 부여된 퍼미션. 파일시스템은 `$DOWNLOAD`·`$APPDATA`·`$APPLOCALDATA` 스코프로 열려 있고 `read/write` 는 `**` 전역 허용(`default.json:64-85`). HTTP 는 아래 3개 오리진으로 제한(`default.json:90-103`):
-- `https://generativelanguage.googleapis.com/*` (Gemini)
+- `https://openrouter.ai/*` (OpenRouter — 모든 AI 호출)
 - `https://oauth2.googleapis.com/*` (토큰 교환)
 - `https://accounts.google.com/*` (OAuth)
 

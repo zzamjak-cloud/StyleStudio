@@ -20,34 +20,6 @@ export const IMAGE_GENERATION_DEFAULTS = {
   USE_REFERENCE_IMAGES: true,
 } as const;
 
-/**
- * Gemini 고급 설정 기본값
- */
-export const ADVANCED_SETTINGS_DEFAULTS = {
-  /** Temperature (창의성) - 0.0 ~ 2.0 */
-  TEMPERATURE: 1.0,
-  /** Top-K (샘플링 범위) - 1 ~ 100 */
-  TOP_K: 40,
-  /** Top-P (누적 확률) - 0.0 ~ 1.0 */
-  TOP_P: 0.95,
-  /** 참조 이미지 강도 - 0.0 ~ 2.0 */
-  REFERENCE_STRENGTH: 1.0,
-} as const;
-
-/**
- * 고급 설정 범위 제한
- */
-export const ADVANCED_SETTINGS_LIMITS = {
-  /** Temperature 범위 */
-  TEMPERATURE: { MIN: 0.0, MAX: 2.0, STEP: 0.1 },
-  /** Top-K 범위 */
-  TOP_K: { MIN: 1, MAX: 100, STEP: 1 },
-  /** Top-P 범위 */
-  TOP_P: { MIN: 0.0, MAX: 1.0, STEP: 0.05 },
-  /** 참조 이미지 강도 범위 */
-  REFERENCE_STRENGTH: { MIN: 0.0, MAX: 2.0, STEP: 0.1 },
-} as const;
-
 // ============================================
 // UI 레이아웃 상수
 // ============================================
@@ -191,8 +163,8 @@ export const STORAGE_KEYS = {
   SESSIONS: 'sessions',
   /** 설정 */
   SETTINGS: 'settings',
-  /** API 키 */
-  API_KEY: 'gemini_api_key',
+  /** API 키 (OpenRouter 통합 키) */
+  API_KEY: 'openrouter_api_key',
   /** 자동 저장 경로 */
   AUTO_SAVE_PATH: 'auto_save_path',
   /** 테마 설정 */
@@ -219,36 +191,21 @@ export const PROMPT_LIMITS = {
 // API 관련 상수
 // ============================================
 
-/**
- * Gemini API 엔드포인트
- */
-export const GEMINI_API = {
-  /** 기본 URL */
-  BASE_URL: 'https://generativelanguage.googleapis.com',
-  /** 모델 버전 */
-  MODEL_VERSION: 'gemini-3-pro',
-  /** 이미지 생성 모델 */
-  IMAGE_MODEL: 'imagen-3.0-generate-001',
-} as const;
-
-/** 최신 Flash 텍스트/분석 모델 */
-export const GEMINI_FLASH_TEXT_MODEL = 'gemini-3.7-flash';
+/** 최신 Flash 텍스트/분석 모델 (OpenRouter 슬러그) */
+export const GEMINI_FLASH_TEXT_MODEL = 'google/gemini-3.7-flash';
 
 /**
- * 참조 이미지 분석에 사용 가능한 Gemini 모델 목록
+ * 참조 이미지 분석에 사용 가능한 모델 목록 (OpenRouter 슬러그)
  * - flash: 빠르고 저렴, 대부분의 분석에 충분
  * - pro: 추론 깊이가 필요한 다중 이미지·복잡한 구조화 분석용 (고비용)
  */
 export const ANALYSIS_MODELS = [
   { id: GEMINI_FLASH_TEXT_MODEL, label: 'Gemini 3.7 Flash', description: '최신 Flash · 기본' },
-  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', description: '이전 Flash · 안정' },
-  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', description: '정밀 분석 · 고비용' },
+  { id: 'google/gemini-3.6-flash', label: 'Gemini 3.6 Flash', description: '이전 Flash · 안정' },
+  { id: 'google/gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', description: '정밀 분석 · 고비용' },
 ] as const;
 
 export type AnalysisModelId = (typeof ANALYSIS_MODELS)[number]['id'];
-
-/** 이전 기본 분석 모델. 저장된 기본값 마이그레이션에만 사용 */
-export const LEGACY_DEFAULT_ANALYSIS_MODEL: AnalysisModelId = 'gemini-3.6-flash';
 
 /** 기본 분석 모델 */
 export const DEFAULT_ANALYSIS_MODEL: AnalysisModelId = GEMINI_FLASH_TEXT_MODEL;

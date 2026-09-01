@@ -1,8 +1,9 @@
-// 사용자가 그린 구도 스케치 + 캐릭터 라벨을 Gemini Vision으로 분석하여
+// 사용자가 그린 구도 스케치 + 캐릭터 라벨을 비전 모델로 분석하여
 // 일러스트 생성 프롬프트에 합성할 수 있는 구조화된 결과를 반환
 
 import { CompositionAnalysis, SketchLabel, IllustrationCharacter, CharacterPlacement } from '../../types/illustration';
 import { DEFAULT_ANALYSIS_MODEL } from '../../types/constants';
+import { chatComplete, toImagePart } from '../api/openrouter';
 import { logger } from '../logger';
 
 const MODEL = DEFAULT_ANALYSIS_MODEL;
@@ -61,42 +62,20 @@ export async function analyzeCompositionSketch(params: AnalyzeParams): Promise<C
   ].join('\n');
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: 'image/png', data: base64 } },
-              ],
-            },
+    const responseText = await chatComplete(apiKey, {
+      model: MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            toImagePart(`data:image/png;base64,${base64}`),
           ],
-          // Gemini 3.x: temperature 지원 중단
-          generationConfig: { responseModalities: ['TEXT'] },
-        }),
-      }
-    );
+        },
+      ],
+    });
 
-    if (!response.ok) {
-      const text = await response.text();
-      logger.error('analyzeCompositionSketch HTTP 오류:', response.status, text);
-      return FALLBACK_ANALYSIS;
-    }
-
-    const data = await response.json();
-    const candidate = (data as any)?.candidates?.[0];
-    const textPart = candidate?.content?.parts?.find((p: any) => typeof p.text === 'string');
-    if (!textPart?.text) {
-      logger.warn('analyzeCompositionSketch: 응답 텍스트 없음, fallback');
-      return FALLBACK_ANALYSIS;
-    }
-
-    const cleaned = String(textPart.text)
+    const cleaned = String(responseText)
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')
       .replace(/\s*```$/i, '')

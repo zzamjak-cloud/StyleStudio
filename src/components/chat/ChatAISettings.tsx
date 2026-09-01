@@ -8,7 +8,6 @@ import { DocumentManager } from '../generator/DocumentManager';
 
 interface ChatAISettingsProps {
   settings: ChatGenerationSettings;
-  hasOpenAIApiKey: boolean;
   onSettingsChange: (settings: Partial<ChatGenerationSettings>) => void;
   attachedDocuments: ReferenceDocument[];
   documentApiKey: string;
@@ -22,7 +21,6 @@ type AspectRatio = ChatGenerationSettings['aspectRatio'];
 /** 채팅 세션 우측 AI 설정 패널 */
 export function ChatAISettings({
   settings,
-  hasOpenAIApiKey,
   onSettingsChange,
   attachedDocuments,
   documentApiKey,
@@ -51,7 +49,7 @@ export function ChatAISettings({
 
   const imageSizes: ImageSize[] = ['1K', '2K', '4K'];
   const gridLayouts: PixelArtGridLayout[] = ['1x1', '2x2', '3x3', '4x4'];
-  const availableModels = getAvailableImageModels(hasOpenAIApiKey);
+  const availableModels = getAvailableImageModels();
   const selectedModel = availableModels.find((model) => model.id === settings.imageModel) ?? availableModels[0];
   const aspectRatios = selectedModel.supports.aspectRatios as AspectRatio[];
   const supportedSizes = selectedModel.supports.imageSizes;
@@ -114,9 +112,6 @@ export function ChatAISettings({
               ))}
             </select>
           </div>
-          {!hasOpenAIApiKey && (
-            <p className="text-xs text-amber-600 mt-2">ChatGPT API Key를 입력하면 덕테이프 모델이 활성화됩니다.</p>
-          )}
         </div>
 
         {/* 비율 선택 */}
@@ -125,29 +120,20 @@ export function ChatAISettings({
             이미지 비율
           </label>
           <div className="flex flex-nowrap gap-1">
-            {aspectRatios.map((ratio) => {
-              const isExtreme = ratio === '1:3' || ratio === '3:1';
-              return (
-                <button
-                  key={ratio}
-                  onClick={() => onSettingsChange({ aspectRatio: ratio })}
-                  title={isExtreme ? '극단적 비율(베타) — 배너/파노라마용' : undefined}
-                  className={`min-w-0 flex-1 px-1 py-1.5 text-[11px] rounded-md border transition-colors ${
-                    settings.aspectRatio === ratio
-                      ? 'bg-purple-500 text-white border-purple-500'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
-                  }`}
-                >
-                  {ratio}
-                </button>
-              );
-            })}
+            {aspectRatios.map((ratio) => (
+              <button
+                key={ratio}
+                onClick={() => onSettingsChange({ aspectRatio: ratio })}
+                className={`min-w-0 flex-1 px-1 py-1.5 text-[11px] rounded-md border transition-colors ${
+                  settings.aspectRatio === ratio
+                    ? 'bg-purple-500 text-white border-purple-500'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+                }`}
+              >
+                {ratio}
+              </button>
+            ))}
           </div>
-          {(settings.aspectRatio === '1:3' || settings.aspectRatio === '3:1') && (
-            <p className="text-xs text-amber-600 mt-1">
-              극단적 비율(베타) — 배너/파노라마 전용 · Gemini 모델에서만 지원
-            </p>
-          )}
         </div>
 
         {/* 크기 선택 */}
@@ -171,15 +157,15 @@ export function ChatAISettings({
               </button>
             ))}
           </div>
-          {settings.imageModel === 'gpt-image-2' && (
+          {settings.imageModel === 'openai/gpt-image-2' && (
             <p className="text-xs text-gray-500 mt-1">
-              덕테이프는 내부적으로 1024x1024, 1792x1024, 1024x1792 규격으로 처리됩니다.
+              덕테이프는 1K 규격으로 처리되며 품질 옵션으로 세부 묘사를 조절합니다.
             </p>
           )}
         </div>
 
         {/* 품질 선택 (덕테이프 전용) */}
-        {settings.imageModel === 'gpt-image-2' && (
+        {settings.imageModel === 'openai/gpt-image-2' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">이미지 품질</label>
             <div className="grid grid-cols-3 gap-2">

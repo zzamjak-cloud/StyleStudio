@@ -91,7 +91,7 @@
       "identifier": "http:default",
       "allow": [
         {
-          "url": "https://generativelanguage.googleapis.com/*"
+          "url": "https://openrouter.ai/*"
         },
         {
           "url": "https://oauth2.googleapis.com/*"

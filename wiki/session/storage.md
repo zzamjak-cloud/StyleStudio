@@ -15,7 +15,7 @@ StyleStudio 는 Tauri `plugin-store` 의 **`settings.json`** 하나에 세션 �
   - `sessions` — `Session[]` (storage.ts:570)
   - `folders` — `Folder[]` (storage.ts:1166)
   - `session_folder_map` — `Record<sessionId, folderId|null>` (storage.ts:1196)
-  - `gemini_api_key` / `openai_api_key` (storage.ts:47·75)
+  - `openrouter_api_key` (통합 키 — 저장 시 레거시 `gemini_api_key`/`openai_api_key` 삭제)
   - `window_state` — `{x,y,width,height,maximized}` (storage.ts:1154)
   - `default_session_save_path` (storage.ts:1247)
 - 이미지 파일 저장소: `BaseDirectory.AppData` / `images/` 디렉토리, 파일명 `{key}.txt`(내용은 base64 data URL 문자열). 상수 `DB_NAME='StyleStudioImages'`, `STORE_NAME='images'`, `IMAGE_FS_DIR='images'`, `IMAGE_FS_EXT='.txt'`(imageStorage.ts:13~17).

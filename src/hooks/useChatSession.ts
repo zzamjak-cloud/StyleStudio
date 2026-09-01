@@ -46,7 +46,7 @@ export function useChatSession(
   const settings = useMemo<ChatGenerationSettings>(
     () => ({
       aspectRatio: '1:1',
-      imageModel: 'gemini-3-pro-image-preview',
+      imageModel: 'google/gemini-3-pro-image-preview',
       imageSize: '1K',
       pixelArtGrid: '1x1',
       ...chatData?.settings,
@@ -78,7 +78,7 @@ export function useChatSession(
       totalTokenCount: 0,
       settings: {
         aspectRatio: '1:1' as const,
-        imageModel: 'gemini-3-pro-image-preview' as const,
+        imageModel: 'google/gemini-3-pro-image-preview' as const,
         imageSize: '1K' as const,
         imageQuality: 'medium' as const,
         pixelArtGrid: '1x1' as const,
@@ -160,7 +160,7 @@ export function useChatSession(
   const updateSettings = useCallback((newSettings: Partial<ChatGenerationSettings>) => {
     const latestSettings: ChatGenerationSettings = {
       aspectRatio: '1:1',
-      imageModel: 'gemini-3-pro-image-preview',
+      imageModel: 'google/gemini-3-pro-image-preview',
       imageSize: '1K',
       imageQuality: 'medium',
       pixelArtGrid: '1x1',

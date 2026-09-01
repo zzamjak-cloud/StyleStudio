@@ -14,12 +14,12 @@
 
 ## SettingsModal
 
-설정 모달(`SettingsModal.tsx`). props: `isOpen`, `onClose`, `currentGeminiApiKey`, `currentOpenAIApiKey`, `onSave(gemini, openai)`.
-- Gemini / ChatGPT(OpenAI) API 키 입력(password 필드, 발급 링크 포함) (`:103-150`)
+설정 모달(`SettingsModal.tsx`). props: `isOpen`, `onClose`, `currentApiKey`, `onSave(apiKey)`.
+- OpenRouter 통합 API 키 단일 입력(password 필드, openrouter.ai 발급 링크 포함)
 - 생성 이미지 저장 위치 안내 + "폴더 열기"(`getAiGenRoot` → `openPath`) (`:152-174`)
 - 로그인 계정 표시 + 로그아웃(`useAuth`, 로그아웃 후 `window.location.reload()`) (`:39-53, 176-207`)
 - 앱 버전 표시(`getVersion()`, 실패 시 `0.0.0`) (`:35-37, 219`)
-- **저장 검증**: Gemini 키 비어있으면 alert, 아니면 저장 후 1.5초 뒤 자동 닫힘 (`:55-66`)
+- **저장 검증**: 키 비어있으면 alert, 아니면 저장 후 1.5초 뒤 자동 닫힘
 
 ## ConfirmDialog + useConfirmDialog
 
@@ -76,7 +76,7 @@ class 컴포넌트 에러 경계(`ErrorBoundary.tsx`). `App` 최상위를 감쌈
 |------|------|
 | 확인창이 안 뜨거나 응답 무한대기 | `<ConfirmDialog/>` 를 JSX 에 미포함(훅만 호출) |
 | 확인창 Enter/ESC 무반응 | 포커스가 오버레이 밖 — `onKeyDown` 은 다이얼로그 루트에 바인딩 (`ConfirmDialog.tsx:80`) |
-| 저장 버튼 눌러도 안 닫힘 | Gemini 키 공란 → alert 후 return (`SettingsModal.tsx:56-65`) |
+| 저장 버튼 눌러도 안 닫힘 | 키 공란 → alert 후 return (`SettingsModal.tsx`) |
 | 이미지가 placeholder 에서 안 넘어감 | `loadImage(key)` 가 null 반환(IndexedDB 키 없음) (`LazyImage.tsx:33-35`) |
 | 리사이즈가 안 멈춤/텍스트 선택됨 | mouseup 미수신 — 전역 리스너/`userSelect` 복원 확인 (`Resizer.tsx:23-27`) |
 | 진행 토스트가 안 보임 | `stage === 'idle'` (`ProgressIndicator.tsx:15`) |

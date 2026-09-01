@@ -37,7 +37,7 @@ Gemini Vision 에 넘길 **분석 프롬프트 생성**(`analysisPrompt.ts`), **
 1. **검증**: apiKey trim·비어있음 체크(`AIza` 접두 경고 로그만), 이미지 배열 비어있음 체크(`:38`~`51`).
 2. **이미지 변환**: 각 base64 → data URL prefix 제거 + MIME 추출 → `{inline_data:{mime_type,data}}`(`:59`~`75`).
 3. **프롬프트 선택**(우선순위, `:83`~`119`): `LOGO` → `UI` → `BACKGROUND` → `PIXELART_BACKGROUND` → `PIXELART_CHARACTER`/`PIXELART_ICON` → `options.previousAnalysis`(강화) → 이미지 2장↑(MULTI) → 1장(STYLE). **전용 타입 체크가 강화 모드보다 앞선다**.
-4. **호출**: `POST .../models/${analysisModel}:generateContent?key=`. `analysisModel = options.model || DEFAULT_ANALYSIS_MODEL`, 기본값은 `gemini-3.7-flash`. body `parts=[{text:prompt}, ...imageParts]`, `generationConfig={maxOutputTokens:8192}`.
+4. **호출**: OpenRouter `chatComplete`(`POST /api/v1/chat/completions`). `analysisModel = normalizeAnalysisModel(options.model)`(레거시 ID는 `google/` 접두어 부여), 기본값은 `google/gemini-3.7-flash`. 메시지 content `[{type:'text'}, ...image_url 파트]`, `max_tokens: 8192`.
 5. **finishReason 분기**(`:189`~`217`): `SAFETY`/`RECITATION`/`MAX_TOKENS`/`OTHER`/`BLOCKLIST` 각각 한국어 에러 throw. `STOP` 아니면 경고만.
 6. **JSON 추출·클린업**(`:246`~`290`): ① ```` ```json ```` / ```` ``` ```` 코드블록 벗기기 → ② 첫 `{`~마지막 `}` 슬라이스 → ③ trailing comma 제거(`/,(\s*[}\]])/g`) → ④ `JSON.parse`. 실패 시 에러 위치 주변 로그 후 throw.
 7. **결과 검증**(`:319`~`363`): `style`/`character`/`composition` 존재 + `negative_prompt !== undefined` 필수. 캐릭터 신규 필드(`body_proportions`/`limb_proportions`/`torso_shape`/`hand_style`/`feet_style`) 누락 시 `'not specified'` 기본값 채움.
