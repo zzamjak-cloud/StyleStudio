@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-01
+
 ### Changed — OpenRouter 통합 (중요)
 - **모든 AI 호출이 OpenRouter 통합 키 하나로 동작합니다.** 회사 정책에 따라 Gemini/OpenAI 개별 API 키 대신 OpenRouter(openrouter.ai)에서 발급한 키 하나를 설정에 입력하면 모든 모델(나노바나나 프로/2/2 라이트, 덕테이프)을 사용할 수 있습니다.
   - **업데이트 후 설정에서 OpenRouter API 키를 새로 입력해야 합니다.** 기존 Gemini/OpenAI 키는 형식이 달라 자동 이관되지 않으며, 키가 없으면 앱 시작 시 설정 창이 자동으로 열립니다.
