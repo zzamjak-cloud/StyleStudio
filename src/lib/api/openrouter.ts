@@ -96,8 +96,13 @@ export async function chatComplete(apiKey: string, params: ChatCompleteParams): 
   if (finishReason === 'content_filter') {
     throw new Error('요청이 콘텐츠 필터에 의해 차단되었습니다. 다른 이미지나 프롬프트로 시도해주세요.');
   }
-  if (!text && finishReason === 'length') {
-    throw new Error('응답이 너무 길어서 잘렸습니다. 입력을 줄이거나 다시 시도해주세요.');
+  // 'length' 는 텍스트가 일부라도 왔더라도 반드시 에러다.
+  // 예전에는 `!text` 조건이 붙어 있어, 잘린 JSON 이 그대로 파서로 넘어가
+  // "잘림" 이 아니라 정체불명의 파싱 실패로 보고되었다.
+  if (finishReason === 'length') {
+    throw new Error(
+      '응답이 출력 토큰 한도에 걸려 잘렸습니다. 참조 이미지 수나 입력을 줄이고 다시 시도해주세요.'
+    );
   }
   if (!text) {
     throw new Error('OpenRouter 응답에 텍스트가 없습니다. 다시 시도해주세요.');

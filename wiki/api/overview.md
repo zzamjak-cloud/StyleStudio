@@ -3,7 +3,7 @@
 앱의 외부 API 호출은 **v0.6부터 전부 OpenRouter 통합 키 하나**로 나간다(회사 정책 — Gemini/OpenAI 개별 키 폐기). 텍스트/비전은 `chat/completions`, 이미지 생성은 `images` 엔드포인트를 쓴다. **표준화된 API 에러 파싱/사용자 메시지 변환**(`apiErrorHandler`), **한↔영 자동 번역**(`useGeminiTranslator`, 이미지 프롬프트용), **생성 결과물 저장 경로**(`config/paths`)를 다룬다. API 키는 사용자가 설정에서 입력하며 Tauri `store` 에 영속된다.
 
 ## 관련 파일
-- `src/lib/api/openrouter.ts` — OpenRouter 공통 클라이언트. `OPENROUTER_BASE_URL`(`https://openrouter.ai/api/v1`), `openrouterHeaders`(Bearer + `X-OpenRouter-Title`), `chatComplete`(텍스트/비전, `finish_reason` 처리), `toImagePart`(data URL→image_url 파트), `generateImageViaOpenRouter`(Image API)
+- `src/lib/api/openrouter.ts` — OpenRouter 공통 클라이언트. `OPENROUTER_BASE_URL`(`https://openrouter.ai/api/v1`), `openrouterHeaders`(Bearer + `X-OpenRouter-Title`), `chatComplete`(텍스트/비전, `finish_reason` 처리 — `length`/`content_filter` 는 항상 에러), `toImagePart`(data URL→image_url 파트), `generateImageViaOpenRouter`(Image API)
 - `src/lib/apiErrorHandler.ts` — API 에러 파싱·메시지·로깅. `parseApiError`/`getUserFriendlyErrorMessage`/`handleApiError`/`extractErrorFromResponse`
 - `src/hooks/api/useGeminiTranslator.ts` — 한↔영 번역 훅 (`chatComplete` + Gemini Flash)
 - `src/lib/config/paths.ts` — 결과물 저장 폴더 경로 헬퍼(`~/Downloads/AI_Gen/`)
@@ -52,7 +52,7 @@ ApiError = { message: string, code?: string | number, status?: number, details?:
 
 ## 기타 OpenRouter 사용처
 
-- `src/hooks/api/useGeminiAnalyzer.ts` — 참조 분석(비전). `chatComplete` + `max_tokens: 8192`. 레거시 분석 모델 ID는 `normalizeAnalysisModel` 로 `google/` 접두어 부여 → `wiki/analysis/analysis-prompt.md`
+- `src/hooks/api/useGeminiAnalyzer.ts` — 참조 분석(비전). `chatComplete` + `max_tokens: 32768`(`ANALYSIS_MAX_TOKENS`). 레거시 분석 모델 ID는 `normalizeAnalysisModel` 로 `google/` 접두어 부여 → `wiki/analysis/analysis-prompt.md`
 - `src/lib/sketch/analyzeSketch.ts` — 구도 스케치 분석(비전)
 - `src/lib/utils/fileOptimization.ts` — 참조 문서 요약(`generateFileSummary`)
 - `src/hooks/useChatImageGeneration.ts` — 채팅 생성·대화 요약 → `wiki/chat/overview.md`

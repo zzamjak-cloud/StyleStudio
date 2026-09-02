@@ -37,7 +37,7 @@ Gemini Vision 에 넘길 **분석 프롬프트 생성**(`analysisPrompt.ts`), **
 1. **검증**: apiKey trim·비어있음 체크(`AIza` 접두 경고 로그만), 이미지 배열 비어있음 체크(`:38`~`51`).
 2. **이미지 변환**: 각 base64 → data URL prefix 제거 + MIME 추출 → `{inline_data:{mime_type,data}}`(`:59`~`75`).
 3. **프롬프트 선택**(우선순위, `:83`~`119`): `LOGO` → `UI` → `BACKGROUND` → `PIXELART_BACKGROUND` → `PIXELART_CHARACTER`/`PIXELART_ICON` → `options.previousAnalysis`(강화) → 이미지 2장↑(MULTI) → 1장(STYLE). **전용 타입 체크가 강화 모드보다 앞선다**.
-4. **호출**: OpenRouter `chatComplete`(`POST /api/v1/chat/completions`). `analysisModel = normalizeAnalysisModel(options.model)`(레거시 ID는 `google/` 접두어 부여), 기본값은 `google/gemini-3.8-flash`. 메시지 content `[{type:'text'}, ...image_url 파트]`, `max_tokens: 8192`.
+4. **호출**: OpenRouter `chatComplete`(`POST /api/v1/chat/completions`). `analysisModel = normalizeAnalysisModel(options.model)`(레거시 ID는 `google/` 접두어 부여), 기본값은 `google/gemini-3.8-flash`. 메시지 content `[{type:'text'}, ...image_url 파트]`, `max_tokens: 32768`(`ANALYSIS_MAX_TOKENS`).
 5. **finishReason 분기**(`:189`~`217`): `SAFETY`/`RECITATION`/`MAX_TOKENS`/`OTHER`/`BLOCKLIST` 각각 한국어 에러 throw. `STOP` 아니면 경고만.
 6. **JSON 추출·클린업**(`:246`~`290`): ① ```` ```json ```` / ```` ``` ```` 코드블록 벗기기 → ② 첫 `{`~마지막 `}` 슬라이스 → ③ trailing comma 제거(`/,(\s*[}\]])/g`) → ④ `JSON.parse`. 실패 시 에러 위치 주변 로그 후 throw.
 7. **결과 검증**(`:319`~`363`): `style`/`character`/`composition` 존재 + `negative_prompt !== undefined` 필수. 캐릭터 신규 필드(`body_proportions`/`limb_proportions`/`torso_shape`/`hand_style`/`feet_style`) 누락 시 `'not specified'` 기본값 채움.
@@ -60,7 +60,7 @@ Gemini Vision 에 넘길 **분석 프롬프트 생성**(`analysisPrompt.ts`), **
 | 증상 | 원인 |
 |------|------|
 | "JSON으로 파싱할 수 없습니다" | Gemini 응답이 스키마를 안 지킴/코드블록 변형 → 클린업(`useGeminiAnalyzer.ts:246`) 로그로 위치 확인 |
-| "응답이 너무 길어서 잘렸습니다" | `finishReason==='MAX_TOKENS'` → 이미지 수 축소(`maxOutputTokens:8192` 상한) |
+| "응답이 출력 토큰 한도에 걸려 잘렸습니다" | `chatComplete` 가 `finish_reason==='length'` 에서 던진다(텍스트가 일부 왔더라도). `ANALYSIS_MAX_TOKENS`(32768) 초과 — 참조 이미지 수 축소. 모델 상한은 65,536 이며 reasoning 토큰도 이 예산을 함께 쓴다 |
 | "안전 필터에 의해 차단" | `finishReason==='SAFETY'` — 다른 이미지 필요 |
 | "올바른 형식이 아닙니다" | `style`/`character`/`composition`/`negative_prompt` 중 누락(`:321`) |
 | 캐릭터 비율 필드가 'not specified' | 모델이 신규 필드 미채움 → 기본값 보정(`:348`~`362`) |

@@ -32,8 +32,16 @@ interface AnalysisOptions {
   model?: string; // 분석에 사용할 모델 (미지정 시 기본 모델)
 }
 
-// JSON 응답 잘림 방지
-const ANALYSIS_MAX_TOKENS = 8192;
+/**
+ * 분석 응답 출력 토큰 상한.
+ *
+ * 분석 모델(Gemini 3.8/3.7 Flash, 3.1 Pro)의 프로바이더 상한은 65,536 이지만
+ * 실제 분석 JSON 은 수천 토큰이라 상한을 꽉 채울 이유가 없다. 다만 이 모델들은
+ * **reasoning 토큰이 이 예산을 함께 소비**하므로(추론 모델), 참조 이미지 14장짜리
+ * 다중 이미지 분석처럼 스키마가 큰 요청에서는 기존 8192 가 빠듯했다.
+ * 잘린 JSON 은 파싱 실패로 직결되므로 여유를 두고 절반 수준으로 잡는다.
+ */
+const ANALYSIS_MAX_TOKENS = 32768;
 
 /** 저장된 (레거시 포함) 분석 모델 ID를 OpenRouter 슬러그로 정규화 */
 function normalizeAnalysisModel(model: string | undefined): string {
