@@ -33,7 +33,7 @@ ApiError = { message: string, code?: string | number, status?: number, details?:
 
 ## 번역 (useGeminiTranslator.ts)
 
-이미지 생성 API 는 영어 프롬프트를 쓰지만 사용자는 한국어로 입력할 수 있다. 이 훅이 `GEMINI_FLASH_TEXT_MODEL`(**`google/gemini-3.7-flash`**, OpenRouter chat completions)로 상호 번역한다. 5개 함수 반환:
+이미지 생성 API 는 영어 프롬프트를 쓰지만 사용자는 한국어로 입력할 수 있다. 이 훅이 `GEMINI_FLASH_TEXT_MODEL`(**`google/gemini-3.8-flash`**, OpenRouter chat completions)로 상호 번역한다. 5개 함수 반환:
 
 | 함수 | 방향 | 용도 |
 |------|------|------|

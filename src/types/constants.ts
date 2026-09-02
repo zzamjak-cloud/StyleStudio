@@ -192,7 +192,7 @@ export const PROMPT_LIMITS = {
 // ============================================
 
 /** 최신 Flash 텍스트/분석 모델 (OpenRouter 슬러그) */
-export const GEMINI_FLASH_TEXT_MODEL = 'google/gemini-3.7-flash';
+export const GEMINI_FLASH_TEXT_MODEL = 'google/gemini-3.8-flash';
 
 /**
  * 참조 이미지 분석에 사용 가능한 모델 목록 (OpenRouter 슬러그)
@@ -200,8 +200,8 @@ export const GEMINI_FLASH_TEXT_MODEL = 'google/gemini-3.7-flash';
  * - pro: 추론 깊이가 필요한 다중 이미지·복잡한 구조화 분석용 (고비용)
  */
 export const ANALYSIS_MODELS = [
-  { id: GEMINI_FLASH_TEXT_MODEL, label: 'Gemini 3.7 Flash', description: '최신 Flash · 기본' },
-  { id: 'google/gemini-3.6-flash', label: 'Gemini 3.6 Flash', description: '이전 Flash · 안정' },
+  { id: GEMINI_FLASH_TEXT_MODEL, label: 'Gemini 3.8 Flash', description: '최신 Flash · 기본' },
+  { id: 'google/gemini-3.7-flash', label: 'Gemini 3.7 Flash', description: '이전 Flash · 안정' },
   { id: 'google/gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', description: '정밀 분석 · 고비용' },
 ] as const;
 

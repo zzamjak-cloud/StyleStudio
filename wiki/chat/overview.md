@@ -62,7 +62,7 @@ ChatGenerationSettings = {
 ## 요약(자동 컨텍스트 압축)
 
 - 임계값 `SUMMARIZATION_THRESHOLD=30000` 토큰 초과 시 `needsSummarization=true`.
-- `summarizeMessages` 가 `GEMINI_FLASH_TEXT_MODEL`(`google/gemini-3.7-flash`) chat completions 로 3~5문장 한국어 요약 생성(기존 요약이 있으면 통합).
+- `summarizeMessages` 가 `GEMINI_FLASH_TEXT_MODEL`(`google/gemini-3.8-flash`) chat completions 로 3~5문장 한국어 요약 생성(기존 요약이 있으면 통합).
 - `markSummarized`(useChatSession.ts): 요약된 인덱스 이하 메시지의 `images`/`imageSignatures` 를 `undefined` 로 비우고 `tokenCount` 를 텍스트 기준으로 재계산 → 저장 용량·토큰 감소.
 
 ## 저장·정리

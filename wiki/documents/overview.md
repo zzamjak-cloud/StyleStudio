@@ -6,7 +6,7 @@ UI 디자인 세션에서 PDF·Excel·CSV·Markdown·Text·Google Sheets·웹페
 
 - `src/types/referenceDocument.ts` — `ReferenceDocument` 타입(파싱 결과 + 메타 + 요약 + 추출 이미지)
 - `src/lib/utils/fileParser.ts` — 형식별 파서. `parseFile`(디스패처)·`parsePDF`·`parseExcel`·`parseCSV`·`parseMarkdown`·`parseText`·`parseGoogleSpreadsheet`·`parseWebPage`·`getFileType`·`checkFileSize`·`SUPPORTED_FILE_TYPES`
-- `src/lib/utils/fileOptimization.ts` — 크기 제한·요약. `validateFileSize`(10만 자 상한)·`truncateFileContent`·`generateFileSummary`(`GEMINI_FLASH_TEXT_MODEL`/`gemini-3.7-flash`, 500자)·`MAX_FILE_SIZE_CHARS`·`SUMMARY_MAX_LENGTH`
+- `src/lib/utils/fileOptimization.ts` — 크기 제한·요약. `validateFileSize`(10만 자 상한)·`truncateFileContent`·`generateFileSummary`(`GEMINI_FLASH_TEXT_MODEL`/`gemini-3.8-flash`, 500자)·`MAX_FILE_SIZE_CHARS`·`SUMMARY_MAX_LENGTH`
 - `src/components/generator/DocumentManager.tsx` — 문서 관리 UI. 한 줄 드롭 영역·파일 선택(`handleAddFile`)·URL 추가(`processUrl`)·문서 칩 리스트·요약 뷰·삭제. `processFiles`가 파싱→검증→요약→`ReferenceDocument` 생성→`onAdd`
 - `src/components/generator/GeneratorSettings.tsx` — `sessionType === 'UI'`일 때만 `DocumentManager` 렌더(`GeneratorSettings.tsx:206`)
 - `src/hooks/useSessionManagement.ts` — 세션에 문서 부착. `handleDocumentAdd`/`handleDocumentDelete`(`useSessionManagement.ts:321`)가 `session.referenceDocuments` 갱신 후 `persistSessions`
@@ -38,7 +38,7 @@ ParsedFileContent = {         // fileParser 반환형
 ```
 
 - `content`는 파싱 직후 `validateFileSize`로 검사 — 10만 자(`MAX_FILE_SIZE_CHARS`) 초과 시 `truncateFileContent`가 문장 경계에서 자르고 안내 문구를 덧붙인다.
-- `summary`는 별개 필드. `generateFileSummary`가 `GEMINI_FLASH_TEXT_MODEL`(`gemini-3.7-flash`)로 생성(내용 1000자 미만이면 원문 그대로, 5만 자 초과 입력은 중간 생략). 요약 실패 시 `content` 앞 500자로 대체(DocumentManager 예외 처리).
+- `summary`는 별개 필드. `generateFileSummary`가 `GEMINI_FLASH_TEXT_MODEL`(`gemini-3.8-flash`)로 생성(내용 1000자 미만이면 원문 그대로, 5만 자 초과 입력은 중간 생략). 요약 실패 시 `content` 앞 500자로 대체(DocumentManager 예외 처리).
 
 ## 파싱 파이프라인 (fileParser)
 
