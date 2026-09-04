@@ -1,6 +1,6 @@
 [package]
 name = "stylestudio-tauri"
-version = "0.6.2"
+version = "0.7.0"
 description = "AI 게임 아트 제작 데스크톱 애플리케이션"
 authors = ["최진평 (Jinpyoung Choi) <zzamjak@naver.com>"]
 license = "GPL-3.0-or-later"
