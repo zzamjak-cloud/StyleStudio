@@ -4,18 +4,22 @@
 
 | 모드 | AI에게 받는 것 | 코드가 하는 것 | 타일 상호 교환 |
 |------|---------------|---------------|---------------|
-| `variation` | 타일 N장이 그리드로 배치된 **타일 시트** | 그리드 분할(`sliceTileSheet`) + seam 점수 | 프롬프트 준수에 의존(보장 없음) |
-| `ruletile` | 재질 2종 + 프린지가 담긴 **머티리얼 시트** | 지형 경계를 **절차적으로 합성**(`ruleTileComposer`) | **계약으로 보장**(전수 증명됨) |
+| `variation` | 재질 1종이 캔버스를 채운 **재질 스와치** | 변형을 **절차적으로 합성**(`variationComposer`) | **계약으로 보장**(전수 증명됨) |
+| `ruletile` | 재질 2종이 담긴 **머티리얼 시트** | 지형 경계를 **절차적으로 합성**(`ruleTileComposer`) | **계약으로 보장**(전수 증명됨) |
 
-타일은 개별 파일로 저장하지 않으며, **시트 이미지 + slotAssignments 매핑만 영속화**하고 타일은 매번 런타임에 재구성한다(variation은 분할, ruletile은 합성).
+**두 모드 모두 AI가 그린 그림을 자르지 않는다.** AI에게는 재질과 화풍만 받고 타일은 코드가 만든다 — 이게 임의 배치에서 이음새가 없는 유일한 이유다(자세한 근거는 아래 "엣지 계약" 절).
+
+타일은 개별 파일로 저장하지 않으며, **시트 이미지 + slotAssignments 매핑만 영속화**하고 타일은 매번 런타임에 재구성한다.
+
+> **레거시 예외**: `composerVersion`이 없는 세션은 예전의 "잘라 만든" 세트다. 복원 경로가 버전으로 분기해 그 세션만 계속 `sliceTileSheet`로 읽는다(스와치로 해석하면 결과가 완전히 달라진다). 결과 뷰에 재생성 안내 배너가 뜬다.
 
 ## 관련 파일
 
 ### 공통
-- `src/types/tilemap.ts` — 타입·상수. `TilemapGridLayout`(`'4x4'|'8x8'`), `TILEMAP_RULETILE_GRID = '8x8'`(룰타일 강제 그리드), `TilemapMode`, `TILEMAP_SEAM_WARNING_THRESHOLD = 70`, `TilemapSheet`(모드에 따라 타일 시트/머티리얼 시트), `TileSlotAssignment`, `TilemapSessionData`(`composerVersion` 포함), `TilemapOutline`(`opacity` 포함)·`DEFAULT_TILEMAP_OUTLINE2`·`outlineOpacity`, `isTilemapGridLayout`
-- `src/hooks/useTilemapProcessing.ts` — 후처리 훅. 재진입 복원 `useEffect`(모드별로 분할/합성 분기), `currentTiles`·`baseTiles`·`needsRecompose` 파생, `processNewSheet`, `requestReplacement`/`confirmProposal`/`discardProposal`/`toggleLock`(룰타일이면 전부 no-op)
+- `src/types/tilemap.ts` — 타입·상수. `TilemapGridLayout`(`'4x4'|'8x8'`), `TILEMAP_RULETILE_GRID = '8x8'`(룰타일 강제 그리드), `TilemapMode`, `TilemapSheet`(모드·버전에 따라 재질 스와치/머티리얼 시트/레거시 타일 시트), `TileSlotAssignment`, `TilemapSessionData`(`composerVersion` 포함), `TilemapOutline`(`opacity` 포함)·`DEFAULT_TILEMAP_OUTLINE2`·`outlineOpacity`, `isTilemapGridLayout`
+- `src/hooks/useTilemapProcessing.ts` — 후처리 훅. `isCurrentComposerVersion`(모드×버전 판정), 재진입 복원 `useEffect`(모드·버전별 합성/레거시 분할 분기, 슬롯이 참조하지 않는 과거 시트는 건너뜀), `currentTiles`·`baseTiles`·`needsRecompose` 파생, `processNewSheet`(항상 슬롯 전체 할당), `reshuffleSlots`(같은 스와치 내 변형 재배치·즉시)·`toggleLock`(룰타일이면 no-op)
 - `src/lib/tilemap/tilemapExporter.ts` — `exportTilemapForUnity`(시트 재합성 + 개별 PNG + 룰타일이면 `tiles/tile_base*.png`(변형 8장) + 가이드), `composeFinalSheet`, `buildRoleTable`·`buildRuleGrid`(signature → 유니티 3x3 규칙 표 자동 생성)
-- `src/components/tilemap/TilemapResultView.tsx` — 결과 뷰. 시트/타일 뷰 토글, 뱃지(룰타일은 `describeSlot`, variation은 seam 점수), 락·선택·제안 액션바
+- `src/components/tilemap/TilemapResultView.tsx` — 결과 뷰. 시트/타일 뷰 토글, 역할 뱃지(룰타일 `describeSlot`만 — variation의 seam 점수 뱃지는 제거됐다), 레거시 세트 경고 배너(`needsRecompose`), 락·선택·"다른 변형으로 교체" 액션바
 - `src/components/tilemap/TilePreviewCanvas.tsx` — 배치 미리보기 **전체 화면 모달**(24x16 맵, 스탬프/지우개/랜덤 채우기, 줌 0.5x·1x·2x, 패닝). 맵 상태 비저장. 룰타일이면 `signatureFromMap` → `signatureToSlot`으로 생성 단계와 **같은 표**를 조회
 - `src/components/tilemap/EdgeStylePicker.tsx` — 경계선 모양 썸네일 드롭다운 + 아웃라인(방향·폭·색·투명도, 2단계) 설정
 - `dev/tilemap-preview.html` + `dev/tilemap-preview.tsx` — 미리보기 캔버스 dev 하네스(합성 재질로 세트를 만들어 실제 조작 검증)
@@ -24,12 +28,14 @@
 - `src/components/analysis/TilemapCard.tsx` — `tilemap_specific` 분석 편집 카드
 - `src/components/generator/GeneratorSettings.tsx` — TILEMAP 전용 그리드·모드 토글, 룰타일 지형 2필드. 비율·크기·품질 UI와 모델 표시를 `sessionType !== 'TILEMAP'`로 숨김. 룰타일이면 그리드 버튼 대신 `8x8 (룰타일 고정)` 읽기 전용 표시
 
-### variation 전용
-- `src/lib/tilemap/tileSlicer.ts` — `sliceTileSheet`(실측 크기 기준 중앙 crop 후 그리드 분할), `loadImageElement`
-- `src/lib/tilemap/seamValidator.ts` — `computeSeamScores`(타일 4변 경계 스트립 색 비교 휴리스틱)
+### 두 모드 공용 (엣지 계약)
+- `src/lib/tilemap/seamlessTexture.ts` — `extractRegion`, `cropMaterialSwatch`, `makeSeamless`(분리형 주기 크로스페이드 = wrap 연속화), `measureWrapContinuity`, **`buildTextureVariants`**(변 픽셀을 공유하는 변형 목록 = 엣지 계약), `textureToDataUrl`. **두 합성기가 같은 계약을 쓰도록 여기 한 곳에 둔다** — 한쪽만 고치면 그쪽 접합만 조용히 깨진다
+- `src/lib/tilemap/tileSlicer.ts` — `sliceTileSheet`(레거시 세션 복원 전용), `loadImageElement`
+
+### variation 전용 (v2 절차적 합성)
+- `src/lib/tilemap/variationComposer.ts` — `buildVariationTileSet`(스와치 전체 → 타일 수만큼의 변형), `VARIATION_COMPOSER_VERSION`(현재 2)
 
 ### ruletile 전용 (v3 절차적 합성 파이프라인)
-- `src/lib/tilemap/seamlessTexture.ts` — **1단계**. `extractRegion`, `makeSeamless`(분리형 주기 크로스페이드), `measureWrapContinuity`
 - `src/lib/tilemap/edgeProfile.ts` — **2단계**. `NEIGHBOR` 8방향 비트, `TRANSITION_INSET_RATIO`, `terrainSDF`, `warpOffset`, `warpedTerrainSDF`, `buildTerrainMask`, `borderTerrainProfile`(검증용), `signatureFromMap`
 - `src/lib/tilemap/autotileSignature.ts` — **3단계**. `reduceToBlob`/`reduceToSides`, `SIGNATURES_4BIT`(16종)·`SIGNATURES_BLOB`(47종), `buildSlotTable`, `buildSignatureIndex`, `signatureToSlot`, `describeSignature`/`describeSlot`, `BASE_TILE_FILENAME`·`baseTileFilename`
 - `src/lib/tilemap/ruleTileComposer.ts` — **4단계**. `buildRuleTileSet`, `COMPOSER_VERSION`(현재 7), `resolveOutlineBands`·`sampleOutline`(썸네일과 공유)
@@ -46,7 +52,7 @@ TILEMAP은 사용자가 고를 수 없는 값이 여럿이다. **바꿀 수 없�
 | 비율·해상도 | 1:1 · 1K | — | 없음 |
 | 그리드 (룰타일) | `TILEMAP_RULETILE_GRID = '8x8'` | 룰타일인데 8x8이 아니면 되돌림 | 읽기 전용 표시 |
 
-- **모델**: 타일맵은 프롬프트가 지정한 레이아웃을 정확히 지켜야 하는데(변형=NxN 그리드, 룰타일=머티리얼 시트 2패널) 나노바나나 계열은 이를 자주 무시해 사용할 수 없는 결과를 냈다. OpenAI 키가 없으면 경고 문구만 띄운다 — 없으면 생성이 그냥 실패한다.
+- **모델**: 타일맵은 프롬프트가 지정한 레이아웃을 정확히 지켜야 하는데(변형=균질 스와치 1장, 룰타일=머티리얼 시트 2패널) 나노바나나 계열은 이를 자주 무시해 사용할 수 없는 결과를 냈다. OpenAI 키가 없으면 경고 문구만 띄운다 — 없으면 생성이 그냥 실패한다.
 - **품질**: 룰타일 머티리얼 시트는 설계상 **디테일 없는 균질 필드**라 high로 올려도 얻는 게 없고 비용·시간만 늘어난다.
 - **그리드(룰타일)**: 4x4는 상하좌우만 구분하는 4비트 16종이라 **오목 코너가 없다** — 좁게 꺾인 길과 안쪽 모서리를 표현하지 못해 "완벽한 룰타일"이 되지 않는다. 8x8(blob 47종 + 변형 17종)만 전 조합을 담는다. 변형 모드는 4x4/8x8 모두 선택 가능하다.
 - **고급 설정 블록 전체를 숨긴다** — 덕테이프는 Seed/Temperature/Top-K/Top-P를 지원하지 않는다.
@@ -58,12 +64,14 @@ TilemapSessionData = {      // Session.tilemapData
   grid: '4x4' | '8x8'
   sheets: TilemapSheet[]           // 시트 이미지 키 목록 (imageStorage: tilemap-sheet-{id})
   slotAssignments: TileSlotAssignment[]  // 슬롯 수 = 현재 grid의 totalFrames
-  mode?: 'variation' | 'ruletile'  // 미지정 시 'variation' (v1 세션 호환)
+  mode?: 'variation' | 'ruletile'  // 미지정 시 'variation' (초기 세션 호환)
   baseTerrain?: string             // 룰타일: 베이스 지형 입력 원문 (빈 값 = 투명)
   overlayTerrain?: string          // 룰타일: 오버레이 지형 입력 원문 (빈 값 = 투명)
   transparentBase?: boolean        // 룰타일: 생성 시점에 굳힌 투명 여부
   transparentOverlay?: boolean
-  composerVersion?: number         // 룰타일: 합성 알고리즘 버전. 없거나 다르면 재생성 필요
+  composerVersion?: number         // 합성 알고리즘 버전. **mode와 짝으로 해석**한다
+                                   //   ruletile → COMPOSER_VERSION(7) / variation → VARIATION_COMPOSER_VERSION(2)
+                                   //   없거나 다르면 레거시 세트 → 분할 경로 + 재생성 안내 배너
   edgeStyle?: TilemapEdgeStyle     // 룰타일: 경계선 모양 프리셋 (미지정 시 'chunky')
   outline?: TilemapOutline         // 룰타일: 1단계 아웃라인 띠 {enabled, thicknessPx, color, opacity}
   outline2?: TilemapOutline        // 룰타일: 2단계 띠 (1단계에 이어 붙는다)
@@ -72,6 +80,7 @@ TilemapSessionData = {      // Session.tilemapData
 ```
 
 - **타일은 저장하지 않는다.** `sheets`와 `slotAssignments`만 영속화하고, 실제 타일 PNG는 세션 진입 시 휘발성 `tileCache`(`sheetId → 타일 dataURL[]`)로만 재구성한다.
+- **`sheets`는 새 세트에서 항상 1장이다.** 시트가 곧 재질 스와치이고 서로 다른 스와치의 타일은 섞을 수 없으므로, 생성할 때마다 목록을 새 시트로 갈아치우고 밀려난 `tilemap-sheet-*` 이미지는 `deleteImage`로 정리한다(예전에는 교체 제안 때문에 쌓아 뒀고, 그래서 읽는 곳 없는 1024px 이미지가 영구히 누적됐다). 여러 장이면 레거시 세션이다.
 - 룰타일의 **베이스 타일**(순수 베이스 지형)은 그리드 슬롯 밖의 별도 타일이며 **변형 8장**이다(`baseTiles: string[]`). `baseTileCache`(sheetId → string[])에 들고 있고, 내보내기에서 `tiles/tile_base.png` + `tile_base_1..7.png`로 나간다(0번은 기존 파일명 유지 — 이미 임포트한 프로젝트가 깨지지 않게).
 - `TilemapGridLayout`은 `PixelArtGridLayout`의 부분집합이라 `getPixelArtGridInfo`를 그대로 재사용한다(4x4→cellSize 256, 8x8→cellSize 128, 둘 다 1024 캔버스 기준).
 
@@ -83,7 +92,7 @@ TilemapSessionData = {      // Session.tilemapData
 
 v2는 "큰 그림 1장을 그리게 하고 → 그리드로 자르고 → 셀 좌표로 역할을 붙이는" 방식이었다. 이 구조는 룰타일이 될 수 없다:
 
-1. **엣지 계약이 없었다.** 잘라낸 타일은 "원래 붙어 있던 이웃"과만 이어진다. 같은 역할 타일들의 경계 픽셀을 일치시키는 코드가 어디에도 없었다(`seamValidator`는 점수만 매기고 룰타일 모드에선 계산조차 생략).
+1. **엣지 계약이 없었다.** 잘라낸 타일은 "원래 붙어 있던 이웃"과만 이어진다. 같은 역할 타일들의 경계 픽셀을 일치시키는 코드가 어디에도 없었다(당시의 seam 점수는 휴리스틱이라 점수만 매겼고 룰타일 모드에선 계산조차 생략했다).
 2. **모델의 % 정확도에 의존했다.** 8x8 도넛 프롬프트가 외곽 전환선을 6.25%로 지시했으나 실측은 약 13.5%(0.6셀 어긋남) — `corner_nw`로 내보낸 타일이 실제로는 순수 잔디였다. 나노바나나 프로는 구도 자체를 무시하고 3분할 패널을 그렸다.
 3. **역할 세트가 부족했다(14종).** 고립 셀·1칸 폭 통로·끝단이 전부 `fill`(순수 오버레이 덩어리)로 폴백됐다.
 4. **4x4에 `base` 역할이 없어** 미리보기 배경이 통째로 회색 박스로 나왔다.
@@ -297,16 +306,17 @@ a = 1  (내부)                              → 패널의 다른 위치를 크�
 
 `npm run dev` 후 `http://localhost:1420/dev/tilemap-check.html`. 프로덕션 번들에는 포함되지 않는다.
 
-단계별 게이트 21건:
+단계별 게이트 22건:
 1. `makeSeamless` wrap 연속성 — 판정은 **분위수 기준**(경계 스텝 ≤ 내부 스텝 P95). "좌열==우열 픽셀 동일"은 열 중복을 뜻하므로 틀린 기준이고, 내부 *평균* 대비 배수도 틀린 기준이다(크로스페이드가 기울기를 위치별로 재분배함)
 2. 엣지 계약 전수 — 인접 쌍 2048건, 베이스 이웃 변 512건, 전이 위치 768건
 3. signature 테이블 — 16/47종, 축약 멱등성, raw 256종 슬롯 해석
 4. 합성 타일 접합 연속성 — 실제 12x8 맵 배치 후 접합부 스텝 vs 타일 내부 스텝 P95
 5. 경계 품질 — 중간색 픽셀 비율(선명도) + 아웃라인 접합 연속성
 6. 경계선 프리셋 9종 정합성·형태 상이성
-7. 재질 변형 — 변 픽셀 동일성 + 내부 랜덤성
-8. 계단식 아웃라인 — 단방향·순서·폭 (SDF 재계산 대조)
-9. 투명 지형 — 알파 0 · 검은 테두리 없음 · 아웃라인 관통
+7. 재질 변형(룰타일) — 변 픽셀 동일성 + 내부 랜덤성
+8. 변형 세트(variation) — 타일 간 변 동일성(65,024 표본) + 정규 텍스처 wrap 연속성 + 변형의 경계 스텝 상속 + 내부 랜덤성 + **풀 > 슬롯**
+9. 계단식 아웃라인 — 단방향·순서·폭 (SDF 재계산 대조)
+10. 투명 지형 — 알파 0 · 검은 테두리 없음 · 아웃라인 관통
 
 ## 회귀 증상별 원인
 
@@ -347,7 +357,7 @@ a = 1  (내부)                              → 패널의 다른 위치를 크�
 | 룰타일 생성/설정 변경이 수십 초 걸림 | `setTimeout` 양보가 되살아났다 — 위 "성능 함정" 절 |
 | 화풍이 마음에 안 듦 | 스타일 프리셋은 제거됐다 — 참조 이미지를 쓴다(위 "화풍 지정" 절) |
 | 내보내기 폴더 옆에 잉여 jpg가 생김 | 공통 자동 저장 가드(`sessionType !== 'TILEMAP'`)가 풀렸다 — 위 "세션 폴더에 남는 파일" 절 |
-| 선택 재생성·교체·락이 동작 안 함 (룰타일) | 의도된 동작. 룰타일은 역할 고정 세트라 `requestReplacement`/`confirmProposal`/`discardProposal`/`toggleLock`이 `effectiveMode === 'ruletile'`이면 전부 no-op |
+| 변형 교체·락이 동작 안 함 (룰타일) | 의도된 동작. 룰타일은 역할 고정 세트라 `reshuffleSlots`·`toggleLock`이 `effectiveMode === 'ruletile'`이면 no-op이고, UI도 안내 문구만 띄운다 |
 | 그리드/모드 바꿨는데 이전 타일이 남아있음 | 다음 **생성 실행 시점**에만 리셋된다(`processNewSheet`의 `setChanged` 체크) |
 | 재진입 시 회색 박스만 표시 | `tilemap-sheet-*` imageStorage 키 유실 — 콘솔의 "⚠️ 타일 시트 이미지 미발견" 확인. 세션 삭제 시 이 키들은 정리되지 않아 orphan으로 남을 수 있음 |
 | 미리보기 캔버스 버튼이 비활성화됨 | `currentTiles`에 `null`이 있으면 비활성 — 모든 슬롯이 채워져야 열림 |
@@ -358,22 +368,66 @@ a = 1  (내부)                              → 패널의 다른 위치를 크�
 
 ---
 
-# 변형(variation) 모드
+# 변형(variation) 모드 — v2 절차적 합성
 
-한 재질(예: 잔디)의 타일 N장을 서로 seamless하게 만들어 임의 배치하는 모드. **v3 변경 사항 없음.**
+한 재질(예: 잔디)의 타일 N장을 서로 seamless하게 만들어 임의 배치하는 모드.
+
+## v1이 실패한 이유 (재발 방지)
+
+v1은 AI에게 "타일 N장이 NxN 그리드로 배치된 타일 시트"를 받아 `sliceTileSheet`로 잘랐다. **임의 배치에서 이음새가 이어질 수 없는 구조였다** — 룰타일 v2와 정확히 같은 실패다:
+
+1. **엣지 계약이 없었다.** 잘라낸 타일은 시트에서 *원래 붙어 있던 이웃*과만 이어진다. 랜덤 배치는 원래 이웃이 아닌 조합을 만들므로 경계가 맞을 이유가 없다.
+2. **픽셀 계약을 프롬프트로 요청했다.** 임의 배치가 성립하려면 (a) 모든 타일의 좌변 픽셀 = 우변 픽셀, 상변 = 하변, (b) 각 타일이 wrap 연속이어야 한다. v1의 "외곽 15%를 조용하게"(타일링 규칙 2조)는 **완화 요청**일 뿐 픽셀 일치를 만들지 못한다. 생성 모델에게 픽셀 단위 계약을 요구할 수 없다.
+3. **검증이 문제를 가려 줬다.** `computeSeamScores`는 4px 스트립을 변당 32지점으로 **평균**한 RGB 비교라 고주파 불일치가 묻혔고, 상대도 최대 16개만 샘플링했다. 눈에 보이는 이음새가 90점으로 통과하는 일이 잦았다.
+
+> 교훈은 룰타일과 같다: 생성 모델에게 **기하·픽셀 정밀도**를 요구하지 말 것. 재질과 화풍만 받고 나머지는 코드가 만든다.
+
+## v2 계약
+
+AI에게는 **재질 스와치 1장**(캔버스 전체가 균질한 재질 필드)만 받는다. 타일은 `buildVariationTileSet`이 만든다:
+
+1. 스와치 중앙을 1:1 크롭 → `makeSeamless`로 **wrap 연속 정규 텍스처** (조건 b)
+2. 변형 N-1장 = 정규 텍스처의 **안쪽에만** 스와치 다른 위치의 크롭을 얹음 (`buildTextureVariants`의 엣지 계약, 조건 a)
+
+두 조건이 **구성으로 보장**되므로 배치 순서와 무관하다. 룰타일과 달리 지형 경계가 없어 마스크·아웃라인·signature 단계가 통째로 빠지고, 공용 1~2단계만 쓴다.
+
+### 변형 풀은 슬롯보다 크다 (`VARIATION_POOL_MULTIPLIER = 2`)
+
+`buildVariationTileSet`은 슬롯 수의 **2배**를 만들고, 슬롯은 앞 절반만 쓴다. 뒤 절반은 슬롯 교체용 여유분이다.
+
+풀과 슬롯이 1:1이면 교체가 무의미해진다 — 비대상 슬롯이 나머지 셀을 전부 차지하므로 "안 쓰인 변형"이 **선택 슬롯 자신의 셀뿐**이 되고, 슬롯 1개를 고르면 자기 셀을 그대로 다시 받아 **100% 아무 일도 일어나지 않는다**(2개면 50%). 내보내는 세트도 순서만 다른 같은 타일들이라 결과물이 전혀 안 바뀐다. 실제로 이 회귀가 있었고 셀프체크 게이트가 `풀 > 슬롯`을 검사한다.
+
+`buildTextureVariants`는 룰타일의 "재질 랜덤성"과 **같은 함수**다(`seamlessTexture.ts`). 변 픽셀 공유 계약을 한 곳에만 두기 위해서다 — 복사해 두면 한쪽만 고쳤을 때 그쪽 접합만 조용히 깨진다.
 
 ## 핵심 흐름
-1. `processNewSheet`: 시트를 `sliceTileSheet`로 분할 → `computeSeamScores`로 타일별 이음새 점수(0~100) → `imageStorage`에 시트 저장 → 전체 할당 또는 교체 제안
-2. 선택 재생성: `TilemapResultView`에서 슬롯 선택 → `requestReplacement(slotIndexes)`로 대기열 설정 후 **통상 생성을 다시 실행해야** `processNewSheet`가 교체 제안 분기를 탄다
-3. 결과는 `proposal`(파란 "교체 예정" 리본)로 미리 보이고 확정/취소 선택. `locked: true` 슬롯은 대상에서 제외
-4. 그리드/모드 변경 시 다음 생성에서 풀 리셋(`setChanged`)
+1. `processNewSheet`: 스와치를 `buildVariationTileSet`으로 합성 → `imageStorage`에 스와치 저장 → **항상 슬롯 전체 할당**(`composerVersion = 2` 기록)
+2. 슬롯별 교체: `TilemapResultView`에서 슬롯 선택 → `reshuffleSlots(slotIndexes)`가 **같은 스와치 풀의 안 쓰인 변형**으로 즉시 재배정. 생성 API를 부르지 않는다(비용 0, 대기 0). 자기 셀을 다시 받는 배정은 건너뛰므로 선택한 슬롯은 **항상 바뀐다**. `locked: true` 슬롯은 제외하고, 슬롯 조회는 배열 순서가 아니라 `slotIndex` 기준(`Map`)이다
+3. 그리드/모드 변경 시 다음 생성에서 풀 리셋(`setChanged`)
+
+> **서로 다른 시트의 타일을 섞을 수 없다.** 시트가 곧 스와치이고, 다른 스와치는 정규 텍스처가 달라 변 픽셀이 일치하지 않는다 — 혼합은 접합 계약을 깬다. 그래서 v1의 "교체 제안 → 확정/취소" 흐름(`proposal`)은 제거됐다.
 
 ## 프롬프트
-`generateTilemapVariationPrompt`의 **타일링 규칙 7조**: 균질 베이스 · 조용한 경계 존(외곽 15%) · 약 절반은 순수 베이스로 남기고 나머지는 디테일을 매번 다른 오프셋에(정중앙 금지) · NO GRID LINES · 일관 조명 · 손맵 채색 강제 · 셔플 후 규칙적 도트 패턴이 보이면 실패.
+`generateTilemapVariationPrompt`는 룰타일의 단일 지형 프롬프트와 같은 형태다: **캔버스 전체가 하나의 평평하고 균일한 재질 필드**, 손맵 붓결 강제, 또렷함 유지, 큰 형태·오브젝트·비네트·조명 그라디언트 금지, 격자선/셀 구분선 금지. 기하 요구가 없어 모델 편차에 둔감하다.
+
+> 스와치는 **디테일 없는 균질 필드**여야 한다 — `makeSeamless`가 크로스페이드라 꽃·돌 같은 개별 디테일이 두 위치에 반투명하게 겹쳐 보인다.
+
+## 검증
+`dev/tilemap-check.html`의 `변형 세트` 게이트가 64장 전수로 잰다:
+- **풀 > 슬롯** — 슬롯 교체가 의미를 갖는 전제
+- **타일 간 변 픽셀 동일성** — 65,024 표본, 허용 오차 1(PNG 왕복 반올림)
+- **정규 텍스처 wrap 연속성** — 경계 스텝 ≤ 내부 스텝 P95
+- **변형의 경계 스텝 상속** — 모든 변형의 seamX/seamY가 정규와 일치
+- **내부 상이성** — 평균 채널 차 2 이상
+
+> 변형마다 "자기 내부 P95"와 비교하면 **안 된다.** 변형의 경계 스텝은 정규와 같은 픽셀에서 나오지만 내부 스텝 분포는 얹은 크롭에 따라 달라져, 크롭이 평탄하면 변하지 않은 경계 스텝이 기준을 넘어 버린다(실제로 3/64장이 0.05 초과로 걸렸다). 그래서 "정규의 이음새 유무"와 "변형의 경계 스텝 상속"으로 질문을 나눈다.
 
 ## 회귀 증상
 | 증상 | 원인 |
 |------|------|
-| 타일이 안 이어짐 / seam 경고가 많음 | seam 점수는 RGB 경계 스트립 비교 **휴리스틱**(alpha 무시, `SEAM_ENERGY_WORST=64`로 정규화)이라 실제 시각 이음새와 완전히 일치하지 않는다. 모델이 타일링 규칙을 안 지킨 게 더 근본 원인 — **변형 모드는 구조적 보장이 없다**(룰타일과 달리) |
-| 락 슬롯인데도 교체됨 | 락은 `processNewSheet`의 교체 대상 필터에서 걸러진다 — 락을 켠 *이후*에 재생성해야 하며 진행 중인 `proposal`에는 소급 적용 안 됨 |
-| 시트가 정사각형이 아닌데 분할이 이상함 | `sliceTileSheet`가 짧은 변 기준 중앙 crop 후 분할한다 — 동작은 하지만 crop 밖은 손실 |
+| 랜덤 배치에서 이음새가 어긋남 | 보유 세트가 **레거시 v1**(잘라 만든 세트)이다 — 결과 뷰 상단 경고 배너를 확인하고 다시 생성한다. 새로 생성한 세트에서 발생한다면 엣지 계약이 깨진 것이니 `변형 세트` 게이트를 돌린다 |
+| 격자선이 보임 | 변형의 변 픽셀이 정규 텍스처와 어긋났다(`EDGE_HOLD_PX`/`VARIANT_RAMP_RATIO`를 건드렸거나 `crop`이 변까지 덮는 경우). 게이트의 변 픽셀 검사가 잡는다 |
+| 타일이 전부 같아 보임 | 스와치가 균질을 넘어 **완전 단색**이면 어디를 크롭해도 같으므로 정상이다. 그게 아니면 변형 생성이 죽은 것 — 게이트의 내부 상이성 하한(평균 차 2)이 잡는다 |
+| 디테일이 반투명하게 겹쳐 보임 | 스와치에 꽃·돌 같은 개별 디테일이 들어갔다. `makeSeamless`가 크로스페이드라 생기는 유령이며, 프롬프트가 균질 필드를 요구하는 이유다 |
+| 재진입하니 타일이 달라짐 | `VARIATION_COMPOSER_VERSION`을 올렸는데 세션의 값이 옛것이다 — 레거시로 분기해 분할 경로를 탄다. 재생성하면 맞춰진다 |
+| "다른 변형으로 교체"를 눌러도 안 바뀜 | 풀이 슬롯보다 크지 않다(`VARIATION_POOL_MULTIPLIER`를 1로 낮췄거나 레거시 세트다). 레거시 세트에서는 버튼이 아예 비활성이다 — 위 "변형 풀" 절 참조 |
+| 버튼이 비활성인데 슬롯은 선택됨 | 레거시 세트다(`needsRecompose`). 변형 풀이 없으므로 교체를 막고 재생성을 안내한다 |

@@ -29,7 +29,7 @@
  * 2. 지형 경계는 `edgeProfile.ts`의 엣지 계약을 따르므로, 공유 변에서의
  *    베이스/오버레이 판정이 인접 타일과 완전히 일치한다(2단계에서 전수 증명).
  * 3. 재질에 랜덤성을 주기 위해 슬롯마다 **다른 텍스처 변형**을 쓰지만, 변형은
- *    정규 텍스처와 **변 픽셀을 공유**하도록 만든다(`VARIANT_RAMP_RATIO`).
+ *    정규 텍스처와 **변 픽셀을 공유**하도록 만든다(`seamlessTexture.buildTextureVariants`).
  *    따라서 1의 결론은 변형을 섞어도 그대로다.
  */
 
@@ -43,7 +43,7 @@ import {
   outlineOpacity,
 } from '../../types/tilemap';
 import { getEdgeStyle } from './edgeStyles';
-import { cropMaterialSwatch, makeSeamless } from './seamlessTexture';
+import { buildTextureVariants, textureToDataUrl } from './seamlessTexture';
 import {
   buildTerrainMask,
   resolveMaskOptions,
@@ -79,26 +79,6 @@ const OUTLINE_REFERENCE_CELL_PX = 128;
  * 64슬롯이 사실상 전부 다른 재질 표정을 갖는다.
  */
 const MATERIAL_VARIANT_COUNT = 8;
-
-/**
- * 변형 텍스처의 **공유 테두리 폭 비율** (타일 한 변 대비).
- *
- * ## 왜 테두리를 공유해야 하는가
- * 유니티 Rule Tile은 어떤 변형을 어느 칸에 놓을지 런타임에 고르므로, 어떤 두 변형이
- * 이웃해도 접합부가 이어져야 한다. 즉 **모든 변형의 변 픽셀이 완전히 동일**해야 한다.
- * 그래서 변형은 "정규 텍스처(wrap 연속) 위에 다른 크롭을 안쪽에만 얹은 것"으로 만든다:
- *
- *   variant = (1 - a(x,y)) * canonical + a(x,y) * crop
- *   a = 0  (변에서 `EDGE_HOLD_PX` 픽셀까지)  →  변 근처는 정규 텍스처 그대로
- *   a: 0→1 (RAMP 구간에서 스무스스텝)       →  기울기까지 이어져 띠가 보이지 않는다
- *   a = 1  (내부)                            →  다른 크롭 = 랜덤성
- *
- * 변에서 a가 정확히 0이므로 변 픽셀은 모든 변형에서 정규 텍스처와 같다 → 접합 보장.
- * 재질 스와치는 설계상 균질한 필드라, 테두리가 공통이어도 반복으로 읽히지 않는다.
- */
-const VARIANT_RAMP_RATIO = 0.12;
-/** 변에서 이 픽셀 수까지는 정규 텍스처를 **그대로** 유지한다 (a = 0 구간) */
-const EDGE_HOLD_PX = 2;
 
 /** 합성 옵션 */
 export interface RuleTileBuildOptions {
@@ -185,85 +165,12 @@ interface Materials {
   tileSize: number;
 }
 
-/** 5차 스무스스텝 */
-function smoothstep(t: number): number {
-  const c = Math.max(0, Math.min(1, t));
-  return c * c * c * (c * (c * 6 - 15) + 10);
-}
-
-/**
- * 변형 블렌딩 가중치의 축 방향 성분. 변에서 0, 안쪽에서 1.
- * 상수 근거는 `VARIANT_RAMP_RATIO` 주석 참조.
- */
-function variantAxisWeight(i: number, size: number): number {
-  const d = Math.min(i + 0.5, size - i - 0.5); // 변까지의 거리
-  const ramp = Math.max(1, size * VARIANT_RAMP_RATIO);
-  if (d <= EDGE_HOLD_PX) return 0;
-  return smoothstep((d - EDGE_HOLD_PX) / ramp);
-}
-
 /** 결정적 해시 (슬롯 → 텍스처 변형 선택용) */
 function hashInt(a: number, seed: number): number {
   let h = (a * 374761393 + seed * 668265263) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   h = h ^ (h >>> 16);
   return h >>> 0;
-}
-
-/**
- * 한 지형 패널에서 재질 텍스처 **변형 목록**을 만든다.
- *
- * - index 0 : 패널 중앙을 1:1 크롭해 `makeSeamless`로 wrap 연속화한 **정규 텍스처**
- * - index v : 패널의 다른 위치를 크롭해 정규 텍스처의 **안쪽에만** 얹은 것
- *
- * 변 픽셀은 전부 정규 텍스처와 동일하므로 어떤 변형끼리 이웃해도 접합이 이어진다
- * (`VARIANT_RAMP_RATIO` 주석의 계약 설명 참조).
- *
- * 크롭 위치는 황금비 저불일치 수열로 패널 전체에 고르게 흩는다 — 규칙적인 격자로
- * 잡으면 변형끼리 겹치는 영역이 많아져 차이가 잘 드러나지 않는다.
- */
-function buildTextureVariants(
-  img: CanvasImageSource,
-  sx: number,
-  sy: number,
-  sw: number,
-  sh: number,
-  T: number
-): Uint8ClampedArray[] {
-  const canonicalCanvas = makeSeamless(cropMaterialSwatch(img, sx, sy, sw, sh, T), T);
-  const canonical = get2d(canonicalCanvas).getImageData(0, 0, T, T).data;
-  const variants: Uint8ClampedArray[] = [canonical];
-
-  // 크롭 여유가 없으면(모델이 규격보다 작은 이미지를 준 경우) 변형을 만들 수 없다 — 정규 1장으로 폴백
-  const spanX = Math.max(0, sw - T);
-  const spanY = Math.max(0, sh - T);
-  if (spanX < 4 && spanY < 4) return variants;
-
-  // 축 방향 가중치를 미리 계산 (픽셀 루프에서는 곱만 한다)
-  const axis = new Float32Array(T);
-  for (let i = 0; i < T; i++) axis[i] = variantAxisWeight(i, T);
-
-  for (let v = 1; v < MATERIAL_VARIANT_COUNT; v++) {
-    const fx = (v * 0.6180339887498949) % 1;
-    const fy = (v * 0.7548776662466927) % 1;
-    const crop = get2d(cropMaterialSwatch(img, sx + spanX * fx, sy + spanY * fy, T, T, T))
-      .getImageData(0, 0, T, T).data;
-
-    const blended = new Uint8ClampedArray(canonical.length);
-    for (let y = 0; y < T; y++) {
-      const ay = axis[y];
-      for (let x = 0; x < T; x++) {
-        const a = axis[x] * ay;
-        const i = (y * T + x) * 4;
-        blended[i] = canonical[i] + (crop[i] - canonical[i]) * a;
-        blended[i + 1] = canonical[i + 1] + (crop[i + 1] - canonical[i + 1]) * a;
-        blended[i + 2] = canonical[i + 2] + (crop[i + 2] - canonical[i + 2]) * a;
-        blended[i + 3] = 255;
-      }
-    }
-    variants.push(blended);
-  }
-  return variants;
 }
 
 /**
@@ -289,13 +196,13 @@ async function extractMaterials(
   if (transparentBase) {
     return {
       baseTextures: [],
-      overlayTextures: buildTextureVariants(img, 0, 0, W, H, tileSize),
+      overlayTextures: buildTextureVariants(img, 0, 0, W, H, tileSize, MATERIAL_VARIANT_COUNT),
       tileSize,
     };
   }
   if (transparentOverlay) {
     return {
-      baseTextures: buildTextureVariants(img, 0, 0, W, H, tileSize),
+      baseTextures: buildTextureVariants(img, 0, 0, W, H, tileSize, MATERIAL_VARIANT_COUNT),
       overlayTextures: [],
       tileSize,
     };
@@ -305,8 +212,8 @@ async function extractMaterials(
   // 축소가 아니라 1:1 크롭이다 — 다운스케일은 또렷한 재질의 디테일을 통째로 날린다
   // (cropMaterialSwatch 주석 참조)
   return {
-    baseTextures: buildTextureVariants(img, 0, 0, W / 2, H, tileSize),
-    overlayTextures: buildTextureVariants(img, W / 2, 0, W / 2, H, tileSize),
+    baseTextures: buildTextureVariants(img, 0, 0, W / 2, H, tileSize, MATERIAL_VARIANT_COUNT),
+    overlayTextures: buildTextureVariants(img, W / 2, 0, W / 2, H, tileSize, MATERIAL_VARIANT_COUNT),
     tileSize,
   };
 }
@@ -529,18 +436,6 @@ function composeTile(
   return canvas.toDataURL('image/png');
 }
 
-/** 순수 베이스 타일 1장 (마스크 없이 베이스 텍스처 변형 그대로) */
-function composeBaseTile(texture: Uint8ClampedArray, T: number): string {
-  const canvas = createCanvas(T, T);
-  const ctx = get2d(canvas);
-  const out = ctx.createImageData(T, T);
-  out.data.set(texture);
-  // 알파를 완전 불투명으로 고정 (텍스처가 투명 픽셀을 가진 경우 대비)
-  for (let i = 3; i < out.data.length; i += 4) out.data[i] = 255;
-  ctx.putImageData(out, 0, 0);
-  return canvas.toDataURL('image/png');
-}
-
 /**
  * 머티리얼 시트에서 룰타일 세트를 합성한다.
  *
@@ -582,7 +477,7 @@ export async function buildRuleTileSet(
   return {
     tiles,
     // 베이스가 투명이면 칠할 바닥이 없다 → 빈 배열 (내보내기·미리보기가 이걸로 판단한다)
-    baseTiles: materials.baseTextures.map((tex) => composeBaseTile(tex, cellSize)),
+    baseTiles: materials.baseTextures.map((tex) => textureToDataUrl(tex, cellSize)),
     slots,
   };
 }

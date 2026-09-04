@@ -1,5 +1,5 @@
 /**
- * 룰타일 v3 파이프라인 self-check (dev 전용).
+ * 타일맵 파이프라인 self-check (룰타일 v3 · 변형 v2, dev 전용).
  *
  * 이 프로젝트에는 테스트 러너가 없고, 파이프라인 핵심 연산이 전부 실제 canvas 2D에
  * 의존한다(node 환경에서 재현하려면 네이티브 canvas 의존성이 필요). 그래서 검증을
@@ -13,6 +13,7 @@
  */
 
 import { cropMaterialSwatch, extractRegion, makeSeamless, measureWrapContinuity } from './seamlessTexture';
+import { buildVariationTileSet } from './variationComposer';
 import {
   NEIGHBOR,
   TRANSITION_INSET_RATIO,
@@ -945,6 +946,172 @@ async function checkMaterialVariants(): Promise<CheckResult> {
 }
 
 /**
+ * **변형 세트 게이트**: 변형 모드 타일 64장이 임의 배치에서 이어지는가.
+ *
+ * 임의 배치 접합은 두 조건이 동시에 성립해야 한다 — 둘 중 하나만 재면 회귀를 놓친다:
+ *  1) **타일 간 변 픽셀 동일성** — 어떤 두 타일을 이웃시켜도 접합부가 이어진다.
+ *     모든 타일의 4변을 정규 타일(index 0)과 전수 비교한다.
+ *  2) **wrap 연속성** — 같은 타일이 반복돼도 이음새가 없다. 1)만 재면 "모든 타일의
+ *     변이 똑같이 어긋난" 상태를 통과시켜 버린다. 정규 텍스처의 이음새 유무와
+ *     변형의 경계 스텝 상속을 나눠 재는 이유는 2) 블록 주석에 적었다.
+ *
+ * 여기에 3) 내부 상이성을 더한다. 변만 재면 "변형이 사실상 전부 같아짐" 회귀를
+ * (즉 무늬 반복이 그대로 남는 회귀를) 놓치기 때문이다.
+ */
+async function checkVariationSet(): Promise<CheckResult> {
+  const T = 128; // 8x8 → cellSize
+  const S = 1024;
+  // 캔버스 전체가 하나의 재질 스와치 — 위치에 따라 톤이 변하게 만들어
+  // "어디를 크롭했는지"가 결과에 드러나도록 한다 (변형이 실제로 달라야 통과)
+  const swatch = makeFixture(S, (x, y) => {
+    const n = hashNoise(x >> 1, y >> 1, 29) * 20;
+    const tx = x / S;
+    const ty = y / S;
+    return [70 + tx * 80 + n, 120 + ty * 50 + n, 55 + (tx + ty) * 25 + n];
+  }).toDataURL('image/png');
+
+  const set = await buildVariationTileSet(swatch, '8x8');
+  const problems: string[] = [];
+  if (set.slotCount !== 64) {
+    problems.push(`슬롯 배정분이 ${set.slotCount}장 — 8x8은 64장이어야 한다`);
+  }
+  /*
+    풀은 슬롯보다 **커야** 한다. 같으면 슬롯 교체가 이미 화면에 있는 변형끼리 자리를
+    바꾸는 것밖에 못 해, 1개만 고르면 아무 일도 일어나지 않는다(회귀로 실제 발생했다).
+  */
+  if (set.tiles.length <= set.slotCount) {
+    problems.push(
+      `변형 풀이 ${set.tiles.length}장으로 슬롯(${set.slotCount})보다 크지 않다 — 슬롯 교체가 무의미해진다`
+    );
+  }
+  if (set.distinctCount !== set.tiles.length) {
+    problems.push(`서로 다른 변형이 ${set.distinctCount}/${set.tiles.length}장 — 풀이 복사본으로 채워졌다`);
+  }
+
+  // 타일을 픽셀 버퍼로
+  const bufs: Uint8ClampedArray[] = [];
+  const canvases: HTMLCanvasElement[] = [];
+  for (const dataUrl of set.tiles) {
+    const img = await loadImageElement(dataUrl);
+    const c = document.createElement('canvas');
+    c.width = T;
+    c.height = T;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('canvas 2d context를 생성할 수 없습니다');
+    ctx.drawImage(img, 0, 0);
+    bufs.push(ctx.getImageData(0, 0, T, T).data);
+    canvases.push(c);
+  }
+
+  const at = (b: Uint8ClampedArray, x: number, y: number, ch: number) => b[(y * T + x) * 4 + ch];
+  const chDiff = (a: Uint8ClampedArray, b: Uint8ClampedArray, x: number, y: number) =>
+    (Math.abs(at(a, x, y, 0) - at(b, x, y, 0)) +
+      Math.abs(at(a, x, y, 1) - at(b, x, y, 1)) +
+      Math.abs(at(a, x, y, 2) - at(b, x, y, 2))) / 3;
+
+  // 1) 타일 간 변 픽셀 동일성 — PNG 왕복의 반올림만 허용
+  const EDGE_TOL = 1;
+  let edgeSamples = 0;
+  let edgeBreaks = 0;
+  let worstEdge = 0;
+  for (let v = 1; v < bufs.length; v++) {
+    for (let i = 0; i < T; i++) {
+      for (const [x, y] of [[i, 0], [i, T - 1], [0, i], [T - 1, i]] as Array<[number, number]>) {
+        const d = chDiff(bufs[0], bufs[v], x, y);
+        edgeSamples++;
+        worstEdge = Math.max(worstEdge, d);
+        if (d > EDGE_TOL) edgeBreaks++;
+      }
+    }
+  }
+  if (edgeBreaks > 0) {
+    problems.push(`타일 간 변 픽셀 불일치 ${edgeBreaks}/${edgeSamples} (최악 ${worstEdge.toFixed(1)}) — 접합 계약 위반`);
+  }
+
+  /*
+    2) wrap 연속성.
+
+    ## 왜 변형마다 "자기 내부 P95"와 비교하면 안 되는가
+    `measureWrapContinuity`의 P95 기준은 "경계 스텝이 그 이미지의 내부 스텝 분포에서
+    평범한 값인가"를 묻는다. 정규 텍스처에는 맞는 질문이지만 **변형에는 틀린 질문**이다:
+
+    변형은 정규 텍스처의 변 근처를 그대로 두고 안쪽만 다른 크롭으로 바꾼 것이다.
+    그래서 경계 스텝(마지막 열↔첫 열)은 정규 텍스처와 **정확히 같은 픽셀**에서 나오지만,
+    내부 스텝 분포는 얹은 크롭에 따라 달라진다. 크롭이 더 평탄하면 내부 P95가 내려가
+    변하지 않은 경계 스텝이 기준을 넘어 버린다 — 실제로 처음 이 게이트를 돌렸을 때
+    3/64장이 **0.05** 초과로 걸렸다. 극단적으로 크롭이 단색이면 내부 P95가 0이 되어
+    전부 실패하는데, 그때도 경계는 정규 텍스처의 연속된 픽셀이라 이음새가 없다.
+
+    그래서 질문을 둘로 나눈다:
+      2a. **정규 텍스처**가 P95 기준을 통과하는가 — 이음새 자체의 유무.
+      2b. 모든 **변형의 경계 스텝이 정규 텍스처와 같은가** — 변형이 그 결론을 물려받는가.
+    2b는 1)의 변 픽셀 동일성에서 따라 나오지만(경계 스텝은 첫/마지막 열만 쓴다),
+    따로 재 두면 어느 쪽이 깨졌는지 실패 메시지에서 바로 갈린다.
+  */
+  const canonicalWrap = measureWrapContinuity(canvases[0]);
+  const canonOverX = canonicalWrap.seamX - canonicalWrap.interiorP95X;
+  const canonOverY = canonicalWrap.seamY - canonicalWrap.interiorP95Y;
+  if (canonOverX > 0 || canonOverY > 0) {
+    problems.push(
+      `정규 텍스처에 이음새가 있다 — seamX ${canonicalWrap.seamX.toFixed(2)} vs P95 ` +
+      `${canonicalWrap.interiorP95X.toFixed(2)} / seamY ${canonicalWrap.seamY.toFixed(2)} vs P95 ` +
+      `${canonicalWrap.interiorP95Y.toFixed(2)}`
+    );
+  }
+
+  const WRAP_TOL = 1; // PNG 왕복의 반올림만 허용 (변 픽셀 동일성과 같은 기준)
+  let wrapBreaks = 0;
+  let worstWrap = 0;
+  for (let v = 1; v < canvases.length; v++) {
+    const r = measureWrapContinuity(canvases[v]);
+    const dx = Math.abs(r.seamX - canonicalWrap.seamX);
+    const dy = Math.abs(r.seamY - canonicalWrap.seamY);
+    worstWrap = Math.max(worstWrap, dx, dy);
+    if (dx > WRAP_TOL || dy > WRAP_TOL) wrapBreaks++;
+  }
+  if (wrapBreaks > 0) {
+    problems.push(
+      `변형의 경계 스텝이 정규 텍스처와 다르다 ${wrapBreaks}/${canvases.length - 1}장 ` +
+      `(최악 차 ${worstWrap.toFixed(2)} > ${WRAP_TOL}) — 변 근처가 변형됐다`
+    );
+  }
+
+  // 3) 내부 상이성 — 중앙 절반 영역의 평균 채널 차
+  const INTERIOR_MIN = 2;
+  const q = Math.floor(T / 4);
+  let weakest = Infinity;
+  for (let v = 1; v < bufs.length; v++) {
+    let sum = 0;
+    let n = 0;
+    for (let y = q; y < T - q; y++) {
+      for (let x = q; x < T - q; x++) {
+        sum += chDiff(bufs[0], bufs[v], x, y);
+        n++;
+      }
+    }
+    weakest = Math.min(weakest, sum / n);
+  }
+  if (weakest < INTERIOR_MIN) {
+    problems.push(`내부가 거의 동일하다 (가장 비슷한 변형의 평균 차 ${weakest.toFixed(2)} < ${INTERIOR_MIN})`);
+  }
+
+  return {
+    name: `변형 세트 — 타일 간 변 동일성 + wrap 연속성 + 내부 랜덤성 (풀 ${set.tiles.length}장 / 슬롯 ${set.slotCount})`,
+    passed: problems.length === 0,
+    detail:
+      problems.length > 0
+        ? problems.join('\n')
+        : `변 픽셀: 표본 ${edgeSamples}개 전부 일치 (최악 ${worstEdge.toFixed(1)} <= ${EDGE_TOL})\n` +
+          `정규 텍스처 wrap: seamX ${canonicalWrap.seamX.toFixed(2)} vs P95 ${canonicalWrap.interiorP95X.toFixed(2)} · ` +
+          `seamY ${canonicalWrap.seamY.toFixed(2)} vs P95 ${canonicalWrap.interiorP95Y.toFixed(2)}\n` +
+          `경계 스텝 상속: 변형 ${canvases.length - 1}장 전부 정규와 일치 (최악 차 ${worstWrap.toFixed(2)} <= ${WRAP_TOL})\n` +
+          `내부 차이: 가장 비슷한 변형도 평균 ${weakest.toFixed(2)} (하한 ${INTERIOR_MIN})\n` +
+          `→ 어떤 순서로 랜덤 배치해도 이음새가 없고, 무늬 반복도 깨진다`,
+    canvases: [{ label: '변형 타일 (풀 앞 16장)', canvas: tileStrip(set.tiles.slice(0, 16)) }],
+  };
+}
+
+/**
  * **투명 지형 게이트**: 지형 하나를 투명으로 두면 알파가 제대로 나오는가.
  *
  * 세 가지를 함께 잰다:
@@ -1450,6 +1617,7 @@ export async function runAllTilemapChecks(
     ['경계 품질 (합성 1회)', async () => [await checkBoundaryQuality()]],
     ['맵 배치 접합 (합성 1회)', async () => [await checkComposedJoins()]],
     ['재질 변형 (합성 1회)', async () => [await checkMaterialVariants()]],
+    ['변형 세트 (합성 1회)', async () => [await checkVariationSet()]],
     ['계단식 아웃라인 (합성 1회)', async () => [await checkSteppedOutline()]],
     ['투명 지형 (합성 1회)', async () => [await checkTransparentTerrain()]],
   ];

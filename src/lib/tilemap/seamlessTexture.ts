@@ -1,10 +1,13 @@
 /**
  * 이음새 없는(wrap 연속) 재질 텍스처 생성 유틸.
  *
- * 룰타일 v3 파이프라인의 1단계다. AI가 그린 머티리얼 시트에서 지형 필드 영역을
- * 잘라내 "좌우/상하로 순환 연결되는" 텍스처로 변환한다. 이 텍스처를 모든 타일이
- * 동일한 오프셋 (0,0)으로 샘플링하기 때문에, 어떤 타일을 어디에 놓아도 재질 면이
- * 서로 이어진다 (룰타일 교체 가능성의 전제 조건).
+ * 룰타일 합성과 변형 세트 합성이 **공유하는 1단계**다. AI가 그린 재질 스와치에서
+ * 필드 영역을 잘라내 "좌우/상하로 순환 연결되는" 텍스처로 변환한다. 이 텍스처를 모든
+ * 타일이 동일한 오프셋 (0,0)으로 샘플링하기 때문에, 어떤 타일을 어디에 놓아도 재질
+ * 면이 서로 이어진다 (임의 배치 교체 가능성의 전제 조건).
+ *
+ * 여기에는 그 위에 얹는 **엣지 계약**(`buildTextureVariants`)도 함께 둔다 — 두 모드가
+ * 같은 계약을 쓰지 않으면 한쪽 접합만 조용히 깨진다.
  *
  * ## 알고리즘: 분리형 주기 크로스페이드
  *
@@ -218,6 +221,114 @@ export function makeSeamless(source: CanvasImageSource, size: number): HTMLCanva
 
   // 가로 -> 세로 순서로 분리 적용
   return crossfadeAxis(crossfadeAxis(normalized, size, 'x'), size, 'y');
+}
+
+/**
+ * 변형 텍스처의 **공유 테두리 폭 비율** (타일 한 변 대비).
+ *
+ * ## 왜 테두리를 공유해야 하는가
+ * 타일을 어느 칸에 놓을지는 런타임에 결정된다(유니티 Rule Tile의 Output: Random,
+ * 변형 세트의 Random Tile, 사용자가 직접 칠하는 경우 모두). 즉 **어떤 두 변형이
+ * 이웃해도 접합부가 이어져야** 하고, 그러려면 모든 변형의 변 픽셀이 완전히 동일해야
+ * 한다. 그래서 변형은 "정규 텍스처(wrap 연속) 위에 다른 크롭을 안쪽에만 얹은 것"으로
+ * 만든다:
+ *
+ *   variant = (1 - a(x,y)) * canonical + a(x,y) * crop
+ *   a = 0  (변에서 `EDGE_HOLD_PX` 픽셀까지)  →  변 근처는 정규 텍스처 그대로
+ *   a: 0→1 (RAMP 구간에서 스무스스텝)       →  기울기까지 이어져 띠가 보이지 않는다
+ *   a = 1  (내부)                            →  다른 크롭 = 랜덤성
+ *
+ * 변에서 a가 정확히 0이므로 변 픽셀은 모든 변형에서 정규 텍스처와 같다 → 접합 보장.
+ * 재질 스와치는 설계상 균질한 필드라, 테두리가 공통이어도 반복으로 읽히지 않는다.
+ */
+const VARIANT_RAMP_RATIO = 0.12;
+/** 변에서 이 픽셀 수까지는 정규 텍스처를 **그대로** 유지한다 (a = 0 구간) */
+const EDGE_HOLD_PX = 2;
+
+/**
+ * 변형 블렌딩 가중치의 축 방향 성분. 변에서 0, 안쪽에서 1.
+ * 상수 근거는 `VARIANT_RAMP_RATIO` 주석 참조.
+ */
+function variantAxisWeight(i: number, size: number): number {
+  const d = Math.min(i + 0.5, size - i - 0.5); // 변까지의 거리
+  const ramp = Math.max(1, size * VARIANT_RAMP_RATIO);
+  if (d <= EDGE_HOLD_PX) return 0;
+  return smoothstep((d - EDGE_HOLD_PX) / ramp);
+}
+
+/**
+ * 한 재질 스와치 영역에서 텍스처 **변형 목록**을 만든다.
+ *
+ * - index 0 : 스와치 중앙을 1:1 크롭해 `makeSeamless`로 wrap 연속화한 **정규 텍스처**
+ * - index v : 스와치의 다른 위치를 크롭해 정규 텍스처의 **안쪽에만** 얹은 것
+ *
+ * 변 픽셀은 전부 정규 텍스처와 동일하므로 어떤 변형끼리 이웃해도 접합이 이어진다
+ * (`VARIANT_RAMP_RATIO` 주석의 계약 설명 참조). 룰타일 합성과 변형 세트 합성이
+ * **같은 계약을 쓰도록** 여기 한 곳에 둔다 — 한쪽만 고치면 접합이 조용히 깨진다.
+ *
+ * 크롭 위치는 황금비 저불일치 수열로 스와치 전체에 고르게 흩는다 — 규칙적인 격자로
+ * 잡으면 변형끼리 겹치는 영역이 많아져 차이가 잘 드러나지 않는다.
+ *
+ * @param count 만들 변형 개수(정규 텍스처 포함). 크롭 여유가 없으면 1장으로 폴백한다.
+ */
+export function buildTextureVariants(
+  source: CanvasImageSource,
+  sx: number,
+  sy: number,
+  sw: number,
+  sh: number,
+  T: number,
+  count: number
+): Uint8ClampedArray[] {
+  const canonicalCanvas = makeSeamless(cropMaterialSwatch(source, sx, sy, sw, sh, T), T);
+  const canonical = get2d(canonicalCanvas).getImageData(0, 0, T, T).data;
+  const variants: Uint8ClampedArray[] = [canonical];
+
+  // 크롭 여유가 없으면(모델이 규격보다 작은 이미지를 준 경우) 변형을 만들 수 없다 — 정규 1장으로 폴백
+  const spanX = Math.max(0, sw - T);
+  const spanY = Math.max(0, sh - T);
+  if (spanX < 4 && spanY < 4) return variants;
+
+  // 축 방향 가중치를 미리 계산 (픽셀 루프에서는 곱만 한다)
+  const axis = new Float32Array(T);
+  for (let i = 0; i < T; i++) axis[i] = variantAxisWeight(i, T);
+
+  for (let v = 1; v < count; v++) {
+    const fx = (v * 0.6180339887498949) % 1;
+    const fy = (v * 0.7548776662466927) % 1;
+    const crop = get2d(cropMaterialSwatch(source, sx + spanX * fx, sy + spanY * fy, T, T, T))
+      .getImageData(0, 0, T, T).data;
+
+    const blended = new Uint8ClampedArray(canonical.length);
+    for (let y = 0; y < T; y++) {
+      const ay = axis[y];
+      for (let x = 0; x < T; x++) {
+        const a = axis[x] * ay;
+        const i = (y * T + x) * 4;
+        blended[i] = canonical[i] + (crop[i] - canonical[i]) * a;
+        blended[i + 1] = canonical[i + 1] + (crop[i + 1] - canonical[i + 1]) * a;
+        blended[i + 2] = canonical[i + 2] + (crop[i + 2] - canonical[i + 2]) * a;
+        blended[i + 3] = 255;
+      }
+    }
+    variants.push(blended);
+  }
+  return variants;
+}
+
+/**
+ * 텍스처 픽셀 버퍼를 불투명 PNG dataURL로 굽는다.
+ * `buildTextureVariants` 결과를 그대로 타일로 쓸 때 사용한다.
+ */
+export function textureToDataUrl(texture: Uint8ClampedArray, T: number): string {
+  const canvas = createCanvas(T, T);
+  const ctx = get2d(canvas);
+  const out = ctx.createImageData(T, T);
+  out.data.set(texture);
+  // 알파를 완전 불투명으로 고정 (텍스처가 투명 픽셀을 가진 경우 대비)
+  for (let i = 3; i < out.data.length; i += 4) out.data[i] = 255;
+  ctx.putImageData(out, 0, 0);
+  return canvas.toDataURL('image/png');
 }
 
 /** wrap 연속성 측정 결과 (self-check 리포트용) */

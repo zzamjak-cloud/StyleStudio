@@ -109,7 +109,16 @@ function buildImportGuide(
   grid: TilemapGridLayout,
   mode: TilemapMode,
   /** 룰타일: 베이스 지형이 투명이라 바닥 타일이 나가지 않는 경우 */
-  baseTransparent = false
+  baseTransparent = false,
+  /**
+   * 예전 알고리즘으로 만든 세트인지 (변형 v1 = AI 시트를 잘라 만든 세트).
+   *
+   * **접합 보장 문구와 Random Tile 권장을 여기서 갈라야 한다.** 레거시 세트는 변 픽셀을
+   * 공유하지 않으므로 "어떤 순서로 배치해도 이음새가 없다"가 거짓이고, 그 상태에서
+   * Random Tile로 묶으라고 안내하면 이 변경이 없애려던 이음새를 오히려 만들게 된다.
+   * 화면에는 재생성 배너가 뜨지만 유니티에 넘기는 파일이 그것과 모순되면 안 된다.
+   */
+  legacySet = false
 ): string {
   const { cellSize, totalFrames } = getPixelArtGridInfo(grid);
   const baseGuide = `StyleStudio 타일맵 내보내기 — 유니티 임포트 가이드
@@ -180,11 +189,32 @@ ${baseTransparent
 `;
   }
 
-  return `${baseGuide}
-5. Tilemap에 배치 — 모든 타일은 상호 호환 변형이므로 자유롭게 섞어 칠할 수 있습니다
+  if (legacySet) {
+    return `${baseGuide}
+5. Tilemap에 배치
 
 개별 PNG(tiles/) 사용 시:
 - 폴더째 임포트 후 전체 선택 → 위와 동일한 Sprite 설정 → Tile Palette에 드래그
+
+⚠️ 주의 — 이 세트는 StyleStudio의 **예전 방식**(AI가 그린 타일 시트를 잘라낸 것)으로
+만들어졌습니다. 잘라낸 타일은 원래 붙어 있던 이웃과만 이어지므로, **순서를 섞어 배치하면
+이음새가 어긋날 수 있습니다.** Random Tile로 묶어 무작위 배치하면 특히 잘 드러납니다.
+StyleStudio에서 다시 생성하면 모든 타일이 변 픽셀을 공유하는 현재 방식으로 만들어져
+임의 배치에서도 이음새가 없습니다.
+`;
+  }
+
+  return `${baseGuide}
+5. Tilemap에 배치 — 모든 타일은 상호 호환 변형이므로 자유롭게 섞어 칠할 수 있습니다
+6. 넓은 바닥이라면 Random Tile (2D Tilemap Extras)로 ${totalFrames}장을 하나로 묶어 등록하면
+   칠하는 대로 변형이 무작위로 섞여 같은 무늬가 반복되지 않습니다
+
+개별 PNG(tiles/) 사용 시:
+- 폴더째 임포트 후 전체 선택 → 위와 동일한 Sprite 설정 → Tile Palette에 드래그
+
+이 타일들은 그림을 잘라 만든 것이 아니라 공통 재질에서 절차적으로 합성된 것입니다.
+모든 타일이 변 픽셀을 공유하고 각 타일 자체가 상하좌우로 순환 연결되므로, 어떤 순서로
+무작위 배치해도 이음새가 생기지 않습니다.
 `;
 }
 
@@ -200,8 +230,10 @@ export async function exportTilemapForUnity(params: {
   mode: TilemapMode;
   /** 룰타일: 순수 베이스 지형 타일 변형 목록 (그리드 슬롯 밖의 별도 타일) */
   baseTiles?: string[] | null;
+  /** 예전 알고리즘으로 만든 세트인지 — 가이드의 접합 보장 문구를 가른다 */
+  legacySet?: boolean;
 }): Promise<string> {
-  const { sessionName, grid, tiles, mode, baseTiles } = params;
+  const { sessionName, grid, tiles, mode, baseTiles, legacySet } = params;
   const { totalFrames } = getPixelArtGridInfo(grid);
   if (tiles.length !== totalFrames) {
     throw new Error(`타일 수가 그리드와 맞지 않습니다 (${tiles.length}/${totalFrames})`);
@@ -233,7 +265,12 @@ export async function exportTilemapForUnity(params: {
   // 4) 임포트 가이드 — 룰타일인데 바닥 타일이 없으면 투명 베이스다
   await writeTextFile(
     await join(exportFolder, 'IMPORT_GUIDE.txt'),
-    buildImportGuide(grid, mode, mode === 'ruletile' && (baseTiles?.length ?? 0) === 0)
+    buildImportGuide(
+      grid,
+      mode,
+      mode === 'ruletile' && (baseTiles?.length ?? 0) === 0,
+      legacySet ?? false
+    )
   );
 
   return exportFolder;

@@ -2,8 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image as ImageIcon, Download, Lock, LockOpen, Grid3x3, LayoutGrid, Eye, Upload } from 'lucide-react';
 import { LazyImage } from '../common/LazyImage';
 import { TilePreviewCanvas } from './TilePreviewCanvas';
-import { TilemapGridLayout, TileSlotAssignment, TilemapMode, TILEMAP_SEAM_WARNING_THRESHOLD } from '../../types/tilemap';
-import { TilemapReplacementProposal } from '../../hooks/useTilemapProcessing';
+import { TilemapGridLayout, TileSlotAssignment, TilemapMode } from '../../types/tilemap';
 import { buildSlotTable, describeSlot } from '../../lib/tilemap/autotileSignature';
 
 /**
@@ -36,17 +35,21 @@ interface TilemapResultViewProps {
   autoExportFolder?: string | null;
   /** 경계 설정 변경으로 타일을 재합성 중인지 */
   isRecomposing?: boolean;
+  /**
+   * 보유 세트가 예전 합성 알고리즘 결과인지.
+   * 특히 변형 v1 세트는 AI 시트를 잘라 만든 것이라 **임의 배치 접합 보장이 없다** —
+   * 화면만 봐서는 알 수 없으므로 재생성을 안내한다.
+   */
+  needsRecompose?: boolean;
   grid: TilemapGridLayout;
   mode: TilemapMode;
   currentTiles: (string | null)[];
   baseTiles?: string[]; // 룰타일: 순수 베이스 지형 타일 변형들 (슬롯 밖의 별도 타일)
   baseTransparent?: boolean; // 룰타일: 베이스 지형이 투명인지 (미리보기 배경 표현용)
   slotAssignments: TileSlotAssignment[];
-  proposal: TilemapReplacementProposal | null;
   onToggleLock: (slotIndex: number) => void;
-  onRegenerateSelected: (slotIndexes: number[]) => void;
-  onConfirmProposal: () => void;
-  onDiscardProposal: () => void;
+  /** 선택 슬롯을 같은 스와치의 다른 변형으로 다시 뽑는다 (즉시 반영, 생성 호출 없음) */
+  onReshuffleSelected: (slotIndexes: number[]) => void;
   onExport: () => void; // Task 9에서 구현, 이 태스크에서는 prop만
   onManualSave: () => void; // 시트 보기의 수동 저장 (기존 handleManualSave)
 }
@@ -60,17 +63,15 @@ function TilemapResultViewComponent({
   composedSheet,
   autoExportFolder,
   isRecomposing,
+  needsRecompose,
   grid,
   mode,
   currentTiles,
   baseTiles,
   baseTransparent,
   slotAssignments,
-  proposal,
   onToggleLock,
-  onRegenerateSelected,
-  onConfirmProposal,
-  onDiscardProposal,
+  onReshuffleSelected,
   onExport,
   onManualSave,
 }: TilemapResultViewProps) {
@@ -110,15 +111,10 @@ function TilemapResultViewComponent({
     });
   };
 
-  const handleRegenerateClick = () => {
-    onRegenerateSelected([...selectedSlots]);
+  const handleReshuffleClick = () => {
+    onReshuffleSelected([...selectedSlots]);
     setSelectedSlots(new Set());
   };
-
-  // 제안 모드: 슬롯 인덱스 → 교체 정보 맵
-  const proposalBySlot = new Map(
-    (proposal?.replacements ?? []).map((r) => [r.slotIndex, r])
-  );
 
   const gridColsClass = grid === '8x8' ? 'grid-cols-8' : 'grid-cols-4';
 
@@ -216,6 +212,21 @@ function TilemapResultViewComponent({
         </div>
       )}
 
+      {/*
+        레거시 세트 안내 — 예전 알고리즘으로 만든 세트는 접합 보장이 없다.
+        화면만 봐서는 구분할 수 없으므로 명시적으로 알린다 (자동 마이그레이션은 불가능하다 —
+        보장을 얻으려면 재질 스와치를 새로 생성해야 한다).
+      */}
+      {needsRecompose && (
+        <div className="px-6 py-2 border-b border-amber-200 bg-amber-50 text-[12px] text-amber-900 flex items-center gap-2">
+          <span className="shrink-0">⚠</span>
+          <span>
+            예전 방식(AI 시트를 잘라 만든 세트)입니다 — <b>임의 배치에서 이음새가 어긋날 수 있습니다.</b>
+            다시 생성하면 변 픽셀을 공유하는 현재 방식으로 만들어져 접합이 보장됩니다.
+          </span>
+        </div>
+      )}
+
       {/* 자동 내보내기 안내 */}
       {autoExportFolder && (
         <div className="px-6 py-2 border-b border-emerald-200 bg-emerald-50 text-[12px] text-emerald-800 flex items-center gap-2">
@@ -263,23 +274,19 @@ function TilemapResultViewComponent({
             <div className={`grid ${gridColsClass} gap-2`}>
               {currentTiles.map((tile, slotIndex) => {
                 const assignment = slotAssignments[slotIndex];
-                const seamScore = assignment?.seamScore;
                 const locked = assignment?.locked ?? false;
                 const isSelected = selectedSlots.has(slotIndex);
-                const replacement = proposalBySlot.get(slotIndex);
-                const isProposed = replacement !== undefined;
-                const displayTile = isProposed ? proposal!.sheetTiles[replacement.cellIndex] : tile;
 
                 return (
                   <div
                     key={slotIndex}
                     className={`relative aspect-square rounded-lg overflow-hidden border border-gray-200 ${
-                      isProposed ? 'ring-2 ring-blue-500' : isSelected ? 'ring-2 ring-lime-500' : ''
+                      isSelected ? 'ring-2 ring-lime-500' : ''
                     }`}
                     style={CHECKER_BG}
                   >
-                    {displayTile ? (
-                      <img src={displayTile} alt={`타일 ${slotIndex}`} className="w-full h-full object-cover" />
+                    {tile ? (
+                      <img src={tile} alt={`타일 ${slotIndex}`} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full bg-gray-200" />
                     )}
@@ -300,7 +307,7 @@ function TilemapResultViewComponent({
                         <button
                           onClick={() => onToggleLock(slotIndex)}
                           className="absolute bottom-1 left-1 z-10 p-1 bg-black/50 hover:bg-black/70 rounded transition-colors"
-                          title={locked ? '잠금 해제' : '잠금 (교체 재생성에서 보호)'}
+                          title={locked ? '잠금 해제' : '잠금 (변형 교체에서 보호)'}
                         >
                           {locked ? (
                             <Lock size={12} className="text-white" />
@@ -311,27 +318,17 @@ function TilemapResultViewComponent({
                       </>
                     )}
 
-                    {/* 우상단 역할 뱃지(룰타일) / seam 점수 뱃지 / 교체 예정 뱃지 */}
-                    {isRuleTile ? (
+                    {/*
+                      우상단 역할 뱃지 — 룰타일만.
+                      변형 모드에는 예전에 seam 점수 뱃지가 있었지만, 접합이 구성으로
+                      보장되는 지금은 잴 것이 없다(점수 자체가 휴리스틱이라 눈에 보이는
+                      이음새를 통과시키기도 했다). 뱃지를 없애는 편이 정직하다.
+                    */}
+                    {isRuleTile && (
                       <div className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-600 text-white">
                         {describeSlot(ruleTileSlots![slotIndex])}
                       </div>
-                    ) : isProposed ? (
-                      <div className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500 text-white">
-                        교체 예정
-                      </div>
-                    ) : seamScore !== undefined ? (
-                      <div
-                        className={`absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded text-[10px] font-semibold flex items-center gap-0.5 ${
-                          seamScore >= TILEMAP_SEAM_WARNING_THRESHOLD
-                            ? 'bg-emerald-500 text-white'
-                            : 'bg-amber-500 text-white'
-                        }`}
-                      >
-                        {seamScore < TILEMAP_SEAM_WARNING_THRESHOLD && <span>⚠</span>}
-                        {seamScore}
-                      </div>
-                    ) : null}
+                    )}
                   </div>
                 );
               })}
@@ -341,40 +338,29 @@ function TilemapResultViewComponent({
       </div>
 
       {/* 하단 액션 바 */}
-      {proposal ? (
-        <div className="flex items-center justify-between px-6 py-3 border-t border-blue-200 bg-blue-50">
-          <span className="text-sm font-medium text-blue-800">
-            제안된 교체 {proposal.replacements.length}건
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onDiscardProposal}
-              className="px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              취소
-            </button>
-            <button
-              onClick={onConfirmProposal}
-              className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              확정
-            </button>
-          </div>
-        </div>
-      ) : viewMode === 'tiles' && isRuleTile ? (
+      {viewMode === 'tiles' && isRuleTile ? (
         <div className="flex items-center justify-center px-6 py-3 border-t border-gray-200 bg-white">
           <p className="text-sm text-gray-500">
             룰타일 세트는 역할이 고정되어 슬롯 교체가 없습니다 — 마음에 안 들면 다시 생성하세요.
           </p>
         </div>
       ) : viewMode === 'tiles' ? (
-        <div className="flex items-center justify-end px-6 py-3 border-t border-gray-200 bg-white">
+        <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 bg-white">
+          {/*
+            레거시 세트는 변형 풀이 없다(슬롯과 1:1인 분할 결과다). 재배치해도 접합이
+            개선되지 않으므로 보장 문구를 걸지 않고 버튼도 막는다 — 대신 재생성을 안내한다.
+          */}
+          <p className="text-sm text-gray-500">
+            {needsRecompose
+              ? '예전 방식 세트는 변형 교체를 쓸 수 없습니다 — 다시 생성해 주세요.'
+              : '선택한 슬롯을 같은 재질의 다른 변형으로 바꿉니다 — 생성 호출 없이 즉시 반영되고, 접합은 그대로 유지됩니다.'}
+          </p>
           <button
-            onClick={handleRegenerateClick}
-            disabled={selectedSlots.size === 0 || isGenerating}
+            onClick={handleReshuffleClick}
+            disabled={selectedSlots.size === 0 || needsRecompose}
             className="px-4 py-1.5 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            선택 재생성 ({selectedSlots.size})
+            다른 변형으로 교체 ({selectedSlots.size})
           </button>
         </div>
       ) : null}

@@ -21,9 +21,6 @@ export const TILEMAP_GRID_LAYOUTS: TilemapGridLayout[] = ['4x4', '8x8'];
  */
 export const TILEMAP_RULETILE_GRID: TilemapGridLayout = '8x8';
 
-/** seam 점수(0~100)가 이 값 미만이면 이음새 경고 뱃지를 표시한다 */
-export const TILEMAP_SEAM_WARNING_THRESHOLD = 70;
-
 /**
  * 룰타일 경계선 모양 프리셋 식별자.
  * 실제 파라미터는 `lib/tilemap/edgeStyles.ts`에 있다 (여기서 import하면 순환 참조가 된다).
@@ -115,10 +112,13 @@ export function outlineOpacity(outline?: TilemapOutline): number {
 /**
  * 생성된 시트 1장. 원본 1024 이미지는 imageStorage 키로만 보관한다(직접 base64 저장 금지).
  *
- * 모드에 따라 시트의 의미가 다르다:
- * - variation: 타일이 그리드로 배치된 **타일 시트** → `sliceTileSheet`로 분할
- * - ruletile:  베이스/오버레이 재질과 프린지가 담긴 **머티리얼 시트**
- *              → `buildRuleTileSet`로 타일을 절차적으로 합성 (자르지 않는다)
+ * 모드·버전에 따라 시트의 의미가 다르다 — **`composerVersion`으로 분기해야 한다**:
+ * - variation v2~: 캔버스 전체가 하나의 균질한 **재질 스와치**
+ *                  → `buildVariationTileSet`로 변형을 절차적으로 합성 (자르지 않는다)
+ * - variation v1 (레거시, `composerVersion` 없음):
+ *                  타일이 그리드로 배치된 **타일 시트** → `sliceTileSheet`로 분할
+ * - ruletile:      베이스/오버레이 재질이 담긴 **머티리얼 시트**
+ *                  → `buildRuleTileSet`로 타일을 절차적으로 합성 (자르지 않는다)
  */
 export interface TilemapSheet {
   id: string;
@@ -127,23 +127,44 @@ export interface TilemapSheet {
 }
 
 /**
- * 슬롯 → (시트, 셀) 매핑.
- * 타일은 시트의 결정적 분할 결과이므로 개별 저장하지 않고 이 매핑으로만 관리한다.
+ * 슬롯 → (시트, 변형) 매핑.
+ * 타일은 시트에서 결정적으로 재구성되므로 개별 저장하지 않고 이 매핑으로만 관리한다.
  */
 export interface TileSlotAssignment {
   slotIndex: number; // 0 ~ (타일 수 - 1), 행우선
   sheetId: string; // TilemapSheet.id
-  cellIndex: number; // 해당 시트 내 셀 번호 (행우선)
-  seamScore?: number; // 0~100 이음새 점수
+  /**
+   * 해당 시트에서 재구성한 타일 배열의 인덱스.
+   *
+   * 변형 v2에서는 이 배열이 **슬롯 수보다 큰 변형 풀**이다(`VARIATION_POOL_MULTIPLIER`) —
+   * 뒤쪽 여유분은 슬롯 교체용이라 화면·내보내기에는 배정된 것만 나간다. 룰타일과
+   * 레거시 분할 세트에서는 풀 == 슬롯이라 셀 번호(행우선)와 같다.
+   */
+  cellIndex: number;
+  /**
+   * 레거시(variation v1) 이음새 점수 0~100.
+   *
+   * v1은 AI 타일 시트를 잘라 썼기에 접합 보장이 없었고, 이 휴리스틱 점수로 품질을
+   * 짐작했다. v2는 엣지 계약으로 접합을 **구성으로 보장**하므로 점수가 의미 없다
+   * (읽지도 쓰지도 않는다). 기존 세션 데이터 호환을 위해 필드만 남긴다.
+   */
+  seamScore?: number;
   locked?: boolean; // true면 교체 재생성에서 보호
 }
 
 /** TILEMAP 세션 전용 데이터 (Session.tilemapData) */
 export interface TilemapSessionData {
   grid: TilemapGridLayout;
+  /**
+   * 시트 목록.
+   *
+   * 새로 만드는 세트는 **항상 1장**이다 — 시트가 곧 재질 스와치이고, 서로 다른 스와치에서
+   * 나온 타일은 변 픽셀이 달라 섞을 수 없기 때문이다. 여러 장이 들어 있으면 예전 교체
+   * 제안 흐름으로 만든 레거시 세션이다.
+   */
   sheets: TilemapSheet[];
   slotAssignments: TileSlotAssignment[];
-  mode?: TilemapMode;        // 미지정 시 'variation' (v1 세션 호환)
+  mode?: TilemapMode;        // 미지정 시 'variation' (초기 세션 호환)
   baseTerrain?: string;      // 룰타일: 베이스 지형 입력 원문 (예: "잔디"). 빈 값 = 투명
   overlayTerrain?: string;   // 룰타일: 오버레이 지형 입력 원문 (예: "흙길"). 빈 값 = 투명
   /**
@@ -160,10 +181,14 @@ export interface TilemapSessionData {
   transparentBase?: boolean;
   transparentOverlay?: boolean;
   /**
-   * 룰타일 합성 알고리즘 버전 (`ruleTileComposer.COMPOSER_VERSION`).
-   * 타일은 저장하지 않고 머티리얼 시트에서 매번 재합성하므로, 알고리즘이 바뀌면
-   * 기존 세션의 결과도 달라진다. 이 값이 없거나(=v2 이전의 "잘라낸" 세트) 현재 버전과
-   * 다르면 재생성이 필요하다고 안내한다.
+   * 합성 알고리즘 버전. **`mode`와 짝으로 해석한다** — 두 모드가 서로 다른 합성기를
+   * 쓰므로 같은 숫자라도 의미가 다르다:
+   * - ruletile  → `ruleTileComposer.COMPOSER_VERSION`
+   * - variation → `variationComposer.VARIATION_COMPOSER_VERSION`
+   *
+   * 타일은 저장하지 않고 시트에서 매번 재구성하므로, 알고리즘이 바뀌면 기존 세션의
+   * 결과도 달라진다. 값이 없으면 각 모드의 "잘라낸" 레거시 세트다 — 복원 경로가
+   * 그때는 계속 `sliceTileSheet`를 쓰고, UI는 재생성이 필요하다고 안내한다.
    */
   composerVersion?: number;
   /** 룰타일: 경계선 모양 프리셋 (미지정 시 'blades') */

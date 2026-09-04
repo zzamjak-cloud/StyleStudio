@@ -12,17 +12,13 @@ import {
 } from '../types/tilemap';
 import { sliceTileSheet } from '../lib/tilemap/tileSlicer';
 import { buildRuleTileSet, COMPOSER_VERSION } from '../lib/tilemap/ruleTileComposer';
+import {
+  buildVariationTileSet,
+  VARIATION_COMPOSER_VERSION,
+} from '../lib/tilemap/variationComposer';
 import { composeFinalSheet } from '../lib/tilemap/tilemapExporter';
-import { computeSeamScores } from '../lib/tilemap/seamValidator';
 import { saveImageWithKey, loadImage, deleteImage } from '../lib/imageStorage';
 import { logger } from '../lib/logger';
-
-/** 교체 재생성 제안: 새 시트에서 seam 점수 상위 셀을 선택 슬롯에 배정 */
-export interface TilemapReplacementProposal {
-  sheet: TilemapSheet;
-  sheetTiles: string[]; // 새 시트의 분할 타일 (미리보기용)
-  replacements: Array<{ slotIndex: number; cellIndex: number; seamScore: number }>;
-}
 
 interface UseTilemapProcessingOptions {
   enabled: boolean; // sessionType === 'TILEMAP'
@@ -36,6 +32,45 @@ interface UseTilemapProcessingOptions {
   outline?: TilemapOutline; // 룰타일: 경계 아웃라인
   outline2?: TilemapOutline; // 룰타일: 보조 아웃라인 (2단계 띠)
   outlineSide?: TilemapOutlineSide; // 룰타일: 아웃라인을 뻗는 방향
+}
+
+/**
+ * 보유 세트가 **현재 합성 알고리즘으로 만들어졌는지** 판정한다.
+ *
+ * 두 모드가 서로 다른 합성기를 쓰므로 `composerVersion` 숫자는 모드와 짝으로만
+ * 의미가 있다. 값이 없으면 "시트를 잘라 만든" 레거시 세트다.
+ */
+function isCurrentComposerVersion(data: TilemapSessionData | undefined): boolean {
+  if (!data) return false;
+  const expected =
+    (data.mode ?? 'variation') === 'ruletile' ? COMPOSER_VERSION : VARIATION_COMPOSER_VERSION;
+  return data.composerVersion === expected;
+}
+
+/**
+ * 슬롯이 실제로 가리키는 시트 id 집합.
+ *
+ * 시트는 생성마다 쌓일 수 있는데, 슬롯이 참조하지 않는 시트는 재구성할 이유가 없다
+ * (합성은 시트당 타일 수만큼의 픽셀 루프다). 복원과 경계 설정 재합성이 **같은 기준**을
+ * 써야 한다 — 한쪽만 걸러내면 `tileCache`의 키 집합이 어느 이펙트가 마지막으로 돌았는지에
+ * 따라 달라진다.
+ */
+function referencedSheetIds(data: TilemapSessionData): Set<string> {
+  return new Set(data.slotAssignments.map((a) => a.sheetId));
+}
+
+/** 아직 슬롯이 없는 세션(집합이 비었을 때)은 전부 대상으로 본다 */
+function isSheetReferenced(referenced: Set<string>, sheetId: string): boolean {
+  return referenced.size === 0 || referenced.has(sheetId);
+}
+
+/** 변형 풀이 사실상 1장으로 무너졌으면 알린다 (스와치가 타일보다 작은 경우) */
+function warnIfNoVariation(distinctCount: number, slotCount: number): void {
+  if (distinctCount >= 2) return;
+  logger.warn(
+    `⚠️ 재질 스와치가 타일(${slotCount}슬롯)보다 작아 변형을 만들 수 없습니다 — ` +
+    '모든 타일이 같은 텍스처가 됩니다(이음새는 없지만 무늬가 반복됩니다).'
+  );
 }
 
 /**
@@ -57,8 +92,17 @@ function makeOutlineKey(
 
 /**
  * 타일맵 생성 후처리 훅.
- * - 시트 저장(imageStorage) → 분할 → seam 점수 → 슬롯 할당/교체 제안
- * - 세션 재진입 시 저장된 시트를 로드·분할해 타일 캐시 복원
+ * - 시트 저장(imageStorage) → 타일 합성 → 슬롯 전체 할당
+ * - 세션 재진입 시 저장된 시트를 로드·재구성해 타일 캐시 복원
+ *
+ * ## 두 모드 모두 "자르지 않는다"
+ * variation·ruletile 모두 AI에게 **재질 스와치**를 받아 타일을 절차적으로 만든다.
+ * 그래서 어떤 타일을 어디에 놓아도 접합이 이어진다 — 변 픽셀을 공유하는 엣지 계약이
+ * 구성 자체에 들어 있기 때문이다(`seamlessTexture.buildTextureVariants`).
+ *
+ * 레거시 **변형** 세션(`composerVersion` 없음)만 예외로 `sliceTileSheet` 경로를 유지한다.
+ * 그 세션의 시트는 스와치가 아니라 타일 시트라, 합성기에 넣으면 결과가 완전히 달라진다.
+ * (룰타일은 버전과 무관하게 지금까지처럼 `buildRuleTileSet`으로 복원한다 — 복원 이펙트 주석 참조)
  */
 export function useTilemapProcessing({
   enabled,
@@ -74,7 +118,6 @@ export function useTilemapProcessing({
   outlineSide,
 }: UseTilemapProcessingOptions) {
   // sheetId → 타일 dataURL[] (휘발성 캐시, 저장 안 함)
-  // variation은 시트 분할 결과, ruletile은 머티리얼 시트에서 합성한 결과다
   const [tileCache, setTileCache] = useState<Map<string, string[]>>(new Map());
   // 룰타일 전용: sheetId → 순수 베이스 지형 타일 변형 목록 (그리드 슬롯 밖의 별도 타일)
   const [baseTileCache, setBaseTileCache] = useState<Map<string, string[]>>(new Map());
@@ -87,9 +130,6 @@ export function useTilemapProcessing({
   const materialSheetsRef = useRef<Map<string, string>>(new Map());
   /** 경계 설정 변경으로 재합성 중인지 (결과 뷰 표시용) */
   const [isRecomposing, setIsRecomposing] = useState(false);
-  const [proposal, setProposal] = useState<TilemapReplacementProposal | null>(null);
-  // 교체 대상 슬롯 — handleGenerate 클로저의 stale 참조를 피하기 위해 ref로 유지
-  const pendingReplaceSlotsRef = useRef<number[]>([]);
 
   const grid: TilemapGridLayout = isTilemapGridLayout(pixelArtGrid) ? pixelArtGrid : '4x4';
 
@@ -97,7 +137,7 @@ export function useTilemapProcessing({
   const displayGrid: TilemapGridLayout =
     tilemapData && tilemapData.slotAssignments.length > 0 ? tilemapData.grid : grid;
 
-  // 보유 세트의 모드 — displayGrid와 같은 원리로 보유 데이터 우선, 없으면 'variation' 폴백(v1 세션 호환)
+  // 보유 세트의 모드 — displayGrid와 같은 원리로 보유 데이터 우선, 없으면 'variation' 폴백
   const effectiveMode: TilemapMode = tilemapData?.mode ?? 'variation';
 
   /**
@@ -115,18 +155,32 @@ export function useTilemapProcessing({
   // 아웃라인은 객체라 매 렌더 새 참조일 수 있으므로 내용 기반 키로 의존성을 건다
   const outlineKey = makeOutlineKey(outlineSide, outline, outline2);
 
+  /** 보유 세트가 현재 합성 알고리즘 결과인지 (레거시 분기·재생성 안내에 함께 쓴다) */
+  const isCurrentComposer = isCurrentComposerVersion(tilemapData);
+
   // 세션 재진입 시: 저장된 시트를 로드해 캐시 복원
   useEffect(() => {
     if (!enabled || !tilemapData || tilemapData.sheets.length === 0) return;
     let cancelled = false;
 
-    // 보유 데이터의 모드를 따른다 (패널의 "다음 생성 목표" 모드가 아니다)
+    // 보유 데이터의 모드·버전을 따른다 (패널의 "다음 생성 목표"가 아니다)
     const restoreMode: TilemapMode = tilemapData.mode ?? 'variation';
+    /**
+     * 레거시 변형 세트(v1)는 시트가 **타일 시트**다 — 스와치로 해석하면 결과가 완전히
+     * 달라지므로 그때만 분할 경로를 유지한다.
+     *
+     * 룰타일은 버전으로 분기하지 않는다. 예전 룰타일 세션도 지금까지 `buildRuleTileSet`으로
+     * 복원해 왔고, 그 동작을 바꾸면 이번 변경과 무관한 기존 세션의 화면이 달라진다
+     * (`needsRecompose` 배너로 재생성을 안내하는 것까지가 이 변경의 범위다).
+     */
+    const legacyVariation = restoreMode === 'variation' && !isCurrentComposerVersion(tilemapData);
+    const referenced = referencedSheetIds(tilemapData);
 
     (async () => {
       const restored = new Map<string, string[]>();
       const restoredBase = new Map<string, string[]>();
       for (const sheet of tilemapData.sheets) {
+        if (!isSheetReferenced(referenced, sheet.id)) continue;
         try {
           const dataUrl = await loadImage(sheet.imageKey);
           if (!dataUrl) {
@@ -147,29 +201,39 @@ export function useTilemapProcessing({
             });
             restored.set(sheet.id, set.tiles);
             restoredBase.set(sheet.id, set.baseTiles);
-          } else {
+          } else if (legacyVariation) {
             restored.set(sheet.id, await sliceTileSheet(dataUrl, tilemapData.grid));
+          } else {
+            const set = await buildVariationTileSet(dataUrl, tilemapData.grid);
+            restored.set(sheet.id, set.tiles);
+            warnIfNoVariation(set.distinctCount, set.slotCount);
           }
         } catch (e) {
           logger.error('❌ 타일 시트 복원 실패:', sheet.id, e);
         }
       }
-      // 세션 전환 시 이전 세션의 캐시·제안이 남아있으면 안 되므로 병합이 아닌 교체
-      // (다른 세션의 제안이 현재 세션에 잘못 확정되는 사고 방지)
+      // 세션 전환 시 이전 세션의 캐시가 남아있으면 안 되므로 병합이 아닌 교체
       if (!cancelled) {
         setTileCache(restored);
         setBaseTileCache(restoredBase);
-        setProposal(null);
-        pendingReplaceSlotsRef.current = [];
       }
     })();
 
     return () => { cancelled = true; };
-    // 시트 정체성(sheetIds)·그리드·모드 변화 시에만 재실행 (신규 시트는 processNewSheet가 즉시 캐시함).
-    // 경계 설정 변경은 아래 전용 이펙트가 처리한다 — "저장소에서 복원"과 "설정으로 재합성"은
-    // 다른 관심사이고, 한 이펙트에 섞으면 비동기 경합과 의존성 추적이 얽힌다
+    /*
+      시트 정체성(sheetIds)·그리드·모드·합성 버전 변화 시에만 재실행
+      (신규 시트는 processNewSheet가 즉시 캐시한다).
+
+      경계 설정 변경은 아래 전용 이펙트가 처리한다 — "저장소에서 복원"과 "설정으로 재합성"은
+      다른 관심사이고, 한 이펙트에 섞으면 비동기 경합과 의존성 추적이 얽힌다.
+
+      **`slotAssignments`는 읽지만 의존성에 없다.** 지금 그게 안전한 건 슬롯을 바꾸는
+      경로(`reshuffleSlots`·`toggleLock`)가 **참조하는 sheetId 집합을 바꾸지 않기** 때문이다
+      (같은 시트 안에서 cellIndex/locked만 바꾼다). 슬롯이 다른 시트를 가리킬 수 있게 되면
+      `referenced`가 낡아 캐시가 비므로, 그때는 여기에 의존성을 추가해야 한다.
+    */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, sheetIds, tilemapData?.grid, tilemapData?.mode]);
+  }, [enabled, sheetIds, tilemapData?.grid, tilemapData?.mode, tilemapData?.composerVersion]);
 
   /**
    * 경계선 프리셋·아웃라인이 바뀌면 **캐시된 머티리얼 시트로 즉시 재합성**한다.
@@ -195,7 +259,11 @@ export function useTilemapProcessing({
         try {
           const nextTiles = new Map<string, string[]>();
           const nextBase = new Map<string, string[]>();
+          // 복원 이펙트와 **같은 기준**으로 걸러야 한다 (referencedSheetIds 주석 참조).
+          // 아웃라인은 컬러 피커 드래그로 연속 호출되는 가장 뜨거운 경로다
+          const referenced = referencedSheetIds(tilemapData);
           for (const sheet of tilemapData.sheets) {
+            if (!isSheetReferenced(referenced, sheet.id)) continue;
             const dataUrl =
               materialSheetsRef.current.get(sheet.id) ?? (await loadImage(sheet.imageKey));
             if (!dataUrl) continue;
@@ -255,18 +323,11 @@ export function useTilemapProcessing({
     });
   })();
 
-  /** 교체 재생성 예약: 다음 processNewSheet가 교체 제안 모드로 동작 (보유 세트가 룰타일이면 이중 방어로 no-op) */
-  const requestReplacement = useCallback((slotIndexes: number[]) => {
-    if (effectiveMode === 'ruletile') return;
-    pendingReplaceSlotsRef.current = slotIndexes;
-  }, [effectiveMode]);
-
   /**
-   * 생성 완료된 시트를 후처리 (저장→분할/합성→점수→할당/제안).
+   * 생성 완료된 시트를 후처리 (저장→합성→슬롯 전체 할당).
    *
-   * @returns 슬롯 전체가 확정된 경우 자동 내보내기용 payload, 교체 제안 대기 상태면 `null`.
-   *   상태 반영은 비동기이므로(`onTilemapDataChange` → 리렌더) 호출부가 `currentTiles`를
-   *   바로 읽을 수 없다. 그래서 확정 타일을 직접 돌려준다.
+   * @returns 자동 내보내기용 payload. 두 모드 모두 항상 슬롯 전체가 확정되므로 null이 아니다
+   *   (상태 반영은 비동기라 호출부가 `currentTiles`를 바로 읽을 수 없어 확정 타일을 직접 돌려준다).
    */
   const processNewSheet = useCallback(async (
     sheetDataUrl: string
@@ -274,13 +335,18 @@ export function useTilemapProcessing({
     if (!enabled || !onTilemapDataChange) return null;
 
     const isRuletile = mode === 'ruletile';
-    // 룰타일: 시트를 자르지 않고 머티리얼 시트로 해석해 타일을 절차적으로 합성한다
-    // variation: 기존과 동일하게 그리드 분할
-    // 지형 입력이 비어 있으면 그 지형은 재질 대신 투명으로 합성한다
+    // 두 모드 모두 시트를 자르지 않고 재질 스와치로 해석해 타일을 절차적으로 합성한다.
+    // 룰타일은 지형 입력이 비어 있으면 그 지형을 재질 대신 투명으로 합성한다
     const transparentBase = isRuletile && !baseTerrain?.trim();
     const transparentOverlay = isRuletile && !overlayTerrain?.trim();
 
-    let tiles: string[];
+    /**
+     * `pool`은 `cellIndex`가 가리키는 배열이고, 슬롯은 그중 앞 `slotCount`장을 쓴다.
+     * 룰타일은 슬롯마다 역할이 고정이라 풀 == 슬롯이지만, 변형은 슬롯 교체용 여유분이
+     * 있어 풀이 더 크다(`VARIATION_POOL_MULTIPLIER`).
+     */
+    let pool: string[];
+    let slotCount: number;
     let baseTiles: string[] = [];
     if (isRuletile) {
       const set = await buildRuleTileSet(sheetDataUrl, grid, {
@@ -291,117 +357,157 @@ export function useTilemapProcessing({
         transparentBase,
         transparentOverlay,
       });
-      tiles = set.tiles;
+      pool = set.tiles;
+      slotCount = set.tiles.length;
       baseTiles = set.baseTiles;
     } else {
-      tiles = await sliceTileSheet(sheetDataUrl, grid);
+      const set = await buildVariationTileSet(sheetDataUrl, grid);
+      pool = set.tiles;
+      slotCount = set.slotCount;
+      warnIfNoVariation(set.distinctCount, set.slotCount);
     }
-    // 룰타일은 이음새를 계약으로 보장하므로 휴리스틱 점수가 의미 없다 — 계산 생략
-    const scores = isRuletile ? undefined : await computeSeamScores(tiles);
+    // 내보내기·미리보기는 **배정된 타일만** 본다 (여유분은 화면에도 파일에도 나가지 않는다)
+    const assignedTiles = pool.slice(0, slotCount);
 
     const sheetId = `sheet-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const imageKey = `tilemap-sheet-${sheetId}`;
     await saveImageWithKey(imageKey, sheetDataUrl);
     const sheet: TilemapSheet = { id: sheetId, imageKey, createdAt: new Date().toISOString() };
 
-    setTileCache((prev) => new Map(prev).set(sheetId, tiles));
+    setTileCache((prev) => new Map(prev).set(sheetId, pool));
     if (baseTiles.length > 0) setBaseTileCache((prev) => new Map(prev).set(sheetId, baseTiles));
     // 경계 설정 변경 시 imageStorage를 다시 읽지 않도록 머티리얼 시트를 메모리에 캐시
     if (isRuletile) materialSheetsRef.current.set(sheetId, sheetDataUrl);
 
     const prevData = tilemapData;
-    // 모드 전환도 그리드 변경과 동일하게 풀 리셋 대상
-    const setChanged = !prevData || prevData.grid !== grid || (prevData.mode ?? 'variation') !== mode;
-    // 룰타일은 항상 전체 할당(교체 제안 없음) — pending 무시
-    const pending = isRuletile ? [] : pendingReplaceSlotsRef.current;
 
-    if (setChanged || pending.length === 0 || !prevData || prevData.slotAssignments.length === 0) {
-      // 전체 할당: 새 시트가 슬롯 전체를 채움
-      // 그리드/모드가 바뀌었으면 이전 시트 풀은 비운다 (스펙 §8 — 히스토리에는 잔존)
-      pendingReplaceSlotsRef.current = [];
-      onTilemapDataChange({
-        grid,
-        mode,
-        baseTerrain: mode === 'ruletile' ? baseTerrain : undefined,
-        overlayTerrain: mode === 'ruletile' ? overlayTerrain : undefined,
-        composerVersion: isRuletile ? COMPOSER_VERSION : undefined,
-        edgeStyle: isRuletile ? edgeStyle : undefined,
-        outline: isRuletile ? outline : undefined,
-        outline2: isRuletile ? outline2 : undefined,
-        outlineSide: isRuletile ? outlineSide : undefined,
-        transparentBase: isRuletile ? transparentBase : undefined,
-        transparentOverlay: isRuletile ? transparentOverlay : undefined,
-        sheets: setChanged ? [sheet] : [...prevData.sheets, sheet],
-        slotAssignments: tiles.map((_, i) => ({
-          slotIndex: i,
-          sheetId,
-          cellIndex: i,
-          seamScore: scores?.[i],
-        })),
-      });
-      // 전체 할당은 곧바로 최종 상태이므로 자동 내보내기 대상이다
-      return { tiles, baseTiles, grid, mode };
-    }
+    /*
+      새 시트가 슬롯 **전체**를 채우고, 시트 목록도 이 한 장으로 갈아치운다.
 
-    // 교체 제안: 새 시트에서 점수 상위 셀을 선택 슬롯 수만큼 배정 (락 슬롯 제외)
-    const lockedSlots = new Set(
-      prevData.slotAssignments.filter((a) => a.locked).map((a) => a.slotIndex)
-    );
-    const targets = pending.filter((s) => !lockedSlots.has(s));
-    const ranked = (scores ?? [])
-      .map((score, cellIndex) => ({ cellIndex, score }))
-      .sort((a, b) => b.score - a.score);
-    setProposal({
-      sheet,
-      sheetTiles: tiles,
-      replacements: targets.map((slotIndex, k) => ({
-        slotIndex,
-        cellIndex: ranked[k % ranked.length].cellIndex,
-        seamScore: ranked[k % ranked.length].score,
-      })),
+      슬롯마다 다른 시트를 섞는 것은 이제 불가능하다 — 시트가 곧 재질 스와치이고, 서로
+      다른 스와치에서 나온 타일은 정규 텍스처가 달라 변 픽셀이 일치하지 않는다. 즉
+      혼합은 접합 계약을 깨뜨린다. 같은 스와치 안에서의 재배치는 `reshuffleSlots`가 한다.
+
+      예전에는 교체 제안(`proposal`)이 여러 시트에 걸친 슬롯 배정을 만들 수 있어 과거
+      시트를 배열에 남겨 뒀다. 그 흐름이 없어진 지금 남은 시트는 **읽는 곳이 전혀 없는**
+      1024px 이미지일 뿐이라, 생성할 때마다 imageStorage가 영구히 불어난다. 그래서 목록을
+      새 시트 하나로 줄이고 밀려난 이미지는 지운다(생성물 자체는 히스토리와 자동
+      내보내기 폴더에 각각 남으므로 잃는 것이 없다).
+    */
+    const displaced = prevData?.sheets.filter((s) => s.id !== sheetId) ?? [];
+    onTilemapDataChange({
+      grid,
+      mode,
+      baseTerrain: mode === 'ruletile' ? baseTerrain : undefined,
+      overlayTerrain: mode === 'ruletile' ? overlayTerrain : undefined,
+      composerVersion: isRuletile ? COMPOSER_VERSION : VARIATION_COMPOSER_VERSION,
+      edgeStyle: isRuletile ? edgeStyle : undefined,
+      outline: isRuletile ? outline : undefined,
+      outline2: isRuletile ? outline2 : undefined,
+      outlineSide: isRuletile ? outlineSide : undefined,
+      transparentBase: isRuletile ? transparentBase : undefined,
+      transparentOverlay: isRuletile ? transparentOverlay : undefined,
+      sheets: [sheet],
+      slotAssignments: assignedTiles.map((_, i) => ({ slotIndex: i, sheetId, cellIndex: i })),
     });
-    // 교체 제안은 사용자가 확정해야 최종 상태가 된다 — 자동 내보내기 대상 아님
-    return null;
+
+    // 정리 실패가 생성 결과를 잃게 하면 안 되므로 기다리지 않고 로그만 남긴다
+    for (const old of displaced) {
+      deleteImage(old.imageKey).catch((e) =>
+        logger.warn('⚠️ 이전 타일맵 시트 정리 실패(무시):', old.imageKey, e)
+      );
+    }
+    return { tiles: assignedTiles, baseTiles, grid, mode };
   }, [enabled, onTilemapDataChange, grid, tilemapData, mode, baseTerrain, overlayTerrain, edgeStyle, outline, outline2, outlineSide]);
 
-  /** 교체 제안 확정: 해당 슬롯만 갱신 + 시트 풀에 추가 (보유 세트가 룰타일이면 이중 방어로 no-op) */
-  const confirmProposal = useCallback(() => {
+  /**
+   * 선택 슬롯을 **같은 스와치의 다른 변형**으로 다시 뽑는다 (변형 모드 전용).
+   *
+   * 생성 API를 부르지 않는다 — 변형은 이미 전부 만들어져 캐시에 있고, 슬롯은 그중
+   * 어느 것을 가리킬지의 문제일 뿐이다. 모든 변형이 변 픽셀을 공유하므로 어떤 조합으로
+   * 바꿔도 접합은 그대로다.
+   *
+   * ## 왜 풀이 슬롯보다 커야 하는가
+   * 처음 구현은 "아직 안 쓰인 변형을 우선 배정"만 했는데, 풀 크기가 슬롯 수와 같으면
+   * `used`가 비대상 슬롯의 셀 전부를 차지해 **남는 것이 선택 슬롯 자신의 셀뿐**이 된다.
+   * 그래서 슬롯 1개를 고르면 자기 셀을 그대로 다시 받아 100% 아무 일도 일어나지 않았고
+   * (2개면 50%), 내보내는 세트도 순서만 다른 같은 타일들이었다. 해결은 풀에 여유분을 두는
+   * `VARIATION_POOL_MULTIPLIER`다 — 그 덕에 몇 개를 고르든 **아직 안 쓴 변형**이 남아 있다.
+   *
+   * 아래 폴백(현재와 다른 아무 변형, 중복 허용)은 풀이 슬롯 수보다 크지 않은 경우를 위한
+   * 안전망이다. 지금 그런 세트는 레거시 v1(분할 결과라 풀 == 슬롯)뿐이고 UI가 버튼을
+   * 막으므로 평소에는 타지 않지만, 배수를 1로 바꾸면 이 경로가 유일한 동작이 된다.
+   *
+   * 락 슬롯은 대상에서 제외한다.
+   */
+  const reshuffleSlots = useCallback((slotIndexes: number[]) => {
     if (effectiveMode === 'ruletile') return;
-    if (!proposal || !tilemapData || !onTilemapDataChange) return;
-    const bySlot = new Map(proposal.replacements.map((r) => [r.slotIndex, r]));
+    if (!tilemapData || !onTilemapDataChange) return;
+    const assignments = tilemapData.slotAssignments;
+    if (assignments.length === 0) return;
+
+    /*
+      레거시 세트(v1)는 예전 교체 제안 흐름 때문에 슬롯이 **여러 시트**에 걸쳐 있을 수
+      있다. 그런 세트의 타일은 서로 변 픽셀을 공유하지 않으므로 재배치해 봐야 의미가
+      없고, 시트 하나를 골라 풀로 삼으면 다른 시트의 셀을 잘못 가리킬 수 있다.
+      UI에서도 버튼을 막지만 여기서 이중으로 방어한다.
+    */
+    const sheetIdSet = new Set(assignments.map((a) => a.sheetId));
+    if (sheetIdSet.size !== 1) return;
+    const poolSize = tileCache.get(assignments[0].sheetId)?.length ?? 0;
+    if (poolSize <= 1) return;
+
+    // 슬롯은 `slotIndex`로 찾는다 — 배열 순서와 같다고 가정하면 락 슬롯을 잘못 건드릴 수 있다
+    const bySlot = new Map(assignments.map((a) => [a.slotIndex, a]));
+    const targets = new Set(
+      slotIndexes.filter((i) => {
+        const a = bySlot.get(i);
+        return !!a && !a.locked;
+      })
+    );
+    if (targets.size === 0) return;
+
+    // 교체 대상이 아닌 슬롯이 이미 쓰고 있는 변형은 남겨 둔다
+    const used = new Set(
+      assignments.filter((a) => !targets.has(a.slotIndex)).map((a) => a.cellIndex)
+    );
+    const free: number[] = [];
+    for (let i = 0; i < poolSize; i++) if (!used.has(i)) free.push(i);
+    // 고르게 섞어 배정한다 (Fisher-Yates)
+    for (let i = free.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [free[i], free[j]] = [free[j], free[i]];
+    }
+
+    /*
+      자기 셀을 그대로 다시 받는 배정은 "안 바뀌었다"로 보이므로 건너뛴다.
+      여유분이 있어도 셔플 결과 우연히 자기 셀이 걸릴 수 있어서, 배정 전에 확인한다.
+    */
+    let cursor = 0;
+    const pickFree = (current: number): number | null => {
+      for (let k = cursor; k < free.length; k++) {
+        if (free[k] === current) continue;
+        [free[cursor], free[k]] = [free[k], free[cursor]];
+        return free[cursor++];
+      }
+      return null;
+    };
+
     onTilemapDataChange({
       ...tilemapData,
-      sheets: [...tilemapData.sheets, proposal.sheet],
-      slotAssignments: tilemapData.slotAssignments.map((a) => {
-        const r = bySlot.get(a.slotIndex);
-        return r
-          ? { ...a, sheetId: proposal.sheet.id, cellIndex: r.cellIndex, seamScore: r.seamScore }
-          : a;
+      slotAssignments: assignments.map((a) => {
+        if (!targets.has(a.slotIndex)) return a;
+        const fromFree = pickFree(a.cellIndex);
+        if (fromFree !== null) return { ...a, cellIndex: fromFree };
+        // 남는 변형이 없다 — 현재와 다른 아무 변형이나 고른다 (중복은 허용)
+        let next = Math.floor(Math.random() * poolSize);
+        if (next === a.cellIndex) next = (next + 1) % poolSize;
+        return { ...a, cellIndex: next };
       }),
     });
-    pendingReplaceSlotsRef.current = [];
-    setProposal(null);
-  }, [effectiveMode, proposal, tilemapData, onTilemapDataChange]);
+  }, [effectiveMode, tilemapData, onTilemapDataChange, tileCache]);
 
-  /** 교체 제안 파기: 저장했던 시트 이미지도 정리 (보유 세트가 룰타일이면 이중 방어로 no-op) */
-  const discardProposal = useCallback(async () => {
-    if (effectiveMode === 'ruletile') return;
-    if (!proposal) return;
-    try {
-      await deleteImage(proposal.sheet.imageKey);
-    } catch (e) {
-      logger.warn('⚠️ 제안 시트 정리 실패(무시):', e);
-    }
-    setTileCache((prev) => {
-      const next = new Map(prev);
-      next.delete(proposal.sheet.id);
-      return next;
-    });
-    pendingReplaceSlotsRef.current = [];
-    setProposal(null);
-  }, [effectiveMode, proposal]);
-
-  /** 슬롯 락 토글 (교체 보호, 보유 세트가 룰타일이면 이중 방어로 no-op) */
+  /** 슬롯 락 토글 (변형 재배치에서 보호, 룰타일은 역할 고정이라 no-op) */
   const toggleLock = useCallback((slotIndex: number) => {
     if (effectiveMode === 'ruletile') return;
     if (!tilemapData || !onTilemapDataChange) return;
@@ -416,7 +522,7 @@ export function useTilemapProcessing({
   /**
    * 내보내기와 동일한 합성 시트.
    * 결과 뷰의 "시트 보기"가 이 값을 쓴다 — AI 원본 시트를 띄우면 실제 산출물
-   * (`tilesheet.png`)과 다르게 보인다(특히 룰타일은 원본이 머티리얼 시트라 완전히 다름).
+   * (`tilesheet.png`)과 다르게 보인다(두 모드 모두 원본이 재질 스와치라 완전히 다름).
    */
   const [composedSheet, setComposedSheet] = useState<string | null>(null);
   const tilesKey = currentTiles.map((t) => (t ? t.length : 0)).join(',');
@@ -449,14 +555,17 @@ export function useTilemapProcessing({
   })();
 
   /**
-   * 보유한 룰타일 세트가 현재 합성 알고리즘보다 오래됐는지.
-   * v2 이전(그림을 잘라 만든 세트)은 `composerVersion`이 없으므로 여기서 걸린다.
+   * 보유한 세트가 현재 합성 알고리즘보다 오래됐는지.
+   *
+   * 두 모드 모두 해당한다. 특히 **변형 v1(시트를 잘라 만든 세트)** 은 접합 보장이 없어
+   * 임의 배치에서 이음새가 어긋난다 — 사용자가 그 사실을 알 방법이 없으므로 결과 뷰에서
+   * 재생성을 안내해야 한다. 레거시 세트도 그대로 보이고 내보내기까지 되지만, 보장은 없다.
    */
   const needsRecompose =
-    effectiveMode === 'ruletile' &&
+    enabled &&
     !!tilemapData &&
     tilemapData.slotAssignments.length > 0 &&
-    tilemapData.composerVersion !== COMPOSER_VERSION;
+    !isCurrentComposer;
 
   return {
     grid,
@@ -469,11 +578,8 @@ export function useTilemapProcessing({
     composedSheet,
     isRecomposing,
     needsRecompose,
-    proposal,
     processNewSheet,
-    requestReplacement,
-    confirmProposal,
-    discardProposal,
+    reshuffleSlots,
     toggleLock,
   };
 }

@@ -814,7 +814,7 @@ export function ImageGeneratorPanel({
               let exportReady: Awaited<ReturnType<typeof tilemap.processNewSheet>> = null;
               try {
                 setProgressMessage(
-                  tilemapMode === 'ruletile' ? '룰타일 합성 중...' : '타일 분할·검증 중...'
+                  tilemapMode === 'ruletile' ? '룰타일 합성 중...' : '타일 변형 합성 중...'
                 );
                 exportReady = await tilemap.processNewSheet(dataUrl);
               } catch (e) {
@@ -822,7 +822,7 @@ export function ImageGeneratorPanel({
                 alert('타일 처리에 실패했습니다. 시트는 히스토리에 남아 있으니 다시 생성해 주세요.');
               }
 
-              // 슬롯이 전부 확정된 경우에만 자동 내보내기 (교체 제안 대기 중이면 건너뜀).
+              // 생성은 항상 슬롯 전체를 확정하므로 곧바로 자동 내보내기 대상이다.
               // 상태 반영은 비동기라 currentTiles를 읽을 수 없으므로 반환값을 그대로 쓴다.
               if (exportReady) {
                 try {
@@ -1051,6 +1051,8 @@ export function ImageGeneratorPanel({
         tiles: tiles as string[],
         mode: tilemap.effectiveMode,
         baseTiles: tilemap.baseTiles,
+        // 레거시 세트는 가이드에서 접합 보장을 주장하면 안 된다 (buildImportGuide 주석 참조)
+        legacySet: tilemap.needsRecompose,
       });
       alert(`유니티용 타일맵을 내보냈습니다.\n\n${folder}`);
     } catch (error) {
@@ -1058,7 +1060,7 @@ export function ImageGeneratorPanel({
       logger.error('❌ 타일맵 내보내기 실패:', error);
       alert('타일맵 내보내기에 실패했습니다.\n\n' + message);
     }
-  }, [tilemap.currentTiles, tilemap.displayGrid, tilemap.effectiveMode, tilemap.baseTiles, sessionName]);
+  }, [tilemap.currentTiles, tilemap.displayGrid, tilemap.effectiveMode, tilemap.baseTiles, tilemap.needsRecompose, sessionName]);
 
   // 히스토리에서 설정 복원 (단일 setState + useCallback으로 자식 memo 유지)
   const handleRestoreFromHistory = useCallback(async (e: React.MouseEvent, entry: GenerationHistoryEntry) => {
@@ -1229,20 +1231,15 @@ export function ImageGeneratorPanel({
               grid={tilemap.displayGrid}
               mode={tilemap.effectiveMode}
               composedSheet={tilemap.composedSheet}
-            autoExportFolder={lastAutoExportFolder}
-            isRecomposing={tilemap.isRecomposing}
-            currentTiles={tilemap.currentTiles}
-            baseTiles={tilemap.baseTiles}
-            baseTransparent={tilemap.baseTransparent}
+              autoExportFolder={lastAutoExportFolder}
+              isRecomposing={tilemap.isRecomposing}
+              needsRecompose={tilemap.needsRecompose}
+              currentTiles={tilemap.currentTiles}
+              baseTiles={tilemap.baseTiles}
+              baseTransparent={tilemap.baseTransparent}
               slotAssignments={tilemapData?.slotAssignments ?? []}
-              proposal={tilemap.proposal}
               onToggleLock={tilemap.toggleLock}
-              onRegenerateSelected={(slots) => {
-                tilemap.requestReplacement(slots);
-                handleGenerate();
-              }}
-              onConfirmProposal={tilemap.confirmProposal}
-              onDiscardProposal={tilemap.discardProposal}
+              onReshuffleSelected={tilemap.reshuffleSlots}
               onExport={handleTilemapExport}
               onManualSave={handleManualSave}
             />

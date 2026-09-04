@@ -675,19 +675,24 @@ function generateTilemapPrompt(params: PromptGenerationParams): string {
 }
 
 /**
- * TILEMAP 변형 모드 프롬프트 생성
- * - 손맵(hand-painted) 변형 타일 세트: 모든 타일이 상호 seamless (임의 배치 호환)
- * - 타일링 규칙: 균질 베이스 · 조용한 경계 존 · 분산 디테일 랜덤성 ·
- *   NO GRID LINES · 일관 조명 · 손맵 채색 강제
+ * TILEMAP 변형 모드 프롬프트 — **재질 스와치** 요청.
+ *
+ * v1은 "N장이 그리드로 배치된 타일 시트"를 그리게 한 뒤 잘라 썼는데, 그 방식으로는
+ * 임의 배치에서 이음새가 이어질 수 없었다: 잘라낸 타일은 **원래 붙어 있던 이웃**과만
+ * 이어지고, 모든 타일의 변 픽셀을 일치시키는 건 프롬프트로 요청할 수 있는 종류의
+ * 계약이 아니기 때문이다(v1의 "외곽 15%를 조용하게"는 완화 요청일 뿐이었다).
+ *
+ * v2는 룰타일과 같이 AI에게 **재질과 화풍만** 받는다. 타일 변형과 변 픽셀 공유는
+ * 코드가 만든다(`variationComposer.buildVariationTileSet`). 그래서 이 프롬프트에는
+ * 그리드·셀·디테일 배치 같은 기하 요구가 전혀 없고, 모델 편차에 둔감하다.
+ *
+ * 스와치는 **디테일 없는 균질한 필드**여야 한다 — `makeSeamless`가 크로스페이드라
+ * 꽃·돌 같은 개별 디테일이 두 위치에 반투명하게 겹쳐 보인다(seamlessTexture 주석).
  */
 function generateTilemapVariationPrompt(params: PromptGenerationParams): string {
-  const { basePrompt, pixelArtGrid, analysis } = params;
+  const { basePrompt, analysis } = params;
 
-  // 타일맵은 4x4/8x8만 지원 — 그 외 값이 들어오면 4x4로 강제
-  const grid = pixelArtGrid === '8x8' ? '8x8' : '4x4';
-  const gridInfo = getPixelArtGridInfo(grid);
-  const tileCount = gridInfo.totalFrames;
-  const gridLayout = `${gridInfo.rows}x${gridInfo.cols}`;
+  const terrain = basePrompt?.trim() || 'stylized grass ground';
 
   // 참조 분석(손맵 스타일 스펙)이 있으면 스펙 섹션 삽입
   const t = analysis?.tilemap_specific;
@@ -703,24 +708,22 @@ function generateTilemapVariationPrompt(params: PromptGenerationParams): string 
     ? `\n🎨 HAND-PAINTED STYLE SPEC (from reference analysis - MUST match):\n${specLines.join('\n')}\n`
     : '';
 
-  return `🎯 HAND-PAINTED TILEMAP VARIATION SET (${tileCount} ground tiles in ${gridLayout} grid, single 1024x1024 image)
+  return `🎯 HAND-PAINTED TERRAIN MATERIAL SWATCH (1024x1024, ONE material filling the whole canvas)
 
-Create ${tileCount} mutually interchangeable ground tile variations of ONE terrain type, arranged in a ${gridLayout} grid. These tiles will be cut apart and placed in ANY random arrangement in a game engine (Unity Tilemap), so EVERY tile edge must blend seamlessly with EVERY other tile edge.
+This is NOT a finished picture, NOT a landscape and NOT a tile sheet. It is a **material reference swatch**: one flat field of terrain material filling the entire canvas. Software will cut the actual game tiles from this material and generate the tile variations itself, so keep it completely uniform.
+
+📐 LAYOUT: the ENTIRE canvas, edge to edge, is a flat even field of ${terrain}. Nothing else. No cells, no panels, no halves, no second material.
 ${styleSpec}
-🧱 TILING RULES (CRITICAL - all 7 must hold):
-1. UNIFORM BASE: the entire canvas is ONE continuous, statistically uniform hand-painted texture of the same material - consistent hue, brightness, and brushstroke density everywhere.
-2. QUIET EDGE ZONES: the outer ~15% of every cell must stay low-contrast base texture only - no distinctive details, no strong shapes near any cell edge.
-3. SPARSE, SCATTERED DETAILS: roughly HALF of the cells must be PURE base texture with NO distinctive detail at all. In the remaining cells, place small details OFF-CENTER at a different position in every cell (anywhere within the inner 60% safe zone - never at the exact center), varying their size and count. NEVER repeat the same motif twice (each flower, pebble or tuft design appears only once in the whole sheet).
-4. NO GRID LINES: do NOT draw any lines, borders, dividers, or separators between cells. The grid layout is purely conceptual - there must be NO visible grid structure in the final image.
+🧱 RULES:
+1. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered.
+2. FLAT, EVEN FIELD: statistically uniform all over - same hue, brightness and detail density from corner to corner. NO large shapes, NO paths, NO patches, NO objects, NO flowers, NO rocks, NO scattered focal details, NO vignette, NO lighting gradient across the canvas. Think of a fabric swatch, not a landscape.
+3. CRISP TEXTURE: keep the brushwork sharp and well defined at full resolution - no blur, no soft haze, no washed-out low-contrast mush.
+4. NO GRID LINES, NO FRAMES, NO BORDERS: do not draw any dividers, outlines, cell separators, captions or panel borders.
 5. CONSISTENT LIGHTING: one light direction and color temperature across the whole canvas; all shadows fall the same way.
-6. HAND-PAINTED ONLY: visible painterly brushwork, stylized game-art shading - NOT photorealistic, NOT a photo texture, NOT 3D rendered. Render every cell in the same style.
-7. NO REPEATING PATTERN: when these tiles are shuffled and tiled, the result must look like ONE natural continuous ground - if a regular polka-dot pattern of centered details emerges, the sheet has FAILED.
 
-⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, seams, visible borders, vignette, tiling artifacts.
+⛔ AVOID: photorealistic, 3D render, photo texture, grid lines, cell dividers, panel borders, text, labels, objects, characters, vignette, dramatic lighting, large composed scenery, blurry, soft focus, second material.
 
-🌿 TERRAIN: ${basePrompt || 'stylized grass ground'}
-
-Generate the ${tileCount}-tile hand-painted variation set in the ${gridLayout} grid now.`;
+Paint the ${terrain} material swatch now.`;
 }
 
 /**

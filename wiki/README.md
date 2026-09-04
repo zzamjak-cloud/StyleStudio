@@ -64,8 +64,8 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 스프라이트 시트 프레임 수/해상도가 이상함 | `pixelart/overview.md` |
 | 픽셀 업스케일(pixelArtUpscaler) 동작 안 함 | `pixelart/overview.md` |
 | 그리드(1x1~8x8) 선택 UI가 안 보임 | `pixelart/overview.md` |
-| 타일이 서로 이어지지 않음/seam 경고 | `tilemap/overview.md` |
-| 선택 재생성·교체가 동작 안 함 | `tilemap/overview.md` |
+| 변형 타일을 랜덤 배치하면 이음새가 어긋남 | `tilemap/overview.md` |
+| "예전 방식" 경고 배너가 뜸 / 슬롯 변형 교체가 동작 안 함 | `tilemap/overview.md` |
 | 내보낸 시트에 교체 타일이 반영 안 됨 | `tilemap/overview.md` |
 | 룰타일이 서로 안 이어짐 / 격자선이 보임 | `tilemap/overview.md` |
 | 1칸 폭 통로·고립 셀이 사라짐 / 미리보기가 유니티와 다름 | `tilemap/overview.md` |
@@ -156,7 +156,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 ### tilemap/ — 타일맵
 | 파일 | 내용 |
 |------|------|
-| `overview.md` | 변형 세트(분할·seam 점수·교체 재생성)와 **룰타일 v3 절차적 합성**(엣지 계약·signature 테이블·합성 파이프라인·dev self-check)·유니티 내보내기 |
+| `overview.md` | **변형 v2 절차적 합성**(재질 스와치·엣지 계약·변형 재배치)과 **룰타일 v3 절차적 합성**(엣지 계약·signature 테이블·합성 파이프라인·dev self-check)·유니티 내보내기 |
 
 ### documents/ — 참조 문서
 | 파일 | 내용 |
@@ -212,8 +212,8 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 일러스트 위치 기반 드롭 판정 | `src/components/illustration/IllustrationSetupPanel.tsx` |
 | 구도 스케치(라벨 제외 export) | `src/components/illustration/conceptSketch/ConceptSketchPanel.tsx` |
 | 픽셀 그리드 정보(getPixelArtGridInfo) | `src/types/pixelart.ts` |
-| 타일맵 후처리 훅(저장·분할·seam·교체) | `src/hooks/useTilemapProcessing.ts` |
-| 타일맵 분할·seam 검증·유니티 내보내기 | `src/lib/tilemap/` (`tileSlicer.ts`·`seamValidator.ts`·`tilemapExporter.ts`) |
+| 타일맵 후처리 훅(저장·합성·슬롯 할당·변형 재배치) | `src/hooks/useTilemapProcessing.ts` |
+| 타일맵 합성·계약 검증·유니티 내보내기 | `src/lib/tilemap/` (`seamlessTexture.ts`·`variationComposer.ts`·`ruleTileComposer.ts`·`tilemapSelfCheck.ts`·`tilemapExporter.ts`) |
 | 룰타일 절차적 합성(재질·경계·signature·합성) | `src/lib/tilemap/` (`seamlessTexture.ts`·`edgeProfile.ts`·`autotileSignature.ts`·`ruleTileComposer.ts`) |
 | 타일맵 파이프라인 검증 (dev 전용) | `src/lib/tilemap/tilemapSelfCheck.ts` + `dev/tilemap-check.html` |
 | 참조 문서 파싱 디스패처(parseFile) | `src/lib/utils/fileParser.ts` |
@@ -236,6 +236,9 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 - **세션 소속 권위는 `Session.folderId`가 아니라 `session_folder_map`** 이며, 아이콘 매핑이 `SESSION_CONFIG`(이모지)와 `getSessionTypeInfo`(lucide) 두 곳으로 분리 — 타입 추가 시 양쪽 갱신 필요.
 - **모든 AI 호출은 OpenRouter 통합 키 하나**(store `openrouter_api_key`)로 나간다. 구버전 Gemini/OpenAI 키는 자동 이관되지 않음. Seed/Temperature/Top-K/Top-P·마스크 편집·극단 비율(1:3/3:1)은 OpenRouter 미지원으로 제거됨.
 - **스프라이트 시트는 canvas 분할/합성 코드가 없다** — 프롬프트 지시만으로 모델이 단일 이미지에 격자 배치.
+- **타일맵 엣지 계약은 `seamlessTexture.buildTextureVariants` 한 곳에만 있다** — variation·ruletile 두 합성기가 같은 함수를 쓴다. 복사해 두면 한쪽만 고쳤을 때 그쪽 접합만 조용히 깨진다. 상수(`VARIANT_RAMP_RATIO`·`EDGE_HOLD_PX`)를 만지면 `dev/tilemap-check.html`의 `재질 변형`·`변형 세트` 게이트를 둘 다 돌릴 것.
+- **`TilemapSessionData.composerVersion`은 mode와 짝으로만 해석된다** — 같은 숫자라도 ruletile은 `COMPOSER_VERSION`, variation은 `VARIATION_COMPOSER_VERSION`이다. 한쪽만 보고 판정하면 레거시 세트를 새 합성기에 넣게 되고 결과가 완전히 달라진다.
+- **`tileSlicer.sliceTileSheet`는 레거시 세션 복원 전용** — 새로 만드는 세트는 두 모드 모두 자르지 않는다.
 - **`pixelArtUpscaler.ts` 함수는 dead code** — 레포 어디서도 호출 안 됨.
 - **`PixelArtGridLayout` 타입 중복 정의** — `types/pixelart.ts`, `sessionConfig.ts`.
 - **히스토리의 `imageBase64`와 디스크 자동 저장 파일(`~/Downloads/AI_Gen/`)은 독립** — 히스토리 삭제가 파일을 지우지 않음.
