@@ -12,23 +12,27 @@
 
 ## 모델 선택
 
-`availableModels`(부모가 `getAvailableImageModels(hasOpenAIApiKey)` 전달)를 `모델` 라벨과 같은 줄의 **단일 드롭다운**으로 렌더. ChatGPT 키가 없으면 gpt-image-2(덕테이프) 모델을 쓰라는 amber 힌트 표시.
+`availableModels`(부모가 `getAvailableImageModels()` 전달)를 `모델` 라벨과 같은 줄의 **단일 드롭다운**으로 렌더.
 
-| id | 라벨 | provider | 비율 | 해상도 | 품질 | 고급 제어 |
-|------|------|----------|------|--------|------|-----------|
-| `gemini-3-pro-image-preview` | 나노바나나 프로 | gemini | 7종 | 1K/2K/4K | medium | ✓ |
-| `gemini-3.1-flash-image-preview` | 나노바나나2 | gemini | 7종 | 1K/2K/4K | medium | ✓ |
-| `gemini-3.1-flash-lite-image` | 나노바나나 2 라이트 | gemini | 7종 | 1K/2K/4K | medium | ✓ |
-| `gpt-image-2` | 덕테이프 | openai | 1:1/16:9/9:16 | 1K | low/medium/high | ✗ |
+| id | 라벨 | provider | 비율 | 해상도 | 품질 | 참조 | n |
+|----|------|----------|------|--------|------|------|---|
+| `openai/gpt-image-2` | 덕테이프 **(기본)** | openai | 8종 | — (1K 고정) | low/medium/high | 16 | 10 |
+| `openai/gpt-image-2.5-flare` | 덕테이프 2.5 플레어 | openai | 8종 | — | +xhigh/max | 16 | 10 |
+| `openai/gpt-image-2.5-sunburst` | 덕테이프 2.5 선버스트 | openai | 8종 | — | +xhigh/max | 16 | 10 |
+| `google/gemini-3-pro-image-preview` | 나노바나나 프로 | gemini | 10종 | 1K/2K/4K | medium | 14 | 1 |
+| `google/gemini-3.1-flash-image-preview` | 나노바나나2 | gemini | 10종 | 1K/2K/4K | medium | 14 | 1 |
+| `google/gemini-3.1-flash-lite-image` | 나노바나나 2 라이트 | gemini | 10종 | 1K | medium | 14 | 1 |
 
-- 전 모델 공통 5종: `1:1 16:9 9:16 4:3 3:4` (극단 비율 1:3/3:1은 OpenRouter 미지원으로 제거).
-- 기본 모델은 `DEFAULT_IMAGE_MODEL`(`gemini-3-pro-image-preview`).
+- **2.5 계열 두 종은 `availability: 'pending'`이라 드롭다운에 뜨지 않는다** — OpenRouter 미등재. 등재되면 그 값만 `available`로 바꾼다. → `generator/image-generation-api.md`
+- 기본 모델은 `DEFAULT_IMAGE_MODEL`(`openai/gpt-image-2`). v0.7.2에서 나노바나나 프로에서 바뀌었다.
+- **능력치는 전부 `supports`에서 온다.** UI에 모델 ID를 직접 비교하는 조건을 새로 만들지 말 것 — `isOpenAIModel()` / `supports.qualities.length > 1`을 쓴다.
 
 ## 이미지 비율 (aspectRatio)
 
-- `supportedAspectRatios`(모델별) 기반 버튼. **모든 비율이 한 줄에 들어가도록** `flex-nowrap` + `text-[11px]` 조밀 버튼으로 렌더한다.
+- `supportedAspectRatios`(모델별) 기반 버튼. 모델당 8~10종이라 한 줄에 안 들어가므로 **`grid-cols-5`로 감싸 넘긴다**(예전엔 `flex-nowrap` 5개였다).
 - 기본값 `IMAGE_GENERATION_DEFAULTS.ASPECT_RATIO`(`1:1`).
-- 모든 모델이 OpenRouter Image API `aspect_ratio` 필드로 직접 전달 (구 `mapToOpenAISize` 픽셀 매핑 제거).
+- 모든 모델이 OpenRouter Image API `aspect_ratio` 필드로 직접 전달.
+- 모델을 바꿔 지원하지 않는 비율이 남으면 effect가 첫 지원값으로 보정한다.
 
 ## 이미지 크기 (imageSize)
 
@@ -39,8 +43,9 @@
 
 ## 이미지 품질 (imageQuality)
 
-- gpt-image-2 선택 시에만 노출. `low`/`medium`/`high` 버튼.
-- Gemini 모델의 `qualities`는 `['medium']` 고정이라 별도 UI 없음.
+- **`supports.qualities.length > 1`일 때만 노출**하고 버튼도 그 배열에서 렌더한다. 모델 ID를 비교하지 않는 이유는 2.5 계열이 늘어나도 조건을 안 고치기 위해서다.
+- 덕테이프 `low/medium/high`, 2.5 계열은 `xhigh`·`max`가 추가된다. Gemini는 `['medium']` 한 종이라 UI가 안 뜬다.
+- 모델을 바꿔 지원하지 않는 티어가 남으면 effect가 **`medium`으로** 보정한다(첫 값 `low`로 가면 품질이 조용히 낮아진다).
 
 ## 카메라 앵글 / 렌즈
 

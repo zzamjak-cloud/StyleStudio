@@ -36,7 +36,9 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 강화 모드가 일반/전용 프롬프트로 잘못 감 | `analysis/analysis-prompt.md` |
 | 모델 바꿨더니 비율/해상도가 리셋됨 | `generator/overview.md` |
 | 한글 프롬프트가 번역 안 되고 그대로 전송됨 | `generator/overview.md` → `api/overview.md` |
-| 모델 드롭다운 / gpt-image-2(덕테이프) / 나노바나나 2 라이트가 안 보임 | `generator/settings.md` |
+| 모델 드롭다운 / 덕테이프 / 나노바나나 2 라이트가 안 보임 | `generator/settings.md` |
+| 2.5 모델이 드롭다운에 안 보임 (OpenRouter 등재 대기 중) | `generator/image-generation-api.md` |
+| 특정 비율/품질이 모델을 바꾸니 사라지거나 튕김 | `generator/image-generation-api.md` |
 | Reference Strength를 올려도 효과 없음 | `generator/settings.md` |
 | 2K/4K 눌러도 안 바뀜(비용 확인 모달) | `generator/settings.md` |
 | 카메라 앵글/렌즈가 안 보임 | `generator/settings.md` |
@@ -237,6 +239,8 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 - **세션 소속 권위는 `Session.folderId`가 아니라 `session_folder_map`** 이며, 아이콘 매핑이 `SESSION_CONFIG`(이모지)와 `getSessionTypeInfo`(lucide) 두 곳으로 분리 — 타입 추가 시 양쪽 갱신 필요.
 - **모든 AI 호출은 OpenRouter 통합 키 하나**(store `openrouter_api_key`)로 나간다. 구버전 Gemini/OpenAI 키는 자동 이관되지 않음. Seed/Temperature/Top-K/Top-P·마스크 편집·극단 비율(1:3/3:1)은 OpenRouter 미지원으로 제거됨.
 - **스프라이트 시트는 canvas 분할/합성 코드가 없다** — 프롬프트 지시만으로 모델이 단일 이미지에 격자 배치.
+- **이미지 모델 능력치는 추측하지 말고 `openrouter.ai/api/v1/images/models`를 실측해 `imageModels.ts`에 옮긴다** — 최소공통으로 깎으면 주력 모델(덕테이프)의 기능을 못 쓴다. UI는 `supports`만 읽고 **모델 ID를 직접 비교하지 않는다**(`isOpenAIModel()`·`getAnnotationMode()`·`supports.qualities.length > 1`).
+- **부분 편집의 좌표 직렬화는 Gemini 전용 우회다** — 덕테이프는 합성본을 직접 받는다. 분기는 `getAnnotationMode()` 한 곳. 마스크 인페인팅은 OpenRouter에 없어서 못 쓴다(2026-09-09 확인).
 - **타일맵 엣지 계약은 `seamlessTexture.buildTextureVariants` + `patchGraft.graftInterior` 한 곳에만 있다** — variation·ruletile 두 합성기가 같은 함수를 쓴다. 복사해 두면 한쪽만 고쳤을 때 그쪽 접합만 조용히 깨진다. 상수(`BAND_RATIO`·`EDGE_HOLD_PX`)를 만지면 `dev/tilemap-check.html`의 `이식`·`재질 변형`·`변형 세트` 게이트를 전부 돌릴 것.
 - **변형 이식을 알파 블렌딩으로 되돌리지 말 것** — v2가 그랬고, 계약 게이트는 전부 통과하면서 타일마다 흐릿한 사각 액자가 남았다. `이식` 게이트가 중간색 픽셀로 잡는다.
 - **`TilemapSessionData.composerVersion`은 mode와 짝으로만 해석된다** — 같은 숫자라도 ruletile은 `COMPOSER_VERSION`, variation은 `VARIATION_COMPOSER_VERSION`이다. 한쪽만 보고 판정하면 레거시 세트를 새 합성기에 넣게 되고 결과가 완전히 달라진다.

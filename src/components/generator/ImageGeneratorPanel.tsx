@@ -574,11 +574,22 @@ export function ImageGeneratorPanel({
     if (!modelDef.supports.imageSizes.includes(imageSize)) {
       nextState.imageSize = modelDef.supports.imageSizes[0];
     }
+    /*
+      품질도 보정해야 한다. 모델마다 티어가 다르고(나노바나나 ['medium'], 덕테이프
+      low/medium/high, 2.5 계열은 xhigh·max 추가) 상위 티어를 고른 채 하위 모델로 바꾸면
+      지원하지 않는 값이 그대로 전송돼 4xx가 난다. UI에서는 안 보이므로 원인을 찾기 어렵다.
+      'medium'이 있으면 그쪽으로 — 첫 값(low)으로 떨어뜨리면 품질이 조용히 낮아진다.
+    */
+    if (!modelDef.supports.qualities.includes(imageQuality)) {
+      nextState.imageQuality = modelDef.supports.qualities.includes('medium')
+        ? 'medium'
+        : modelDef.supports.qualities[0];
+    }
 
     if (Object.keys(nextState).length > 0) {
       updateState(nextState);
     }
-  }, [imageModel, aspectRatio, imageSize, updateState]);
+  }, [imageModel, aspectRatio, imageSize, imageQuality, updateState]);
 
   // setState updater 패턴 + useCallback으로 자식 memo 무효화 방지
   const handleHistoryResize = useCallback((delta: number) => {
@@ -1289,6 +1300,7 @@ export function ImageGeneratorPanel({
           imageQuality={imageQuality}
           availableModels={getAvailableImageModels()}
           supportedAspectRatios={getImageModelDefinition(imageModel).supports.aspectRatios}
+          supportedQualities={getImageModelDefinition(imageModel).supports.qualities}
           supportedImageSizes={getImageModelDefinition(imageModel).supports.imageSizes}
           cameraAngle={cameraAngle}
           cameraLens={cameraLens}

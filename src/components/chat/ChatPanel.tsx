@@ -14,7 +14,7 @@ import { ChatInput } from './ChatInput';
 import { ChatAISettings } from './ChatAISettings';
 import { ImageAnnotator } from './annotation/ImageAnnotator';
 import { logger } from '../../lib/logger';
-import { getImageModelDefinition, normalizeImageModelId } from '../../hooks/api/imageModels';
+import { getAnnotationMode, getImageModelDefinition, normalizeImageModelId } from '../../hooks/api/imageModels';
 import { serializeColorInstructions, AnnotationResult } from '../../types/annotation';
 
 interface ChatPanelProps {
@@ -60,10 +60,24 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
     if (!modelDef.supports.imageSizes.includes(settings.imageSize)) {
       patch.imageSize = modelDef.supports.imageSizes[0];
     }
+    // 품질 티어는 모델마다 다르다 — 상위 티어를 고른 채 하위 모델로 바꾸면 지원하지 않는
+    // 값이 그대로 전송돼 4xx가 난다. 'medium'이 있으면 그쪽으로(첫 값 low는 품질이 내려간다)
+    const quality = settings.imageQuality ?? 'medium';
+    if (!modelDef.supports.qualities.includes(quality)) {
+      patch.imageQuality = modelDef.supports.qualities.includes('medium')
+        ? 'medium'
+        : modelDef.supports.qualities[0];
+    }
     if (Object.keys(patch).length > 0) {
       updateSettings(patch);
     }
-  }, [settings.imageModel, settings.aspectRatio, settings.imageSize, updateSettings]);
+  }, [
+    settings.imageModel,
+    settings.aspectRatio,
+    settings.imageSize,
+    settings.imageQuality,
+    updateSettings,
+  ]);
 
   // 이미지 미리보기 모달 상태
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -185,11 +199,23 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
     }
   }, []);
 
-  // 어노테이션 제출 핸들러:
-  // - 모델에 합성본(컬러 라인이 그려진 이미지)을 직접 보내면 결과에 라인이 그대로 모방되는 문제가 발생.
-  // - 따라서 깨끗한 원본만 reference로 전송하고, 색상별 영역(bounding box)은 정규화 좌표를 텍스트 prompt로 직렬화하여 전달.
-  // - 이렇게 하면 모델은 컬러 라인을 "보지 못한" 채로 좌표 기반 영역 지시만 받게 됨.
-  // - 모델 분기(Gemini multi-turn / OpenAI gpt-image-2)는 settings.imageModel 기반으로 자동 처리.
+  /*
+    어노테이션(부분 편집) 제출 — **모델 계열에 따라 전달 방식이 갈린다.**
+
+    마스크 인페인팅은 쓸 수 없다. OpenRouter Image API에는 mask 필드가 없고
+    `/api/v1/images/edits` 엔드포인트도 없다(2026-09-09 확인). 그래서 두 방식 다 "편집할
+    영역을 프롬프트로 알려주는" 우회지만, **무엇이 통하는지가 계열마다 다르다**:
+
+    - 나노바나나(Gemini): 색상 마커가 그려진 합성본을 주면 결과가 그 마커를 **그대로 모방해
+      그린다.** 그래서 깨끗한 원본만 보내고 stroke bounding box를 정규화 좌표 텍스트로
+      직렬화한다. 마커를 안 보여주는 대신 위치 정확도를 잃는 거래다.
+    - 덕테이프(gpt-image 계열): 지시 준수도가 높아 합성본을 직접 줄 수 있다. 모델이 편집
+      영역을 **픽셀 단위로** 보므로 좌표 텍스트보다 정확하다. 좌표도 함께 보내 이중화한다.
+
+    좌표 직렬화는 원래 Gemini 제약을 우회하려고 만든 것이라 덕테이프에까지 적용할 이유가
+    없었다 — 덕테이프가 기본 모델이 되면서 이 분기가 필요해졌다.
+    판정은 `getAnnotationMode()` 한 곳에서만 한다(2.5 계열이 늘어나도 여기는 안 고친다).
+  */
   const handleAnnotationSubmit = useCallback(
     async (result: AnnotationResult) => {
       setIsAnnotating(true);
@@ -200,16 +226,38 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
           result.colorRegions
         );
         const userIntent = [result.globalInstructions.trim(), colorSection].filter(Boolean).join('\n\n');
+        const intentOrDefault = userIntent || '지정 영역을 자연스럽게 편집해주세요.';
+
+        if (getAnnotationMode(settings.imageModel) === 'composite') {
+          /*
+            첨부 순서로 이미지를 지칭하면 안 된다 — `generateFromChat`이 참조 배열 맨 앞에
+            "직전 생성 이미지"를 자동으로 끼워 넣으므로 여기서 넘긴 것이 첫 번째가 아니다.
+            그래서 순서 대신 **마커 유무**로 두 이미지를 구분해 설명한다.
+          */
+          const promptText = [
+            '[부분 편집 — 표시된 영역만 편집]',
+            '첨부 이미지 중 **색상 마커/라인이 그려진 이미지**는 편집 위치를 표시한 작업 지시서입니다. 그 마커는 편집할 영역을 가리키는 표시일 뿐 그림의 일부가 아닙니다.',
+            '**마커가 없는 같은 구도의 이미지**가 편집 대상 원본입니다. 이 원본을 베이스로 삼으세요.',
+            '',
+            intentOrDefault,
+            '',
+            '⚠️ 마커로 표시된 영역만 편집하고, 표시되지 않은 영역은 원본의 형태·색상·디테일·구도를 픽셀 단위로 그대로 유지하세요.',
+            '⚠️ 결과 이미지에 색상 마커/라인/박스를 절대 그리지 마세요. 마커는 위치 지시일 뿐이며 편집된 자연스러운 결과만 보여야 합니다.',
+          ].join('\n');
+          await handleSend(promptText, [result.compositePng, result.originalImage]);
+          return;
+        }
+
+        // coordinates — 합성본 미첨부. 깨끗한 원본만 reference로 전송한다
         const promptText = [
           '[부분 편집 — 첨부 이미지의 지정 영역만 편집]',
           '첨부 이미지는 편집 시작점(베이스)입니다. 아래 좌표(가로/세로 % 범위)로 지정된 영역만 지시대로 편집하고, 나머지 영역은 원본의 형태/색상/디테일을 가능한 한 그대로 유지하세요.',
           '',
-          userIntent || '지정 영역을 자연스럽게 편집해주세요.',
+          intentOrDefault,
           '',
           '⚠️ 좌표는 첨부 이미지의 좌상단을 (0%, 0%), 우하단을 (100%, 100%)로 한 정규화 비율입니다.',
           '⚠️ 결과 이미지에는 편집된 자연스러운 결과만 보여야 하며, 색상 마커/라인/박스 등 어노테이션 흔적은 절대 포함되어서는 안 됩니다 (마커는 모델에 전달되지 않았습니다).',
         ].join('\n');
-        // 합성본 미첨부 — 깨끗한 원본만 reference로 전송
         await handleSend(promptText, [result.originalImage]);
       } catch (error) {
         logger.error('❌ 어노테이션 편집 실패:', error);
@@ -219,7 +267,7 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
         setIsAnnotating(false);
       }
     },
-    [addMessage, handleSend]
+    [addMessage, handleSend, settings.imageModel]
   );
 
   // 이미지 저장 (Tauri 다이얼로그 + 파일 쓰기)

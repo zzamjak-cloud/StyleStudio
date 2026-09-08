@@ -20,7 +20,12 @@ import {
 } from './imageModels';
 
 // 두 provider 모두 참조 이미지 14장까지 수용 (OpenRouter input_references 한도: gemini 14 / gpt 16)
-const MAX_REFERENCE_IMAGES = 14;
+/**
+ * 참조 이미지 상한의 **폴백**. 실제 상한은 모델별 `supports.maxReferenceImages`를 쓴다
+ * (덕테이프 계열 16장 / 나노바나나 계열 14장). 업로드 UI는 14장에서 막으므로 지금은
+ * 덕테이프의 16장 여유가 실제로 쓰이지는 않는다 — 업로드 상한을 올리면 바로 반영된다.
+ */
+const FALLBACK_MAX_REFERENCE_IMAGES = 14;
 
 export interface ImageGenerationParams {
   prompt: string; // 서술적 문장 권장
@@ -173,7 +178,7 @@ export function useImageGenerator() {
     // 참조 이미지 수집 (최대 14장)
     const hasReferenceImages = !!params.referenceImages && params.referenceImages.length > 0;
     const inputReferences = hasReferenceImages
-      ? params.referenceImages!.slice(0, MAX_REFERENCE_IMAGES)
+      ? params.referenceImages!.slice(0, modelDef.supports.maxReferenceImages ?? FALLBACK_MAX_REFERENCE_IMAGES)
       : undefined;
 
     if (inputReferences) {

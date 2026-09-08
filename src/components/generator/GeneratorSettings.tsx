@@ -53,6 +53,7 @@ interface GeneratorSettingsProps {
   imageQuality: ImageQualityOption;
   availableModels: ImageModelDefinition[];
   supportedAspectRatios: AspectRatioOption[];
+  supportedQualities: ImageQualityOption[];
   supportedImageSizes: ImageSizeOption[];
 
   // 참조 문서 (UI 세션용)
@@ -108,6 +109,7 @@ function GeneratorSettingsComponent({
   imageQuality,
   availableModels,
   supportedAspectRatios,
+  supportedQualities,
   supportedImageSizes,
   cameraAngle,
   cameraLens,
@@ -470,12 +472,14 @@ function GeneratorSettingsComponent({
           {sessionType !== 'TILEMAP' && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 비율</label>
-              <div className="flex flex-nowrap gap-1">
+              {/* 모델마다 지원 비율이 8~10종이라 한 줄(flex-nowrap)에 들어가지 않는다 —
+                  5열 그리드로 감싸 넘긴다. 목록은 `supports.aspectRatios`가 정한다 */}
+              <div className="grid grid-cols-5 gap-1">
                 {supportedAspectRatios.map((ratio) => (
                   <button
                     key={ratio}
                     onClick={() => onAspectRatioChange(ratio)}
-                    className={`min-w-0 flex-1 px-1 py-1.5 rounded-md text-[11px] font-medium border transition-all ${
+                    className={`min-w-0 px-1 py-1.5 rounded-md text-[11px] font-medium border transition-all ${
                       aspectRatio === ratio
                         ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
                         : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
@@ -511,14 +515,16 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
-          {/* 이미지 품질 (덕테이프 전용).
+          {/* 이미지 품질. 선택지가 2개 이상인 모델(gpt-image 계열)에서만 노출한다 —
+              나노바나나 계열은 ['medium'] 한 종이라 고를 게 없다. 모델 ID를 직접 비교하지
+              않는 이유: 2.5 계열이 늘어나도 이 조건을 고칠 필요가 없어야 한다.
               TILEMAP은 medium 고정이므로 노출하지 않는다 — 재질 스와치는 균질한 필드라
               high로 올려도 얻는 게 없고 비용·시간만 늘어난다 */}
-          {imageModel === 'openai/gpt-image-2' && sessionType !== 'TILEMAP' && (
+          {supportedQualities.length > 1 && sessionType !== 'TILEMAP' && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 품질</label>
               <div className="grid grid-cols-3 gap-2">
-                {(['low', 'medium', 'high'] as const).map((quality) => (
+                {supportedQualities.map((quality) => (
                   <button
                     key={quality}
                     onClick={() => onImageQualityChange(quality)}

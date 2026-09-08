@@ -12,7 +12,7 @@ import { join } from '@tauri-apps/api/path';
 import { getAiGenRoot, getSessionImageFolder } from '../../lib/config/paths';
 import { deleteImage } from '../../lib/imageStorage';
 import { logger } from '../../lib/logger';
-import { getImageModelDefinition, normalizeImageModelId } from '../../hooks/api/imageModels';
+import { DEFAULT_IMAGE_MODEL, getImageModelDefinition, isOpenAIModel, normalizeImageModelId } from '../../hooks/api/imageModels';
 
 interface ConceptPanelProps {
   session: Session;
@@ -29,7 +29,7 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
       gameGenres: [],
       artStyles: [],
       generationSettings: {
-        model: 'google/gemini-3-pro-image-preview',
+        model: DEFAULT_IMAGE_MODEL,
         ratio: '9:16',
         size: '1k',
         quality: 'medium',
@@ -289,7 +289,7 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
           model,
           ratio,
           size,
-          quality: model === 'openai/gpt-image-2' ? (entry.settings as any).quality ?? 'medium' : undefined,
+          quality: isOpenAIModel(model) ? (entry.settings as any).quality ?? 'medium' : undefined,
           grid,
         },
       }));

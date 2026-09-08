@@ -118,7 +118,7 @@ export async function chatComplete(apiKey: string, params: ChatCompleteParams): 
 export interface ImageApiRequest {
   model: string;
   prompt: string;
-  /** '1:1' | '16:9' | '9:16' | '4:3' | '3:4' 등 */
+  /** '1:1' | '3:2' | '16:9' | '21:9' 등 — 모델별 지원 목록은 imageModels.ts가 정한다 */
   aspectRatio?: string;
   /** '1K' | '2K' | '4K' — Gemini 계열 전용 */
   resolution?: string;

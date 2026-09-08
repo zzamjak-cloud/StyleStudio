@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { ChatGenerationSettings } from '../../types/chat';
 import { PixelArtGridLayout } from '../../types/pixelart';
-import { getAvailableImageModels } from '../../hooks/api/imageModels';
+import { getAvailableImageModels, getImageModelDefinition, isOpenAIModel } from '../../hooks/api/imageModels';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { DocumentManager } from '../generator/DocumentManager';
 
@@ -50,9 +50,15 @@ export function ChatAISettings({
   const imageSizes: ImageSize[] = ['1K', '2K', '4K'];
   const gridLayouts: PixelArtGridLayout[] = ['1x1', '2x2', '3x3', '4x4'];
   const availableModels = getAvailableImageModels();
-  const selectedModel = availableModels.find((model) => model.id === settings.imageModel) ?? availableModels[0];
+  /*
+    드롭다운 목록(`availableModels`)에서 찾지 않고 카탈로그 전체에서 찾는다 — 세션에 저장된
+    모델이 목록에 없을 때(예: 등재됐다가 다시 `pending`으로 내린 2.5 계열) 첫 모델의 능력치를
+    보여주면 실제 전송 모델과 UI가 어긋난다.
+  */
+  const selectedModel = getImageModelDefinition(settings.imageModel);
   const aspectRatios = selectedModel.supports.aspectRatios as AspectRatio[];
   const supportedSizes = selectedModel.supports.imageSizes;
+  const supportedQualities = selectedModel.supports.qualities;
 
   return (
     <div className="w-80 border-l border-gray-200 bg-white flex flex-col min-h-0 h-full">
@@ -119,12 +125,13 @@ export function ChatAISettings({
           <label className="block text-sm font-medium text-gray-700 mb-2">
             이미지 비율
           </label>
-          <div className="flex flex-nowrap gap-1">
+          {/* 모델당 8~10종이라 한 줄에 안 들어간다 — 5열 그리드로 넘긴다 */}
+          <div className="grid grid-cols-5 gap-1">
             {aspectRatios.map((ratio) => (
               <button
                 key={ratio}
                 onClick={() => onSettingsChange({ aspectRatio: ratio })}
-                className={`min-w-0 flex-1 px-1 py-1.5 text-[11px] rounded-md border transition-colors ${
+                className={`min-w-0 px-1 py-1.5 text-[11px] rounded-md border transition-colors ${
                   settings.aspectRatio === ratio
                     ? 'bg-purple-500 text-white border-purple-500'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
@@ -157,19 +164,19 @@ export function ChatAISettings({
               </button>
             ))}
           </div>
-          {settings.imageModel === 'openai/gpt-image-2' && (
+          {isOpenAIModel(settings.imageModel) && (
             <p className="text-xs text-gray-500 mt-1">
-              덕테이프는 1K 규격으로 처리되며 품질 옵션으로 세부 묘사를 조절합니다.
+              덕테이프 계열은 1K 규격으로 처리되며 품질 옵션으로 세부 묘사를 조절합니다.
             </p>
           )}
         </div>
 
-        {/* 품질 선택 (덕테이프 전용) */}
-        {settings.imageModel === 'openai/gpt-image-2' && (
+        {/* 품질 선택 — 티어가 2개 이상인 모델에서만. 모델 ID를 직접 비교하지 않는다 */}
+        {supportedQualities.length > 1 && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">이미지 품질</label>
             <div className="grid grid-cols-3 gap-2">
-              {(['low', 'medium', 'high'] as const).map((quality) => (
+              {supportedQualities.map((quality) => (
                 <button
                   key={quality}
                   onClick={() => onSettingsChange({ imageQuality: quality })}

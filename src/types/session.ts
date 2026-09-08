@@ -1,3 +1,4 @@
+import { AspectRatioOption } from '../hooks/api/imageModels';
 import { ImageAnalysisResult } from './analysis';
 import { PixelArtGridLayout } from './pixelart';
 import { ReferenceDocument } from './referenceDocument';
@@ -43,7 +44,7 @@ export interface GenerationHistoryEntry {
 
 // 생성 설정
 export interface GenerationSettings {
-  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+  aspectRatio: AspectRatioOption;
   imageSize: '1K' | '2K' | '4K';
   useReferenceImages: boolean;
   pixelArtGrid?: PixelArtGridLayout; // 스프라이트 그리드 레이아웃 (1x1, 2x2, 4x4, 6x6, 8x8)

@@ -27,7 +27,8 @@ export const ConceptRightPanel = memo(({
   const [costWarning, setCostWarning] = useState<{ size: '2k' | '3k' } | null>(null);
   const availableModels = getAvailableImageModels();
   const modelDef = getImageModelDefinition(settings.model);
-  const supportedRatios = modelDef.supports.aspectRatios as ConceptSessionData['generationSettings']['ratio'][];
+  const supportedRatios = modelDef.supports.aspectRatios;
+  const supportedQualities = modelDef.supports.qualities;
   const supportedSizes = modelDef.supports.imageSizes.map((size) => {
     if (size === '4K') return '3k';
     return size.toLowerCase();
@@ -176,13 +177,14 @@ export const ConceptRightPanel = memo(({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               이미지 비율
             </label>
-            <div className="flex flex-nowrap gap-1">
+            {/* 모델당 8~10종이라 한 줄에 안 들어간다 — 5열 그리드로 넘긴다 */}
+            <div className="grid grid-cols-5 gap-1">
               {supportedRatios.map((ratio) => (
                 <button
                   key={ratio}
-                  onClick={() => onSettingsChange({ ...settings, ratio: ratio as any })}
+                  onClick={() => onSettingsChange({ ...settings, ratio })}
                   disabled={disabled}
-                  className={`min-w-0 flex-1 px-1 py-1.5 text-[11px] rounded-md border transition-colors ${
+                  className={`min-w-0 px-1 py-1.5 text-[11px] rounded-md border transition-colors ${
                     settings.ratio === ratio
                       ? 'bg-purple-500 text-white border-purple-500'
                       : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
@@ -220,12 +222,13 @@ export const ConceptRightPanel = memo(({
             </p>
           </div>
 
-          {/* 품질 선택 (덕테이프 전용) */}
-          {settings.model === 'openai/gpt-image-2' && (
+          {/* 품질 선택 — 티어가 2개 이상인 모델에서만. 모델 ID를 직접 비교하지 않는다
+              (2.5 계열이 늘어나도 조건을 고칠 필요가 없어야 한다) */}
+          {supportedQualities.length > 1 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">이미지 품질</label>
               <div className="grid grid-cols-3 gap-2">
-                {(['low', 'medium', 'high'] as const).map((quality) => (
+                {supportedQualities.map((quality) => (
                   <button
                     key={quality}
                     onClick={() => onSettingsChange({ ...settings, quality })}

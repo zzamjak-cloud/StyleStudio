@@ -1,13 +1,32 @@
 # 이미지 어노테이션 (부분 편집)
 
-채팅에서 생성된 AI 이미지 위에 **색상 펜으로 영역을 표시하고 색상별 지시문을 입력**해 부분 편집을 요청하는 기능. 핵심 설계: 모델에 **색상 라인이 그려진 합성본을 주지 않는다**. 합성본을 reference 로 보내면 결과물이 컬러 라인을 그대로 모방하기 때문. 대신 **깨끗한 원본만 reference 로 전송**하고, 각 색상 stroke 의 bounding box 를 **정규화 좌표(가로/세로 %)로 텍스트 prompt 에 직렬화**해 "이 영역만 이렇게 편집하라"는 지시로 전달한다. 모달은 Konva(`react-konva`) 캔버스로 구현.
+채팅에서 생성된 AI 이미지 위에 **색상 펜으로 영역을 표시하고 색상별 지시문을 입력**해 부분 편집을 요청하는 기능. 모달은 Konva(`react-konva`) 캔버스로 구현.
+
+## 왜 마스크 인페인팅이 아닌가
+
+**쓸 수가 없다.** OpenRouter Image API에는 mask 필드가 없고 `/api/v1/images/edits` 엔드포인트 자체가 존재하지 않는다(2026-09-09 재확인). gpt-image-2.5 선버스트가 OpenAI 직접 API에서 인페인팅을 지원하지만 그건 OpenRouter 경로로 오지 않는다.
+
+그래서 두 방식 다 "편집할 영역을 **프롬프트로** 알려주는" 우회이고, 어느 쪽이 통하는지가 **모델 계열마다 다르다.** 판정은 `getAnnotationMode(modelId)` 한 곳에서만 한다 — 호출부가 모델 ID를 직접 비교하면 2.5 계열이 늘 때 조용히 깨진다.
+
+| 모드 | 대상 | 모델에 주는 것 | 이유 |
+|------|------|---------------|------|
+| `coordinates` | 나노바나나(Gemini) | **깨끗한 원본만** + stroke bounding box를 정규화 좌표(%) 텍스트로 직렬화 | 합성본을 주면 결과물이 **색상 마커를 그대로 모방해 그린다.** 마커를 안 보여주는 대신 위치 정확도를 잃는 거래 |
+| `composite` | 덕테이프(gpt-image 계열) | **합성본 + 깨끗한 원본** 둘 다 + 좌표 직렬화(보조) | 지시 준수도가 높아 "마커는 위치 표시일 뿐 그리지 말라"가 통한다. 모델이 편집 영역을 **픽셀 단위로** 보므로 좌표 텍스트보다 정확하다 |
+
+> 좌표 직렬화는 원래 **Gemini 제약을 우회하려고** 만든 것이다. 덕테이프가 기본 모델이 되면서(v0.7.2) 덕테이프에까지 그 제약을 적용할 이유가 없어져 분기가 생겼다.
+
+- **composite 모드의 프롬프트는 첨부 순서로 이미지를 지칭하면 안 된다.** `generateFromChat`이 참조 배열 맨 앞에 "직전 생성 이미지"를 자동으로 끼워 넣으므로 `handleAnnotationSubmit`이 넘긴 것이 첫 번째가 아니다. 순서 대신 **마커 유무**로 두 이미지를 구분해 설명한다.
+- 같은 이미지가 참조에 중복으로 들어가지 않도록 `allImages`를 `Set`으로 거른다 — 부분 편집은 원본을 명시적으로 첨부하는데 그게 보통 `latestGenerated`와 같은 데이터다.
+- 어느 모드든 **마스크 밖 보존은 모델의 지시 준수에 달려 있다.** API가 강제해 주지 않는다.
+- `AnnotationResult.maskPng`(OpenAI edits 규격 흑백 마스크)는 계속 생성하지만 **소비처가 없다.** 인페인팅이 열리는 날을 위해 남겨 둔 것이다 — 지우지 말 것.
 
 ## 관련 파일
 
 - `src/components/chat/annotation/ImageAnnotator.tsx` — 어노테이션 모달(`ImageAnnotator`). Konva `Stage`(3개 Layer: 원본/펜/마스크), 펜·지우개·색상·굵기 툴바, 우측 색상별 지시문 입력, `handleSubmit` 에서 `AnnotationResult` 조립
 - `src/types/annotation.ts` — `AnnotationStroke`/`AnnotationResult`/`ColorRegion` 타입, `ANNOTATION_COLORS`, `serializeColorInstructions`(색상별 지시문→좌표 포함 자연어), `getColorLabel`
 - `src/lib/utils/annotationExport.ts` — Konva 노드 → dataURL 추출(`exportNodeToDataUrl`), 마스크를 OpenAI edits 규격(편집=흰색/보존=검정 binary)으로 정규화(`normalizeMaskToOpenAI`)
-- `src/components/chat/ChatPanel.tsx` — `handleAnnotationSubmit`(:193): `AnnotationResult` 를 편집 prompt 로 직렬화해 `handleSend(prompt, [원본])` 호출. 진입 조건은 **API Key 존재 + `isGeneratedImage`**
+- `src/components/chat/ChatPanel.tsx` — `handleAnnotationSubmit`: `getAnnotationMode(settings.imageModel)`로 **모드 분기**. `composite`면 `handleSend(prompt, [합성본, 원본])`, `coordinates`면 `handleSend(prompt, [원본])`. 진입 조건은 **API Key 존재 + `isGeneratedImage`**
+- `src/hooks/api/imageModels.ts` — `AnnotationMode`·`getAnnotationMode()`. 모델별 판정은 여기에만 둔다
 
 ## 데이터 모델
 

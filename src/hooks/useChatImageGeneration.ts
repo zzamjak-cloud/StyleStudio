@@ -32,7 +32,8 @@ const RETRY_DELAY = 5000;
 // 프롬프트에 결합할 최근 대화 턴 수 (Image API는 멀티턴 대화가 없어 텍스트로 맥락 전달)
 const MAX_CONTEXT_TURNS = 6;
 // 참조 이미지 상한 (OpenRouter input_references 한도)
-const MAX_REFERENCES = 14;
+/** 참조 이미지 상한 폴백 — 실제 상한은 모델별 `supports.maxReferenceImages`를 쓴다 */
+const FALLBACK_MAX_REFERENCES = 14;
 
 interface GenerationResult {
   content: string;
@@ -154,11 +155,19 @@ export function useChatImageGeneration(
 
     // 참조 이미지: 직전 생성 이미지(기준 이미지) + 사용자 첨부 + 문서 추출 이미지
     const latestGenerated = await resolveLatestGeneratedImage();
-    const allImages = [
-      ...(latestGenerated ? [latestGenerated] : []),
-      ...(userImages ?? []),
-      ...documentImages,
-    ].slice(0, MAX_REFERENCES);
+    /*
+      같은 이미지를 두 번 보내지 않는다. 부분 편집은 원본을 명시적으로 첨부하는데, 그 원본이
+      보통 `latestGenerated`와 같은 데이터라 그대로 두면 동일 이미지가 참조에 중복으로 들어간다
+      (토큰만 늘고 모델에는 "비슷한 그림 두 장"이라는 잡음이 된다).
+      저장소에서 복원된 사본은 문자열이 달라 걸러지지 않을 수 있다 — 그건 감수한다.
+    */
+    const allImages = Array.from(
+      new Set([
+        ...(latestGenerated ? [latestGenerated] : []),
+        ...(userImages ?? []),
+        ...documentImages,
+      ])
+    ).slice(0, modelDef.supports.maxReferenceImages ?? FALLBACK_MAX_REFERENCES);
 
     logger.debug('🎨 Chat 이미지 생성 요청:', {
       imageModel,

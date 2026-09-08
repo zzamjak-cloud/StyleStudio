@@ -19,10 +19,11 @@ export function Header({ onSettingsClick }: HeaderProps) {
         <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
           <span className="text-xl">🎨</span>
         </div>
-        <div>
+        {/* 제목과 버전을 한 줄에 둔다 — 버전은 살짝 작게·연하게 해서 제목을 가리지 않게 한다 */}
+        <div className="flex items-baseline gap-2">
           <h1 className="text-white text-xl font-bold">Style Studio</h1>
           {version && (
-            <span className="text-white/70 text-xs">v{version}</span>
+            <span className="text-white/70 text-sm font-medium">v{version}</span>
           )}
         </div>
       </div>

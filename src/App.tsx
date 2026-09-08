@@ -76,6 +76,7 @@ import {
   persistSessions,
   flushPendingSessions as flushPersistedSessions,
 } from './utils/sessionHelpers';
+import { DEFAULT_IMAGE_MODEL } from './hooks/api/imageModels';
 import { logger } from './lib/logger';
 import { exportFolderToFile, exportWorkspaceSnapshotToFile, importFromFile } from './lib/storage';
 
@@ -1066,7 +1067,7 @@ function App() {
         totalTokenCount: 0,
         settings: {
           aspectRatio: '1:1',
-          imageModel: 'google/gemini-3-pro-image-preview',
+          imageModel: DEFAULT_IMAGE_MODEL,
           imageSize: '1K',
             imageQuality: 'medium',
           pixelArtGrid: '1x1',
@@ -1080,7 +1081,7 @@ function App() {
         gameGenres: [],
         artStyles: [],
         generationSettings: {
-          model: 'google/gemini-3-pro-image-preview',
+          model: DEFAULT_IMAGE_MODEL,
           ratio: '9:16',
           size: '1k',
           quality: 'medium',

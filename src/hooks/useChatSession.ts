@@ -2,7 +2,7 @@ import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { Session } from '../types/session';
 import { ChatMessage, ChatGenerationSettings, ChatSessionData, estimateTokenCount } from '../types/chat';
 import { ReferenceDocument } from '../types/referenceDocument';
-import { isOpenAIModel } from './api/imageModels';
+import { DEFAULT_IMAGE_MODEL, isOpenAIModel } from './api/imageModels';
 import { updateSession } from '../utils/sessionHelpers';
 import { deleteImage } from '../lib/imageStorage';
 import { CHAT_SIGNATURE_KEY_MARKER } from '../lib/storage';
@@ -46,7 +46,7 @@ export function useChatSession(
   const settings = useMemo<ChatGenerationSettings>(
     () => ({
       aspectRatio: '1:1',
-      imageModel: 'google/gemini-3-pro-image-preview',
+      imageModel: DEFAULT_IMAGE_MODEL,
       imageSize: '1K',
       pixelArtGrid: '1x1',
       ...chatData?.settings,
@@ -78,7 +78,7 @@ export function useChatSession(
       totalTokenCount: 0,
       settings: {
         aspectRatio: '1:1' as const,
-        imageModel: 'google/gemini-3-pro-image-preview' as const,
+        imageModel: DEFAULT_IMAGE_MODEL,
         imageSize: '1K' as const,
         imageQuality: 'medium' as const,
         pixelArtGrid: '1x1' as const,
@@ -160,7 +160,7 @@ export function useChatSession(
   const updateSettings = useCallback((newSettings: Partial<ChatGenerationSettings>) => {
     const latestSettings: ChatGenerationSettings = {
       aspectRatio: '1:1',
-      imageModel: 'google/gemini-3-pro-image-preview',
+      imageModel: DEFAULT_IMAGE_MODEL,
       imageSize: '1K',
       imageQuality: 'medium',
       pixelArtGrid: '1x1',
