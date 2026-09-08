@@ -66,8 +66,10 @@ import { loadImageElement } from './tileSlicer';
  * v6: 지형을 투명으로 둘 수 있다(재질 대신 알파 0). 합성이 프리멀티플라이드 알파로 바뀌었다.
  * v7: 아웃라인이 경계선을 중심으로 양쪽에 퍼지지 않고 **한쪽으로만** 뻗는다.
  *     두 아웃라인은 감싸는 대신 계단처럼 이어 붙어 색이 단계별로 보인다.
+ * v8: 재질 변형의 이식 방식이 알파 램프 → **최소오차 컷 + 그래디언트 도메인**으로 바뀌었다
+ *     (`patchGraft`). 변형이 테두리에서 평균으로 뭉개지지 않아 재질 표정이 선명해진다.
  */
-export const COMPOSER_VERSION = 7;
+export const COMPOSER_VERSION = 8;
 
 /** 셀 128px을 아웃라인 두께의 기준 해상도로 삼는다 (유니티 PPU 128과 맞춘다) */
 const OUTLINE_REFERENCE_CELL_PX = 128;
@@ -333,7 +335,7 @@ export function sampleOutline(bands: OutlineBands, d: number, out: OutlineSample
  *
  * 재질은 슬롯마다 **다른 텍스처 변형**을 고른다. 예전에는 64장이 모두 같은 텍스처를
  * 같은 오프셋으로 샘플링해서, 경계 모양은 달라도 화면 전체가 한 타일의 반복으로 보였다.
- * 변형은 변 픽셀을 공유하므로 접합 계약은 그대로다(`VARIANT_RAMP_RATIO` 주석).
+ * 변형은 변 픽셀을 공유하므로 접합 계약은 그대로다(`patchGraft` 주석).
  *
  * 아웃라인은 경계선에서 **한쪽 방향으로만** 뻗는 계단식 띠다(`resolveOutlineBands`).
  *

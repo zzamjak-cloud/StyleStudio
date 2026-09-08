@@ -32,6 +32,8 @@
  * 개별 디테일은 이후 합성 단계에서 코드가 배치한다.
  */
 
+import { bandMismatch, graftInterior } from './patchGraft';
+
 /** 창 가중치 근사에 사용할 그라디언트 정지점 개수 (많을수록 부드러움) */
 const GRADIENT_STOPS = 65;
 
@@ -93,6 +95,26 @@ export function extractRegion(
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(source, sx, sy, sw, sh, 0, 0, outSize, outSize);
+  return out;
+}
+
+/**
+ * 원본의 사각 영역을 **리샘플 없이 1:1로** 떠낸다.
+ *
+ * `extractRegion`은 정사각형으로 리샘플하므로 스와치 패널 전체를 원해상도로 읽을 때는
+ * 쓸 수 없다. 변형 크롭 후보 탐색이 패널 픽셀을 직접 훑기 위해 필요하다.
+ */
+function extractExact(
+  source: CanvasImageSource,
+  sx: number,
+  sy: number,
+  w: number,
+  h: number
+): HTMLCanvasElement {
+  const out = createCanvas(w, h);
+  const ctx = get2d(out);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(source, sx, sy, w, h, 0, 0, w, h);
   return out;
 }
 
@@ -224,49 +246,49 @@ export function makeSeamless(source: CanvasImageSource, size: number): HTMLCanva
 }
 
 /**
- * 변형 텍스처의 **공유 테두리 폭 비율** (타일 한 변 대비).
+ * 변형 텍스처의 **공유 테두리 계약**.
  *
  * ## 왜 테두리를 공유해야 하는가
  * 타일을 어느 칸에 놓을지는 런타임에 결정된다(유니티 Rule Tile의 Output: Random,
  * 변형 세트의 Random Tile, 사용자가 직접 칠하는 경우 모두). 즉 **어떤 두 변형이
  * 이웃해도 접합부가 이어져야** 하고, 그러려면 모든 변형의 변 픽셀이 완전히 동일해야
- * 한다. 그래서 변형은 "정규 텍스처(wrap 연속) 위에 다른 크롭을 안쪽에만 얹은 것"으로
- * 만든다:
+ * 한다. 그래서 변형은 "정규 텍스처(wrap 연속) 안쪽에 다른 크롭을 이식한 것"으로 만든다.
  *
- *   variant = (1 - a(x,y)) * canonical + a(x,y) * crop
- *   a = 0  (변에서 `EDGE_HOLD_PX` 픽셀까지)  →  변 근처는 정규 텍스처 그대로
- *   a: 0→1 (RAMP 구간에서 스무스스텝)       →  기울기까지 이어져 띠가 보이지 않는다
- *   a = 1  (내부)                            →  다른 크롭 = 랜덤성
+ * ## 이식 방식 (v3) — 알파 램프가 아니다
+ * v2는 `variant = (1-a)*canonical + a*crop` 알파 크로스페이드였다. 변 픽셀 계약은 지켰지만
+ * 램프 구간이 두 텍스처의 평균이라 타일마다 **흐릿한 사각 액자**가 남았고, 방향성 있는
+ * 무늬(암반 층리 등)는 링에 닿는 순간 끊겼다. 지금은 `patchGraft.graftInterior`가
+ * **최소오차 컷 + 그래디언트 도메인 이식**으로 처리한다 — 근거와 알고리즘은 그 파일 참조.
  *
- * 변에서 a가 정확히 0이므로 변 픽셀은 모든 변형에서 정규 텍스처와 같다 → 접합 보장.
- * 재질 스와치는 설계상 균질한 필드라, 테두리가 공통이어도 반복으로 읽히지 않는다.
+ * 여기서는 이식에 넣을 **크롭을 고르는 일**만 한다.
  */
-const VARIANT_RAMP_RATIO = 0.12;
-/** 변에서 이 픽셀 수까지는 정규 텍스처를 **그대로** 유지한다 (a = 0 구간) */
-const EDGE_HOLD_PX = 2;
 
 /**
- * 변형 블렌딩 가중치의 축 방향 성분. 변에서 0, 안쪽에서 1.
- * 상수 근거는 `VARIANT_RAMP_RATIO` 주석 참조.
+ * 변형 하나당 평가할 크롭 후보 수.
+ *
+ * 저불일치 수열이 정한 기준 위치 주변을 조금씩 흔들어 보고, 정규 텍스처의 테두리 띠와
+ * 가장 잘 맞는 것을 고른다(`bandMismatch`). 이식이 아무리 좋아도 애초에 테두리가 크게
+ * 어긋난 크롭이면 컷이 지날 저오차 경로 자체가 없다.
+ *
+ * 흔드는 반경은 좁게 둔다(`CANDIDATE_JITTER_RATIO`) — 넓히면 여러 변형이 스와치의 같은
+ * "가장 잘 맞는 자리"로 몰려 변형끼리 비슷해진다. 다양성은 기준 위치가 담당하고,
+ * 지역 탐색은 접합만 담당한다.
  */
-function variantAxisWeight(i: number, size: number): number {
-  const d = Math.min(i + 0.5, size - i - 0.5); // 변까지의 거리
-  const ramp = Math.max(1, size * VARIANT_RAMP_RATIO);
-  if (d <= EDGE_HOLD_PX) return 0;
-  return smoothstep((d - EDGE_HOLD_PX) / ramp);
-}
+const CANDIDATE_STEPS = 3; // 3x3 = 9 후보
+/** 후보 탐색 반경 (타일 한 변 대비) */
+const CANDIDATE_JITTER_RATIO = 0.09;
 
 /**
  * 한 재질 스와치 영역에서 텍스처 **변형 목록**을 만든다.
  *
  * - index 0 : 스와치 중앙을 1:1 크롭해 `makeSeamless`로 wrap 연속화한 **정규 텍스처**
- * - index v : 스와치의 다른 위치를 크롭해 정규 텍스처의 **안쪽에만** 얹은 것
+ * - index v : 스와치의 다른 위치를 정규 텍스처 안쪽에 이식한 것
  *
- * 변 픽셀은 전부 정규 텍스처와 동일하므로 어떤 변형끼리 이웃해도 접합이 이어진다
- * (`VARIANT_RAMP_RATIO` 주석의 계약 설명 참조). 룰타일 합성과 변형 세트 합성이
- * **같은 계약을 쓰도록** 여기 한 곳에 둔다 — 한쪽만 고치면 접합이 조용히 깨진다.
+ * 변 픽셀은 전부 정규 텍스처와 **비트 단위로 동일**하므로 어떤 변형끼리 이웃해도 접합이
+ * 이어진다. 룰타일 합성과 변형 세트 합성이 **같은 계약을 쓰도록** 여기 한 곳에 둔다 —
+ * 한쪽만 고치면 접합이 조용히 깨진다.
  *
- * 크롭 위치는 황금비 저불일치 수열로 스와치 전체에 고르게 흩는다 — 규칙적인 격자로
+ * 크롭 기준 위치는 황금비 저불일치 수열로 스와치 전체에 고르게 흩는다 — 규칙적인 격자로
  * 잡으면 변형끼리 겹치는 영역이 많아져 차이가 잘 드러나지 않는다.
  *
  * @param count 만들 변형 개수(정규 텍스처 포함). 크롭 여유가 없으면 1장으로 폴백한다.
@@ -284,34 +306,63 @@ export function buildTextureVariants(
   const canonical = get2d(canonicalCanvas).getImageData(0, 0, T, T).data;
   const variants: Uint8ClampedArray[] = [canonical];
 
-  // 크롭 여유가 없으면(모델이 규격보다 작은 이미지를 준 경우) 변형을 만들 수 없다 — 정규 1장으로 폴백
-  const spanX = Math.max(0, sw - T);
-  const spanY = Math.max(0, sh - T);
-  if (spanX < 4 && spanY < 4) return variants;
+  // 크롭 여유가 없으면(모델이 규격보다 작은 이미지를 준 경우) 변형을 만들 수 없다 — 정규 1장으로 폴백.
+  // 1:1 크롭이 성립하려면 영역이 타일보다 커야 한다 (작으면 확대 폴백이라 위치를 옮길 여지가 없다)
+  const spanX = Math.max(0, Math.floor(sw) - T);
+  const spanY = Math.max(0, Math.floor(sh) - T);
+  if (sw < T || sh < T || (spanX < 4 && spanY < 4)) return variants;
 
-  // 축 방향 가중치를 미리 계산 (픽셀 루프에서는 곱만 한다)
-  const axis = new Float32Array(T);
-  for (let i = 0; i < T; i++) axis[i] = variantAxisWeight(i, T);
+  /*
+    스와치 영역 전체를 **한 번만** 픽셀 버퍼로 읽는다.
+    변형마다 후보를 9개씩 보므로(=최대 128*9회 크롭) 캔버스 크롭 + getImageData를 매번
+    돌리면 그것만으로 수백 ms가 든다. 1:1 크롭이라 포인터 산술로 바로 떠낼 수 있다.
+  */
+  const panelW = Math.floor(sw);
+  const panelH = Math.floor(sh);
+  const panel = get2d(extractExact(source, sx, sy, panelW, panelH)).getImageData(
+    0,
+    0,
+    panelW,
+    panelH
+  ).data;
+
+  /** 패널 (ox, oy)에서 T x T를 1:1로 떠낸다 */
+  const cropAt = (ox: number, oy: number): Uint8ClampedArray => {
+    const out = new Uint8ClampedArray(T * T * 4);
+    for (let y = 0; y < T; y++) {
+      const src = ((oy + y) * panelW + ox) * 4;
+      out.set(panel.subarray(src, src + T * 4), y * T * 4);
+    }
+    return out;
+  };
+
+  const jitter = Math.max(1, Math.round(T * CANDIDATE_JITTER_RATIO));
+  const clampX = (v: number) => Math.min(spanX, Math.max(0, v));
+  const clampY = (v: number) => Math.min(spanY, Math.max(0, v));
 
   for (let v = 1; v < count; v++) {
     const fx = (v * 0.6180339887498949) % 1;
     const fy = (v * 0.7548776662466927) % 1;
-    const crop = get2d(cropMaterialSwatch(source, sx + spanX * fx, sy + spanY * fy, T, T, T))
-      .getImageData(0, 0, T, T).data;
+    const baseX = Math.round(spanX * fx);
+    const baseY = Math.round(spanY * fy);
 
-    const blended = new Uint8ClampedArray(canonical.length);
-    for (let y = 0; y < T; y++) {
-      const ay = axis[y];
-      for (let x = 0; x < T; x++) {
-        const a = axis[x] * ay;
-        const i = (y * T + x) * 4;
-        blended[i] = canonical[i] + (crop[i] - canonical[i]) * a;
-        blended[i + 1] = canonical[i + 1] + (crop[i + 1] - canonical[i + 1]) * a;
-        blended[i + 2] = canonical[i + 2] + (crop[i + 2] - canonical[i + 2]) * a;
-        blended[i + 3] = 255;
+    // 기준 위치 주변에서 테두리 띠가 가장 잘 맞는 후보를 고른다
+    let bestCrop: Uint8ClampedArray | null = null;
+    let bestScore = Infinity;
+    for (let jy = 0; jy < CANDIDATE_STEPS; jy++) {
+      const oy = clampY(baseY + (jy - (CANDIDATE_STEPS - 1) / 2) * jitter);
+      for (let jx = 0; jx < CANDIDATE_STEPS; jx++) {
+        const ox = clampX(baseX + (jx - (CANDIDATE_STEPS - 1) / 2) * jitter);
+        const candidate = cropAt(ox, oy);
+        const score = bandMismatch(canonical, candidate, T);
+        if (score < bestScore) {
+          bestScore = score;
+          bestCrop = candidate;
+        }
       }
     }
-    variants.push(blended);
+
+    variants.push(graftInterior(canonical, bestCrop as Uint8ClampedArray, T));
   }
   return variants;
 }

@@ -1,5 +1,5 @@
 /**
- * 타일맵 파이프라인 self-check (룰타일 v3 · 변형 v2, dev 전용).
+ * 타일맵 파이프라인 self-check (룰타일 v8 · 변형 v3, dev 전용).
  *
  * 이 프로젝트에는 테스트 러너가 없고, 파이프라인 핵심 연산이 전부 실제 canvas 2D에
  * 의존한다(node 환경에서 재현하려면 네이티브 canvas 의존성이 필요). 그래서 검증을
@@ -14,6 +14,7 @@
 
 import { cropMaterialSwatch, extractRegion, makeSeamless, measureWrapContinuity } from './seamlessTexture';
 import { buildVariationTileSet } from './variationComposer';
+import { graftInterior } from './patchGraft';
 import {
   NEIGHBOR,
   TRANSITION_INSET_RATIO,
@@ -958,6 +959,155 @@ async function checkMaterialVariants(): Promise<CheckResult> {
  * 여기에 3) 내부 상이성을 더한다. 변만 재면 "변형이 사실상 전부 같아짐" 회귀를
  * (즉 무늬 반복이 그대로 남는 회귀를) 놓치기 때문이다.
  */
+/** 픽셀 버퍼를 리포트에 붙일 캔버스로 굽는다 */
+function bufferToCanvas(buf: Uint8ClampedArray, size: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas 2d context를 생성할 수 없습니다');
+  const img = ctx.createImageData(size, size);
+  img.data.set(buf);
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
+/**
+ * **이식 게이트**: 변형 안쪽을 얹는 방식이 "섞기"가 아니라 "갈아타기 + 톤 보정"인가.
+ *
+ * `checkVariationSet`의 변 픽셀·wrap·내부 랜덤성은 v2(알파 램프)도 전부 통과했다. 그런데도
+ * 결과물은 타일마다 흐릿한 사각 액자가 남아 "외곽과 안쪽이 이어지지 않는다"는 실사용 불만이
+ * 나왔다 — 즉 그 세 가지로는 이번 회귀를 못 잡는다. 그래서 이식 원리 자체를 직접 잰다.
+ *
+ * 경계 렌더링의 "중간색 픽셀 비율" 게이트와 같은 방법이다: **순수 단색 2종**으로 합성하면
+ * 섞는 구현과 갈아타는 구현이 픽셀 값으로 갈린다.
+ *
+ * 1. **중간색 0** — 정규가 단색 A, 크롭이 단색 B면 결과는 전부 A여야 한다. 컷 위의 경계값이
+ *    상수 `A-B`라 조화 확장도 상수가 되고, `crop + u = B + (A-B) = A`가 되기 때문이다.
+ *    알파 램프였다면 램프 구간 전체가 A와 B 사이 값이다(실측 16384px 중 5152px = 31%).
+ * 2. **변 픽셀 비트 동일** — 마스크 바깥은 정규를 복사만 하므로 오차 0이어야 한다.
+ * 3. **코어 기울기 보존** — 1번만으로는 "이식을 아예 안 하고 정규를 그대로 돌려주는" 구현도
+ *    통과한다(결과가 전부 A이므로). 텍스처 크롭으로 한 번 더 재서, 컷 안쪽 깊은 곳의 인접
+ *    픽셀 스텝이 **크롭의 스텝과 같아야** 한다. 막은 조화 함수라 저주파만 더하므로 기울기를
+ *    건드리지 않는다. 정규를 그대로 돌려주면 이 값이 크롭의 기울기 전체만큼 어긋난다.
+ */
+async function checkPatchGraft(): Promise<CheckResult> {
+  const T = 128;
+  const problems: string[] = [];
+
+  const solid = (r: number, g: number, b: number): Uint8ClampedArray => {
+    const a = new Uint8ClampedArray(T * T * 4);
+    for (let i = 0; i < T * T; i++) {
+      a[i * 4] = r;
+      a[i * 4 + 1] = g;
+      a[i * 4 + 2] = b;
+      a[i * 4 + 3] = 255;
+    }
+    return a;
+  };
+
+  // 1) 단색 2종 — 중간색이 하나도 없어야 한다
+  const A: [number, number, number] = [60, 120, 180];
+  const canonSolid = solid(...A);
+  const graftedSolid = graftInterior(canonSolid, solid(200, 80, 40), T);
+  const MID_TOL = 1; // 부동소수 반올림만 허용
+  let midPixels = 0;
+  let worstDev = 0;
+  for (let i = 0; i < T * T; i++) {
+    const dev = Math.max(
+      Math.abs(graftedSolid[i * 4] - A[0]),
+      Math.abs(graftedSolid[i * 4 + 1] - A[1]),
+      Math.abs(graftedSolid[i * 4 + 2] - A[2])
+    );
+    worstDev = Math.max(worstDev, dev);
+    if (dev > MID_TOL) midPixels++;
+  }
+  if (midPixels > 0) {
+    problems.push(
+      `단색 2종 이식에 중간색이 ${midPixels}/${T * T}px 남았다 (최악 편차 ${worstDev}) — ` +
+      `알파 블렌딩이 되살아났거나 톤 보정이 덜 됐다`
+    );
+  }
+
+  // 2) 텍스처 크롭 — 변 픽셀 비트 동일 + 코어 기울기 보존
+  const hash = (x: number, y: number): number => {
+    let h = (x * 374761393 + y * 668265263) >>> 0;
+    h = ((h ^ (h >>> 13)) * 1274126177) >>> 0;
+    return (h >>> 16) / 65535;
+  };
+  const tex = new Uint8ClampedArray(T * T * 4);
+  for (let y = 0; y < T; y++) {
+    for (let x = 0; x < T; x++) {
+      const i = (y * T + x) * 4;
+      const n = hash(x >> 1, y >> 1) * 90;
+      tex[i] = 40 + n + Math.sin(x / 7) * 25;
+      tex[i + 1] = 90 + n;
+      tex[i + 2] = 150 + n - Math.cos(y / 5) * 20;
+      tex[i + 3] = 255;
+    }
+  }
+  const graftedTex = graftInterior(canonSolid, tex, T);
+
+  let edgeBreaks = 0;
+  for (let i = 0; i < T; i++) {
+    for (const [x, y] of [[i, 0], [i, T - 1], [0, i], [T - 1, i]] as Array<[number, number]>) {
+      const p = (y * T + x) * 4;
+      if (
+        graftedTex[p] !== A[0] ||
+        graftedTex[p + 1] !== A[1] ||
+        graftedTex[p + 2] !== A[2]
+      ) {
+        edgeBreaks++;
+      }
+    }
+  }
+  if (edgeBreaks > 0) {
+    problems.push(`변 픽셀이 정규와 다르다 ${edgeBreaks}/${T * 4}개 — 이식 마스크가 변까지 침범했다`);
+  }
+
+  // 컷은 변에서 최대 band 픽셀까지 들어오므로, 그보다 깊은 곳은 반드시 크롭 영역이다
+  const band = Math.round(T * 0.22);
+  const step = (buf: Uint8ClampedArray, x: number, y: number, x2: number, y2: number): number => {
+    const a = (y * T + x) * 4;
+    const b = (y2 * T + x2) * 4;
+    return (
+      (Math.abs(buf[a] - buf[b]) + Math.abs(buf[a + 1] - buf[b + 1]) + Math.abs(buf[a + 2] - buf[b + 2])) / 3
+    );
+  };
+  const GRAD_TOL = 1; // 채널 평균 1 미만이면 눈에 보이지 않는다
+  let gradSum = 0;
+  let gradN = 0;
+  for (let y = band + 2; y < T - band - 2; y++) {
+    for (let x = band + 2; x < T - band - 3; x++) {
+      gradSum += Math.abs(step(graftedTex, x, y, x + 1, y) - step(tex, x, y, x + 1, y));
+      gradN++;
+    }
+  }
+  const gradDiff = gradN === 0 ? 0 : gradSum / gradN;
+  if (gradDiff > GRAD_TOL) {
+    problems.push(
+      `코어 기울기가 크롭과 다르다 (평균 차 ${gradDiff.toFixed(2)} > ${GRAD_TOL}) — ` +
+      `이식이 죽었거나 막이 디테일을 훼손한다`
+    );
+  }
+
+  return {
+    name: '이식 (최소오차 컷 + 그래디언트 도메인) — 섞지 않는가 · 변 보존 · 기울기 보존',
+    passed: problems.length === 0,
+    detail:
+      problems.length > 0
+        ? problems.join('\n')
+        : `중간색: ${midPixels}/${T * T}px (최악 편차 ${worstDev} <= ${MID_TOL}) — 알파 램프였다면 약 31%\n` +
+          `변 픽셀: ${T * 4}개 전부 정규와 비트 동일\n` +
+          `코어 기울기: 크롭과 평균 차 ${gradDiff.toFixed(2)} (상한 ${GRAD_TOL})\n` +
+          `→ 안쪽은 크롭 그대로이고 톤만 맞춰졌다. 평균으로 얼버무린 띠가 없다`,
+    canvases: [
+      { label: '단색 2종 이식 (전부 A여야 함)', canvas: bufferToCanvas(graftedSolid, T) },
+      { label: '텍스처 이식 (테두리만 단색 A)', canvas: bufferToCanvas(graftedTex, T) },
+    ],
+  };
+}
+
 async function checkVariationSet(): Promise<CheckResult> {
   const T = 128; // 8x8 → cellSize
   const S = 1024;
@@ -1009,8 +1159,15 @@ async function checkVariationSet(): Promise<CheckResult> {
       Math.abs(at(a, x, y, 1) - at(b, x, y, 1)) +
       Math.abs(at(a, x, y, 2) - at(b, x, y, 2))) / 3;
 
-  // 1) 타일 간 변 픽셀 동일성 — PNG 왕복의 반올림만 허용
-  const EDGE_TOL = 1;
+  /*
+    1) 타일 간 변 픽셀 동일성.
+
+    v3부터 허용 오차가 **0**이다. v2는 변 근처를 알파 램프로 계산했기 때문에 부동소수
+    반올림이 끼어들 수 있어 1을 허용했지만, 지금은 마스크 바깥을 정규 텍스처에서
+    **그대로 복사**하므로 비트 단위로 같아야 한다(PNG는 무손실이라 왕복해도 안 변한다).
+    1을 그대로 두면 이식 마스크가 변까지 침범하는 회귀를 못 잡는다.
+  */
+  const EDGE_TOL = 0;
   let edgeSamples = 0;
   let edgeBreaks = 0;
   let worstEdge = 0;
@@ -1617,6 +1774,7 @@ export async function runAllTilemapChecks(
     ['경계 품질 (합성 1회)', async () => [await checkBoundaryQuality()]],
     ['맵 배치 접합 (합성 1회)', async () => [await checkComposedJoins()]],
     ['재질 변형 (합성 1회)', async () => [await checkMaterialVariants()]],
+    ['이식 (컷 + 그래디언트)', async () => [await checkPatchGraft()]],
     ['변형 세트 (합성 1회)', async () => [await checkVariationSet()]],
     ['계단식 아웃라인 (합성 1회)', async () => [await checkSteppedOutline()]],
     ['투명 지형 (합성 1회)', async () => [await checkTransparentTerrain()]],

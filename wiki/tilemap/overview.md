@@ -11,7 +11,7 @@
 
 타일은 개별 파일로 저장하지 않으며, **시트 이미지 + slotAssignments 매핑만 영속화**하고 타일은 매번 런타임에 재구성한다.
 
-> **레거시 예외**: `composerVersion`이 없는 세션은 예전의 "잘라 만든" 세트다. 복원 경로가 버전으로 분기해 그 세션만 계속 `sliceTileSheet`로 읽는다(스와치로 해석하면 결과가 완전히 달라진다). 결과 뷰에 재생성 안내 배너가 뜬다.
+> **레거시 예외**: `composerVersion`이 **없는** 세션만 예전의 "잘라 만든" 세트다. 복원 경로는 `composerVersion == null`로 분기한다 — "현재 버전과 다른가"로 재면 안 된다(합성기 버전을 올릴 때마다 스와치를 타일 시트로 잘라 버린다). v2 이상은 시트가 스와치이므로 현재 합성기로 다시 만든다(스와치로 해석하면 결과가 완전히 달라진다). 결과 뷰에 재생성 안내 배너가 뜬다.
 
 ## 관련 파일
 
@@ -29,16 +29,17 @@
 - `src/components/generator/GeneratorSettings.tsx` — TILEMAP 전용 그리드·모드 토글, 룰타일 지형 2필드. 비율·크기·품질 UI와 모델 표시를 `sessionType !== 'TILEMAP'`로 숨김. 룰타일이면 그리드 버튼 대신 `8x8 (룰타일 고정)` 읽기 전용 표시
 
 ### 두 모드 공용 (엣지 계약)
-- `src/lib/tilemap/seamlessTexture.ts` — `extractRegion`, `cropMaterialSwatch`, `makeSeamless`(분리형 주기 크로스페이드 = wrap 연속화), `measureWrapContinuity`, **`buildTextureVariants`**(변 픽셀을 공유하는 변형 목록 = 엣지 계약), `textureToDataUrl`. **두 합성기가 같은 계약을 쓰도록 여기 한 곳에 둔다** — 한쪽만 고치면 그쪽 접합만 조용히 깨진다
+- `src/lib/tilemap/seamlessTexture.ts` — `extractRegion`, `extractExact`(리샘플 없는 1:1 추출), `cropMaterialSwatch`, `makeSeamless`(분리형 주기 크로스페이드 = wrap 연속화), `measureWrapContinuity`, **`buildTextureVariants`**(변 픽셀을 공유하는 변형 목록 = 엣지 계약. 크롭 후보 선택까지 담당), `textureToDataUrl`. **두 합성기가 같은 계약을 쓰도록 여기 한 곳에 둔다** — 한쪽만 고치면 그쪽 접합만 조용히 깨진다
+- `src/lib/tilemap/patchGraft.ts` — 변형 이식의 핵심. `graftInterior`(최소오차 컷 4변 DP + pull-push 막 + 합성), `bandMismatch`(크롭 후보 점수), `EDGE_HOLD_PX`. **알파 블렌딩으로 되돌리면 안 되는 이유**가 상단 주석에 있다
 - `src/lib/tilemap/tileSlicer.ts` — `sliceTileSheet`(레거시 세션 복원 전용), `loadImageElement`
 
-### variation 전용 (v2 절차적 합성)
-- `src/lib/tilemap/variationComposer.ts` — `buildVariationTileSet`(스와치 전체 → 타일 수만큼의 변형), `VARIATION_COMPOSER_VERSION`(현재 2)
+### variation 전용 (v3 절차적 합성)
+- `src/lib/tilemap/variationComposer.ts` — `buildVariationTileSet`(스와치 전체 → 타일 수만큼의 변형), `VARIATION_COMPOSER_VERSION`(현재 3)
 
 ### ruletile 전용 (v3 절차적 합성 파이프라인)
 - `src/lib/tilemap/edgeProfile.ts` — **2단계**. `NEIGHBOR` 8방향 비트, `TRANSITION_INSET_RATIO`, `terrainSDF`, `warpOffset`, `warpedTerrainSDF`, `buildTerrainMask`, `borderTerrainProfile`(검증용), `signatureFromMap`
 - `src/lib/tilemap/autotileSignature.ts` — **3단계**. `reduceToBlob`/`reduceToSides`, `SIGNATURES_4BIT`(16종)·`SIGNATURES_BLOB`(47종), `buildSlotTable`, `buildSignatureIndex`, `signatureToSlot`, `describeSignature`/`describeSlot`, `BASE_TILE_FILENAME`·`baseTileFilename`
-- `src/lib/tilemap/ruleTileComposer.ts` — **4단계**. `buildRuleTileSet`, `COMPOSER_VERSION`(현재 7), `resolveOutlineBands`·`sampleOutline`(썸네일과 공유)
+- `src/lib/tilemap/ruleTileComposer.ts` — **4단계**. `buildRuleTileSet`, `COMPOSER_VERSION`(현재 8), `resolveOutlineBands`·`sampleOutline`(썸네일과 공유)
 - `src/lib/tilemap/tilemapSelfCheck.ts` + `dev/tilemap-check.html` — 단계별 게이트 검사(dev 전용)
 
 ## 고정값 (덕테이프 · medium · 8x8)
@@ -70,7 +71,7 @@ TilemapSessionData = {      // Session.tilemapData
   transparentBase?: boolean        // 룰타일: 생성 시점에 굳힌 투명 여부
   transparentOverlay?: boolean
   composerVersion?: number         // 합성 알고리즘 버전. **mode와 짝으로 해석**한다
-                                   //   ruletile → COMPOSER_VERSION(7) / variation → VARIATION_COMPOSER_VERSION(2)
+                                   //   ruletile → COMPOSER_VERSION(8) / variation → VARIATION_COMPOSER_VERSION(3)
                                    //   없거나 다르면 레거시 세트 → 분할 경로 + 재생성 안내 배너
   edgeStyle?: TilemapEdgeStyle     // 룰타일: 경계선 모양 프리셋 (미지정 시 'chunky')
   outline?: TilemapOutline         // 룰타일: 1단계 아웃라인 띠 {enabled, thicknessPx, color, opacity}
@@ -134,22 +135,44 @@ T/2로 두면 상하 양쪽이 베이스인 **1칸 폭 통로**에서 오버레�
 
 v4까지는 64장이 **모두 같은 텍스처**를 같은 오프셋으로 샘플링했다. 경계 모양은 슬롯마다 달라도 재질 표정이 동일해서, 세트 전체를 화면에 깔면 "한 타일의 반복"으로 보였다.
 
-유니티 Rule Tile은 변형을 **런타임에 무작위로** 고르므로, 어떤 두 텍스처가 이웃해도 이어져야 한다 = **모든 변형의 변 픽셀이 완전히 동일해야 한다**. 그래서 변형을 이렇게 만든다:
+유니티 Rule Tile은 변형을 **런타임에 무작위로** 고르므로, 어떤 두 텍스처가 이웃해도 이어져야 한다 = **모든 변형의 변 픽셀이 완전히 동일해야 한다**. 그래서 변형은 "정규 텍스처 안쪽에 다른 크롭을 **이식**한 것"으로 만든다(`patchGraft.graftInterior`).
+
+### v2의 알파 램프가 왜 틀렸나
+
+v2까지는 이랬다:
 
 ```
-variant = (1 - a(x,y)) * canonical + a(x,y) * crop
-a = 0  (변에서 EDGE_HOLD_PX=2px 까지)      → 변 근처는 정규 텍스처 그대로
-a: 0→1 (VARIANT_RAMP_RATIO=0.12 구간, 스무스스텝)
-a = 1  (내부)                              → 패널의 다른 위치를 크롭한 것 = 랜덤성
+variant = (1 - a(x,y)) * canonical + a(x,y) * crop     ← 폐기됨
+a = 0 (변에서 2px) → a: 0→1 (0.12 구간 스무스스텝) → a = 1 (내부)
 ```
+
+변 픽셀 계약은 지켜졌고 셀프체크의 변 픽셀·wrap·내부 랜덤성 게이트도 **전부 통과했다.** 그런데도 실사용에서 "외곽과의 연결성이 매우 부족하다"는 결과가 나왔다 — 램프 구간이 **두 텍스처의 평균**이기 때문이다:
+
+- 타일마다 흐릿한 **사각 액자**가 남는다(선명한 정규 링 ↔ 선명한 크롭 내부 ↔ 그 사이 탁한 띠). 세트를 깔면 액자가 셀마다 반복돼 격자로 읽힌다.
+- 암반 층리처럼 방향성 있는 무늬는 링에 닿는 순간 뭉개져 **끊긴다**. 평균은 어긋난 무늬를 부드럽게 만들 뿐 맞물리게 하지 못한다.
+- 램프 폭을 넓히든 좁히든 못 고친다. 경계 렌더링에서 이미 폐기한 "밴드 알파 블렌딩"과 **같은 종류의 오류**다.
+
+### v3: 최소오차 컷 + 그래디언트 도메인 이식
+
+텍스처 합성의 정석 2단을 쓴다. 근거와 상수는 `src/lib/tilemap/patchGraft.ts` 상단 주석에 있다.
+
+1. **크롭 선택** — 저불일치 수열이 정한 기준 위치 주변 9곳을 보고, 정규 텍스처의 **테두리 띠와 가장 잘 맞는** 크롭을 고른다(`bandMismatch`). 흔드는 반경은 좁게(`0.09 * T`) 둔다 — 넓히면 여러 변형이 같은 "잘 맞는 자리"로 몰려 변형끼리 비슷해진다. 다양성은 기준 위치가, 접합은 지역 탐색이 담당한다.
+2. **최소오차 컷** (Efros & Freeman, image quilting) — 변에서 `BAND_RATIO = 0.22` 픽셀까지의 띠 안에서, 정규와 크롭이 **이미 비슷한 픽셀을 따라가는 경로**를 4변 각각 DP로 찾는다(상태 = (변 위 위치, 인셋 깊이), 이웃 간 깊이 변화 ≤ 1). 경로 바깥은 100% 정규, 안쪽은 100% 크롭 — **섞지 않는다.**
+3. **그래디언트 도메인 이식** (Poisson seamless cloning) — 컷을 잘 골라도 두 크롭의 전체 밝기·색조는 다르다. 크롭의 **기울기만** 가져오고 컷 위의 값은 정규에 맞춘다: 조화 함수(막) `u`를 경계값 `canonical - crop`으로 풀어 `crop + u`를 쓴다. 저주파 차이만 전역에 퍼지므로 **디테일은 하나도 흐려지지 않고** 이음매만 사라진다.
+
+- **엣지 계약이 더 강해졌다.** 컷 깊이 하한이 `EDGE_HOLD_PX = 2`이므로 변 근처는 항상 마스크 바깥 = 정규를 **그대로 복사**한다. 막은 마스크 안쪽에만 더해지므로 변 픽셀은 정규와 **비트 단위로 동일**하다(v2는 램프 계산의 반올림 때문에 허용 오차 1이 필요했다). 계약이 알파 계산의 성질이 아니라 **마스크의 성질**이 되었다.
+- **막은 pull-push 피라미드 + 가우스-자이델 8스윕**으로 푼다. 컷이 오차 최소 경로를 타서 경계값이 애초에 작으므로 엄밀한 조화성은 눈에 영향이 없다. O(N)이라 변형 128장을 합성해도 체감되지 않는다.
+- 부수 효과: 변형 내부가 `makeSeamless` 크로스페이드를 거치지 않은 **생크롭**이라, 정규 텍스처에 남는 크로스페이드 유령이 변형에는 나타나지 않는다.
+
+### 공통 사항
 
 - `crop`은 `makeSeamless`를 거치지 않는다 — 변이 어차피 정규 텍스처라 필요 없고, 크로스페이드 유령도 피한다.
-- 크롭 위치는 **황금비 저불일치 수열**로 패널 전체에 흩는다. 규칙적 격자로 잡으면 변형끼리 겹치는 영역이 많아 차이가 잘 안 난다.
+- 크롭 기준 위치는 **황금비 저불일치 수열**로 패널 전체에 흩는다. 규칙적 격자로 잡으면 변형끼리 겹치는 영역이 많아 차이가 잘 안 난다.
 - 슬롯마다 베이스·오버레이 변형을 **독립 해시로** 고른다(8 x 8 = 64 조합). 결정적이라 같은 시트는 항상 같은 결과다.
-- 스와치 여유가 없으면(모델이 규격보다 작은 이미지를 준 경우) 변형 없이 정규 1장으로 폴백한다.
+- 스와치 여유가 없으면(모델이 규격보다 작은 이미지를 준 경우) 변형 없이 정규 1장으로 폴백한다. 1:1 크롭이 불가능한 크기(`sw < T || sh < T`)도 같은 폴백이다.
 - 베이스 지형은 맵의 대부분을 덮으므로 **베이스 타일도 8장** 내보낸다. 유니티에서는 Random Tile(2D Tilemap Extras)로 묶어 쓴다.
 
-> 전용 게이트가 있다(`재질 변형 — 변 픽셀 동일성 + 내부 랜덤성`). 변 픽셀은 **정확히 일치**(허용 오차 1), 내부는 평균 채널 차 2 이상이어야 통과한다. 두 조건을 함께 재는 이유: 변만 검사하면 "변형이 사실상 같아짐" 회귀를 놓치고, 내부만 검사하면 접합이 깨진 걸 놓친다.
+> 전용 게이트가 둘이다. `재질 변형 — 변 픽셀 동일성 + 내부 랜덤성`은 계약을, **`이식 (최소오차 컷 + 그래디언트 도메인)`** 은 이식 원리 자체를 잰다. 후자가 이번 회귀를 잡는 게이트다 — 앞의 것들은 v2도 전부 통과했기 때문이다.
 
 ## 경계 렌더링 — 섞지 않고 맞물린다
 
@@ -306,7 +329,7 @@ a = 1  (내부)                              → 패널의 다른 위치를 크�
 
 `npm run dev` 후 `http://localhost:1420/dev/tilemap-check.html`. 프로덕션 번들에는 포함되지 않는다.
 
-단계별 게이트 22건:
+단계별 게이트 23건:
 1. `makeSeamless` wrap 연속성 — 판정은 **분위수 기준**(경계 스텝 ≤ 내부 스텝 P95). "좌열==우열 픽셀 동일"은 열 중복을 뜻하므로 틀린 기준이고, 내부 *평균* 대비 배수도 틀린 기준이다(크로스페이드가 기울기를 위치별로 재분배함)
 2. 엣지 계약 전수 — 인접 쌍 2048건, 베이스 이웃 변 512건, 전이 위치 768건
 3. signature 테이블 — 16/47종, 축약 멱등성, raw 256종 슬롯 해석
@@ -314,6 +337,7 @@ a = 1  (내부)                              → 패널의 다른 위치를 크�
 5. 경계 품질 — 중간색 픽셀 비율(선명도) + 아웃라인 접합 연속성
 6. 경계선 프리셋 9종 정합성·형태 상이성
 7. 재질 변형(룰타일) — 변 픽셀 동일성 + 내부 랜덤성
+7b. **이식(컷 + 그래디언트)** — 단색 2종 이식에 **중간색 0** + 변 픽셀 비트 동일 + 코어 기울기 보존. 알파 램프였다면 중간색이 약 31%(16,384px 중 5,152px)라 즉시 실패한다
 8. 변형 세트(variation) — 타일 간 변 동일성(65,024 표본) + 정규 텍스처 wrap 연속성 + 변형의 경계 스텝 상속 + 내부 랜덤성 + **풀 > 슬롯**
 9. 계단식 아웃라인 — 단방향·순서·폭 (SDF 재계산 대조)
 10. 투명 지형 — 알파 0 · 검은 테두리 없음 · 아웃라인 관통
@@ -337,7 +361,8 @@ a = 1  (내부)                              → 패널의 다른 위치를 크�
 | 결과물이 흐릿함 | 두 가지가 원인이었고 v2 합성기에서 고쳤다: ① 재질을 타일 크기로 **다운스케일**하던 것을 1:1 크롭으로 교체 ② `makeSeamless` 코사인 창이 하필 `t=0.25`(= 인셋 `k=T/4`, 지형 경계가 지나가는 자리)에서 50:50 블렌딩이라 경계가 뭉개졌던 것을 **평탄부를 가진 창**으로 교체. 두 지점을 되돌리면 흐림이 재발한다 |
 | 지형을 바꿰도 경계 모양이 똑같음 | 경계선 프리셋을 안 바꾼 것 — 설정 패널의 "경계선 모양" 썸네일 드롭다운 |
 | 64장이 전부 같은 재질로 보임 | 텍스처 변형이 죽었다 — 위 "재질 랜덤성" 절. `dev/tilemap-check.html`의 "재질 변형" 게이트가 내부 상이성 하한(평균 차 2)으로 잡는다. 스와치가 균질을 넘어 **완전 단색**이면 변형해도 차이가 없는 게 정상이다 |
-| 변형을 넣었더니 격자선이 다시 보임 | 변형의 변 픽셀이 정규 텍스처와 어긋났다(`EDGE_HOLD_PX`/`VARIANT_RAMP_RATIO`를 건드렸거나 `crop`을 변까지 덮게 만든 경우). "재질 변형" 게이트의 변 픽셀 검사가 잡는다 |
+| 변형을 넣었더니 격자선이 다시 보임 | 변형의 변 픽셀이 정규 텍스처와 어긋났다(`EDGE_HOLD_PX`를 건드렸거나 이식 마스크가 변까지 침범한 경우). "재질 변형"·"이식" 게이트의 변 픽셀 검사가 잡는다 |
+| 타일 안쪽에 흐릿한 사각 액자가 보임 / 무늬가 테두리에서 끊김 | 이식이 알파 블렌딩으로 되돌아갔다 — 위 "재질 랜덤성" 절. `dev/tilemap-check.html`의 "이식" 게이트가 중간색 픽셀로 즉시 잡는다 |
 | 각진 프리셋인데 여전히 부드러움 | `angular` 플래그가 `valueNoise`까지 전달되지 않았다 — `computeWarp`가 네 옥타브 + 블레이드 전부에 `ang`를 넘겨야 한다 |
 | 아웃라인이 하나만 보임 | 보조 띠 UI가 1단계 `enabled`에 종속이라 1단계가 꺼져 있으면 노출되지 않는다. 또는 2단계 폭이 0이다 |
 | 두 아웃라인이 서로를 감싼다 | 대칭(`|SDF| < 반두께`) 방식으로 되돌아갔다 — 위 "계단식 단방향 띠" 절. `dev/tilemap-check.html`의 "계단식 아웃라인" 게이트가 잡는다 |
@@ -400,7 +425,7 @@ AI에게는 **재질 스와치 1장**(캔버스 전체가 균질한 재질 필�
 `buildTextureVariants`는 룰타일의 "재질 랜덤성"과 **같은 함수**다(`seamlessTexture.ts`). 변 픽셀 공유 계약을 한 곳에만 두기 위해서다 — 복사해 두면 한쪽만 고쳤을 때 그쪽 접합만 조용히 깨진다.
 
 ## 핵심 흐름
-1. `processNewSheet`: 스와치를 `buildVariationTileSet`으로 합성 → `imageStorage`에 스와치 저장 → **항상 슬롯 전체 할당**(`composerVersion = 2` 기록)
+1. `processNewSheet`: 스와치를 `buildVariationTileSet`으로 합성 → `imageStorage`에 스와치 저장 → **항상 슬롯 전체 할당**(`composerVersion = 3` 기록)
 2. 슬롯별 교체: `TilemapResultView`에서 슬롯 선택 → `reshuffleSlots(slotIndexes)`가 **같은 스와치 풀의 안 쓰인 변형**으로 즉시 재배정. 생성 API를 부르지 않는다(비용 0, 대기 0). 자기 셀을 다시 받는 배정은 건너뛰므로 선택한 슬롯은 **항상 바뀐다**. `locked: true` 슬롯은 제외하고, 슬롯 조회는 배열 순서가 아니라 `slotIndex` 기준(`Map`)이다
 3. 그리드/모드 변경 시 다음 생성에서 풀 리셋(`setChanged`)
 
@@ -414,7 +439,7 @@ AI에게는 **재질 스와치 1장**(캔버스 전체가 균질한 재질 필�
 ## 검증
 `dev/tilemap-check.html`의 `변형 세트` 게이트가 64장 전수로 잰다:
 - **풀 > 슬롯** — 슬롯 교체가 의미를 갖는 전제
-- **타일 간 변 픽셀 동일성** — 65,024 표본, 허용 오차 1(PNG 왕복 반올림)
+- **타일 간 변 픽셀 동일성** — 65,024 표본, 허용 오차 **0**(v3부터 비트 단위로 같다)
 - **정규 텍스처 wrap 연속성** — 경계 스텝 ≤ 내부 스텝 P95
 - **변형의 경계 스텝 상속** — 모든 변형의 seamX/seamY가 정규와 일치
 - **내부 상이성** — 평균 채널 차 2 이상
@@ -425,7 +450,8 @@ AI에게는 **재질 스와치 1장**(캔버스 전체가 균질한 재질 필�
 | 증상 | 원인 |
 |------|------|
 | 랜덤 배치에서 이음새가 어긋남 | 보유 세트가 **레거시 v1**(잘라 만든 세트)이다 — 결과 뷰 상단 경고 배너를 확인하고 다시 생성한다. 새로 생성한 세트에서 발생한다면 엣지 계약이 깨진 것이니 `변형 세트` 게이트를 돌린다 |
-| 격자선이 보임 | 변형의 변 픽셀이 정규 텍스처와 어긋났다(`EDGE_HOLD_PX`/`VARIANT_RAMP_RATIO`를 건드렸거나 `crop`이 변까지 덮는 경우). 게이트의 변 픽셀 검사가 잡는다 |
+| 격자선이 보임 | 변형의 변 픽셀이 정규 텍스처와 어긋났다(`EDGE_HOLD_PX`를 건드렸거나 이식 마스크가 변까지 침범한 경우). 게이트의 변 픽셀 검사가 잡는다 |
+| 내부 변형은 다양한데 외곽과 이어지지 않음 / 사각 액자가 보임 | v2의 알파 램프다. `composerVersion`이 3 미만이면 재생성이 필요하고, 새 세트에서 발생하면 이식이 블렌딩으로 되돌아간 것 — "이식" 게이트가 잡는다 |
 | 타일이 전부 같아 보임 | 스와치가 균질을 넘어 **완전 단색**이면 어디를 크롭해도 같으므로 정상이다. 그게 아니면 변형 생성이 죽은 것 — 게이트의 내부 상이성 하한(평균 차 2)이 잡는다 |
 | 디테일이 반투명하게 겹쳐 보임 | 스와치에 꽃·돌 같은 개별 디테일이 들어갔다. `makeSeamless`가 크로스페이드라 생기는 유령이며, 프롬프트가 균질 필드를 요구하는 이유다 |
 | 재진입하니 타일이 달라짐 | `VARIATION_COMPOSER_VERSION`을 올렸는데 세션의 값이 옛것이다 — 레거시로 분기해 분할 경로를 탄다. 재생성하면 맞춰진다 |

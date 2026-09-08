@@ -169,11 +169,15 @@ export function useTilemapProcessing({
      * 레거시 변형 세트(v1)는 시트가 **타일 시트**다 — 스와치로 해석하면 결과가 완전히
      * 달라지므로 그때만 분할 경로를 유지한다.
      *
+     * 판정 기준은 "**버전이 없는가**"이지 "현재 버전과 다른가"가 아니다. v2 이상은 어느
+     * 버전이든 시트가 **재질 스와치**라서 지금 합성기로 다시 만들면 된다(합성 결과는
+     * 달라지지만 `needsRecompose` 배너가 재생성을 안내한다). `!== 현재 버전`으로 재면
+     * 합성기 버전을 올릴 때마다 v2 세션이 스와치를 타일 시트로 잘리는 회귀가 난다.
+     *
      * 룰타일은 버전으로 분기하지 않는다. 예전 룰타일 세션도 지금까지 `buildRuleTileSet`으로
-     * 복원해 왔고, 그 동작을 바꾸면 이번 변경과 무관한 기존 세션의 화면이 달라진다
-     * (`needsRecompose` 배너로 재생성을 안내하는 것까지가 이 변경의 범위다).
+     * 복원해 왔고, 그 동작을 바꾸면 이번 변경과 무관한 기존 세션의 화면이 달라진다.
      */
-    const legacyVariation = restoreMode === 'variation' && !isCurrentComposerVersion(tilemapData);
+    const legacyVariation = restoreMode === 'variation' && tilemapData.composerVersion == null;
     const referenced = referencedSheetIds(tilemapData);
 
     (async () => {
