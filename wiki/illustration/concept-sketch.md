@@ -9,10 +9,30 @@
 | 진입점 | 세션 | 라벨 | 영속성 |
 |--------|------|------|--------|
 | `IllustrationSetupPanel`의 "구도 스케치" 섹션 | ILLUSTRATION | **등록 캐릭터 버튼** — 이름을 그대로 꽂는다 | `illustrationData.conceptSketch`에 저장 |
-| `GeneratorSettings`의 "구도 스케치" 섹션 | `SKETCH_ENABLED_SESSIONS` (BASIC·STYLE·BACKGROUND·UI·PIXELART_BACKGROUND) | **자유 텍스트** — "폭포", "성문"처럼 무엇을 그릴지 | **저장하지 않는다** (아래 참조) |
+| `GeneratorSettings`의 "구도 스케치" 섹션 | `SKETCH_ENABLED_SESSIONS` (아래) | **자유 텍스트** — "폭포", "왼손에 검" | **저장하지 않는다** (아래 참조) |
 
 - `characters` prop이 **선택**이다. 비어 있으면 캐릭터 버튼 대신 자유 라벨 입력이 뜨고 헤더 문구도 바뀐다. `SketchLabel.characterId`가 원래 optional이라 자유 라벨이 그대로 들어맞는다.
-- 캐릭터가 하나를 채우는 세션(CHARACTER·ICON·LOGO·PIXELART_CHARACTER 등)은 그릴 구도가 없어 제외했고, **TILEMAP은 프롬프트가 요구하는 레이아웃이 이미 고정**이라 스케치가 방해가 된다.
+- `aspectRatio` prop을 넘기면 **캔버스가 그 비율로 뜬다**(안 넘기면 기존 960x600). 스케치 프레임이 출력 비율과 같아야 "대상이 화면에서 얼마나 크게, 어디까지 보이는지"를 그린 대로 얻는다 — 16:10 고정 캔버스에 그려 놓고 1:1로 생성하면 프레이밍 의도가 그대로 깨진다.
+
+## 스케치를 무엇으로 읽는가 — 세션마다 다르다
+
+`lib/prompts/sketchGuide.ts`의 `SKETCH_GUIDE_KIND` 맵이 **지원 여부와 프롬프트 문구를 함께** 정한다(단일 출처). 여기 없는 세션은 버튼도 안 뜬다.
+
+| kind | 세션 | 스케치에서 가져오는 것 |
+|------|------|----------------------|
+| `layout` | BASIC · STYLE · BACKGROUND · UI · PIXELART_BACKGROUND | 화면 **안에 무엇을 어디에** 배치할지 (placement·scale·framing) |
+| `subject` | CHARACTER · PIXELART_CHARACTER · ICON · PIXELART_ICON | 대상 하나의 **포즈·방향·보이는 면** (limb placement, 어느 면이 정면인지, 실루엣, 크롭) |
+
+`subject`가 생긴 이유: "무릎 굽힌 채 왼쪽을 보는 자세", "손잡이가 정면으로 오게" 같은 건 **말로 정확히 옮기기 어려운데 그림 한 장이면 끝난다.**
+
+### subject 문구가 layout보다 훨씬 센 이유
+
+캐릭터·아이콘 세션의 본문 프롬프트는 "참조 이미지를 **IDENTICAL하게 복제**하라"를 반복한다(`generateCharacterPrompt`). 거기에 거친 스케치를 참조로 끼워 넣으면 모델이 **그것까지 복제 대상**으로 읽어 캐릭터가 낙서처럼 나올 수 있다. 그래서 `subject` 문구는 두 가지를 명시적으로 끊어 준다:
+
+- 이 마지막 장은 **참조 세트가 아니다** — 외형·화풍·색·선 두께·디테일 수준을 여기서 가져오지 말 것
+- **정체성·디자인·의상·색·화풍은 나머지 참조에서** 온다 — 스케치가 그걸 바꿔서는 안 됨
+
+> **제외한 세션**: LOGO(마크 형태 자체가 결과물이라 거친 스케치가 형태를 망칠 수 있다) · ILLUSTRATION(전용 스케치가 이미 있다) · TILEMAP(요구 레이아웃이 이미 고정이라 스케치가 방해).
 
 ### 왜 생성 패널에서는 저장하지 않는가
 
@@ -20,7 +40,7 @@
 
 ### 라벨은 PNG에 굽지 않는다 → 프롬프트에 좌표로 넣어야 한다
 
-`handleSave`는 **라벨을 제외한 스케치 레이어만** export한다(재진입 시 라벨을 다시 드래그·제거할 수 있게 하려고). 즉 **모델은 라벨 텍스트를 보지 못한다.** 그래서 프롬프트에 `"폭포" at (40%, 45%)` 형태로 라벨을 직렬화해 넣는다. 이걸 빠뜨리면 라벨이 결과에 전혀 반영되지 않는다.
+`handleSave`는 **라벨을 제외한 스케치 레이어만** export한다(재진입 시 라벨을 다시 드래그·제거할 수 있게 하려고). 즉 **모델은 라벨 텍스트를 보지 못한다.** 그래서 프롬프트에 `"왼손에 검" at (25%, 50%)` 형태로 직렬화해 넣는다. 이걸 빠뜨리면 라벨이 결과에 전혀 반영되지 않는다.
 
 ## 관련 파일
 
@@ -29,7 +49,8 @@
 - `src/lib/utils/annotationExport.ts` — `exportNodeToDataUrl`(Konva 노드→dataURL, 스케치 PNG 추출에 재사용)
 - `src/types/illustration.ts` — `ConceptSketch`/`SketchLabel`/`CompositionAnalysis`/`CharacterPlacement`
 - `src/components/illustration/IllustrationSetupPanel.tsx` — ILLUSTRATION 진입점. 스케치 섹션 UI + `handleSketchSave`/`handleSketchClear`
-- `src/components/generator/ImageGeneratorPanel.tsx` — 일반 세션 진입점. `SKETCH_ENABLED_SESSIONS`·`conceptSketch` 상태·마지막 reference 첨부·가이드 프롬프트 블록
+- `src/lib/prompts/sketchGuide.ts` — **`SKETCH_GUIDE_KIND`(지원 세션 + 문구 종류의 단일 출처)**, `buildSketchGuideSection`, `isSketchEnabledSession`
+- `src/components/generator/ImageGeneratorPanel.tsx` — 일반 세션 진입점. `conceptSketch` 상태·마지막 reference 첨부·가이드 섹션 결합
 - `src/components/generator/GeneratorSettings.tsx` — "구도 스케치" 섹션(그리기/편집/삭제 + 썸네일)
 
 ## 데이터 모델

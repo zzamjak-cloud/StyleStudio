@@ -16,6 +16,11 @@ interface ConceptSketchPanelProps {
   open: boolean;
   apiKey: string;
   /**
+   * 출력 비율('1:1'·'16:9' 등). 넘기면 캔버스가 **그 비율로** 뜬다 — 그린 프레이밍이 결과
+   * 프레이밍과 같아진다. 안 넘기면 기존 960x600.
+   */
+  aspectRatio?: string;
+  /**
    * 라벨 버튼으로 이름을 꽂을 등록 캐릭터. **ILLUSTRATION 세션에서만 채워진다.**
    * 비어 있으면(배경·픽셀아트 등 일반 세션) 캐릭터 버튼 대신 자유 라벨 입력이 뜬다 —
    * 그쪽에서는 표시할 대상이 캐릭터가 아니라 "여기 폭포", "여기 성" 같은 요소이기 때문.
@@ -28,8 +33,28 @@ interface ConceptSketchPanelProps {
 
 const COLORS = ['#1F2937', '#FF3B30', '#0A84FF', '#34C759'];
 const WIDTHS = [2, 4, 8];
-const STAGE_W = 960;
-const STAGE_H = 600;
+/**
+ * 캔버스가 들어갈 최대 상자. 실제 크기는 `aspectRatio`에 맞춰 이 안에 맞춰진다.
+ *
+ * **스케치 프레임이 실제 출력 비율과 같아야 한다.** 그래야 "대상이 화면에서 얼마나 크게,
+ * 어디까지 보이는지"를 그린 대로 얻는다 — 16:10 고정 캔버스에 그려 놓고 1:1로 생성하면
+ * 프레이밍 의도가 그대로 깨진다. 비율을 안 넘기면(ILLUSTRATION) 기존 960x600을 그대로 쓴다.
+ */
+const STAGE_MAX_W = 960;
+const STAGE_MAX_H = 620;
+const STAGE_DEFAULT_W = 960;
+const STAGE_DEFAULT_H = 600;
+
+/** 'W:H' 비율을 최대 상자 안에 맞춘 캔버스 크기로 바꾼다 */
+function resolveStageSize(aspectRatio?: string): { w: number; h: number } {
+  if (!aspectRatio) return { w: STAGE_DEFAULT_W, h: STAGE_DEFAULT_H };
+  const [rw, rh] = aspectRatio.split(':').map(Number);
+  if (!Number.isFinite(rw) || !Number.isFinite(rh) || rw <= 0 || rh <= 0) {
+    return { w: STAGE_DEFAULT_W, h: STAGE_DEFAULT_H };
+  }
+  const scale = Math.min(STAGE_MAX_W / rw, STAGE_MAX_H / rh);
+  return { w: Math.round(rw * scale), h: Math.round(rh * scale) };
+}
 
 interface SketchStroke {
   id: string;
@@ -57,11 +82,13 @@ function estimateTextWidth(text: string, fontSize: number): number {
 export function ConceptSketchPanel({
   open,
   apiKey,
+  aspectRatio,
   characters = [],
   initial,
   onClose,
   onSave,
 }: ConceptSketchPanelProps) {
+  const { w: STAGE_W, h: STAGE_H } = resolveStageSize(aspectRatio);
   const stageRef = useRef<Konva.Stage>(null);
   const sketchLayerRef = useRef<Konva.Layer>(null); // 라벨 제외, 저장용 export 대상
   const [strokes, setStrokes] = useState<SketchStroke[]>([]);

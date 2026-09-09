@@ -49,7 +49,9 @@
 
 ## 구도 스케치
 
-- `SKETCH_ENABLED_SESSIONS`(BASIC·STYLE·BACKGROUND·UI·PIXELART_BACKGROUND)에서만 "구도 스케치" 섹션이 뜬다. 그린 스케치는 **마지막 참조 이미지**로 붙고 프롬프트가 "마지막 참조는 구도 가이드, 펜선·화풍은 따라 그리지 말 것"을 명시한다.
+- `sketchGuide.SKETCH_GUIDE_KIND`에 있는 세션에서만 "구도 스케치" 섹션이 뜬다. 그린 스케치는 **마지막 참조 이미지**로 붙고 프롬프트가 "마지막 참조는 스케치, 펜선은 그리지 말 것"을 명시한다.
+- **세션에 따라 스케치를 읽는 방식이 다르다** — 배경·UI는 `layout`(배치), 캐릭터·아이콘은 `subject`(포즈·방향·보이는 면). 캐릭터 쪽은 스케치가 정체성을 흔들지 않도록 문구가 훨씬 강하다.
+- 캔버스는 **선택된 출력 비율로** 뜬다 — 그린 프레이밍이 그대로 결과 프레이밍이 된다.
 - 모달은 ILLUSTRATION의 `ConceptSketchPanel`을 **그대로 재사용**한다 — 캐릭터가 없으므로 자유 텍스트 라벨 모드로 뜬다. 상세는 [illustration/concept-sketch.md](../illustration/concept-sketch.md).
 - **세션에 저장하지 않는다**(이번 생성용 가이드). 이유는 위 문서 참조.
 

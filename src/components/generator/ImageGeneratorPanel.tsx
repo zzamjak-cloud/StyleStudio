@@ -9,7 +9,7 @@ import { ImageAnalysisResult } from '../../types/analysis';
 import { SessionType, GenerationHistoryEntry } from '../../types/session';
 import { ConceptSketch } from '../../types/illustration';
 import { ConceptSketchPanel } from '../illustration/conceptSketch/ConceptSketchPanel';
-import { formatCompositionForPrompt } from '../../lib/sketch/analyzeSketch';
+import { buildSketchGuideSection, isSketchEnabledSession } from '../../lib/prompts/sketchGuide';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { IllustrationSessionData, ILLUSTRATION_LIMITS } from '../../types/illustration';
@@ -385,18 +385,6 @@ interface GeneratorState {
   imageQuality: ImageQualityOption;
 }
 
-/**
- * 구도 스케치를 열 수 있는 세션.
- *
- * 화면 안에서 **무엇을 어디에 놓을지**가 결과를 가르는 세션만 넣는다. 캐릭터·아이콘·로고처럼
- * 대상 하나가 화면을 채우는 세션은 구도를 그릴 게 없고, TILEMAP은 프롬프트가 요구하는
- * 레이아웃이 이미 고정이라 스케치가 오히려 방해가 된다.
- *
- * ILLUSTRATION은 여기 없다 — 그쪽은 `IllustrationSetupPanel`이 캐릭터 라벨까지 붙는
- * 전용 스케치 섹션을 이미 갖고 있고 `illustrationData.conceptSketch`에 영속화한다.
- */
-const SKETCH_ENABLED_SESSIONS: SessionType[] = ['BASIC', 'STYLE', 'BACKGROUND', 'UI', 'PIXELART_BACKGROUND'];
-
 export function ImageGeneratorPanel({
   apiKey,
   analysis,
@@ -468,7 +456,7 @@ export function ImageGeneratorPanel({
   */
   const [conceptSketch, setConceptSketch] = useState<ConceptSketch | null>(null);
   const [showSketchPanel, setShowSketchPanel] = useState(false);
-  const canUseSketch = SKETCH_ENABLED_SESSIONS.includes(sessionType);
+  const canUseSketch = isSketchEnabledSession(sessionType);
 
   // 상태 업데이트 헬퍼 함수 (useCallback으로 안정화하여 자식 메모이제이션 유지)
   const updateState = useCallback((updates: Partial<GeneratorState>) => {
@@ -739,29 +727,11 @@ export function ImageGeneratorPanel({
       }
 
       /*
-        구도 스케치 가이드 블록.
-
-        ILLUSTRATION의 `buildIllustrationPrompt`가 쓰는 문구와 같은 계약이다 — **마지막 참조가
-        구도 가이드**이고, 화풍·펜선은 절대 따라 그리지 말라는 것. 이 두 가지를 빼면 모델이
-        거친 스케치의 선을 그대로 결과에 그린다(어노테이션 마커와 같은 실패 양상).
-        분석(`analysis`)이 있으면 배치 규칙을 텍스트로도 덧붙여 지시를 이중화한다.
+        구도 스케치 가이드. 세션 종류에 따라 문구가 완전히 달라진다(배치 가이드 vs 포즈·방향
+        가이드) — 근거와 문구는 `lib/prompts/sketchGuide.ts`에 모여 있다.
       */
-      if (canUseSketch && conceptSketch?.sketchPng) {
-        const labelHint = conceptSketch.labels.length > 0
-          ? `\nLabels in the sketch mark what belongs where: ${conceptSketch.labels
-              .map((l) => `"${l.text}" at (${Math.round(l.x * 100)}%, ${Math.round(l.y * 100)}%)`)
-              .join(', ')}. Render those elements at those positions; do not draw the label text itself.`
-          : '';
-        const analysisHint = conceptSketch.analysis
-          ? `\n${formatCompositionForPrompt(conceptSketch.analysis)}`
-          : '';
-        finalPrompt +=
-          '\n\n📎 The LAST reference image is a USER COMPOSITION SKETCH (a rough hand drawing).' +
-          ' DO NOT copy its art style, pen lines, or colors. Use it ONLY as a layout guide —' +
-          ' match the placement, scale and framing of the shapes it indicates.' +
-          ' The final image must be rendered in the intended art style, not the sketch style.' +
-          labelHint +
-          analysisHint;
+      if (canUseSketch) {
+        finalPrompt += buildSketchGuideSection(sessionType, conceptSketch);
       }
 
       logger.debug('🎨 최종 프롬프트 (영어):', finalPrompt);
@@ -1403,6 +1373,8 @@ export function ImageGeneratorPanel({
         <ConceptSketchPanel
           open={showSketchPanel}
           apiKey={apiKey}
+          // 캔버스를 출력 비율과 같게 — 그린 프레이밍이 그대로 결과 프레이밍이 된다
+          aspectRatio={aspectRatio}
           initial={conceptSketch ?? undefined}
           onClose={() => setShowSketchPanel(false)}
           onSave={(sketch) => setConceptSketch(sketch)}
