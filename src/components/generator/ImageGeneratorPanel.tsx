@@ -7,6 +7,9 @@ import { join } from '@tauri-apps/api/path';
 import { getAiGenRoot, getSessionImageFolder } from '../../lib/config/paths';
 import { ImageAnalysisResult } from '../../types/analysis';
 import { SessionType, GenerationHistoryEntry } from '../../types/session';
+import { ConceptSketch } from '../../types/illustration';
+import { ConceptSketchPanel } from '../illustration/conceptSketch/ConceptSketchPanel';
+import { formatCompositionForPrompt } from '../../lib/sketch/analyzeSketch';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { IllustrationSessionData, ILLUSTRATION_LIMITS } from '../../types/illustration';
@@ -382,6 +385,18 @@ interface GeneratorState {
   imageQuality: ImageQualityOption;
 }
 
+/**
+ * 구도 스케치를 열 수 있는 세션.
+ *
+ * 화면 안에서 **무엇을 어디에 놓을지**가 결과를 가르는 세션만 넣는다. 캐릭터·아이콘·로고처럼
+ * 대상 하나가 화면을 채우는 세션은 구도를 그릴 게 없고, TILEMAP은 프롬프트가 요구하는
+ * 레이아웃이 이미 고정이라 스케치가 오히려 방해가 된다.
+ *
+ * ILLUSTRATION은 여기 없다 — 그쪽은 `IllustrationSetupPanel`이 캐릭터 라벨까지 붙는
+ * 전용 스케치 섹션을 이미 갖고 있고 `illustrationData.conceptSketch`에 영속화한다.
+ */
+const SKETCH_ENABLED_SESSIONS: SessionType[] = ['BASIC', 'STYLE', 'BACKGROUND', 'UI', 'PIXELART_BACKGROUND'];
+
 export function ImageGeneratorPanel({
   apiKey,
   analysis,
@@ -441,6 +456,19 @@ export function ImageGeneratorPanel({
     imageModel: sessionType === 'TILEMAP' ? TILEMAP_FIXED_IMAGE_MODEL : DEFAULT_IMAGE_MODEL,
     imageQuality: 'medium',
   });
+
+  /*
+    구도 스케치 — **이번 생성에만 쓰는 가이드**라 세션에 저장하지 않는다.
+
+    프롬프트(`additionalPrompt`)도 패널 상태라 세션 전환 시 사라지는데, 스케치만 영속화하면
+    "프롬프트는 날아갔는데 스케치는 남아 있는" 어긋난 상태가 된다. 게다가 스케치 PNG는
+    data URL이라 세션에 넣으면 저장 파일이 커진다(ILLUSTRATION이 이미 그렇게 하고 있어
+    그 비용을 전 세션으로 퍼뜨릴 이유가 없다).
+    영속화가 필요해지면 `illustrationData.conceptSketch`처럼 세션 레벨로 올리면 된다.
+  */
+  const [conceptSketch, setConceptSketch] = useState<ConceptSketch | null>(null);
+  const [showSketchPanel, setShowSketchPanel] = useState(false);
+  const canUseSketch = SKETCH_ENABLED_SESSIONS.includes(sessionType);
 
   // 상태 업데이트 헬퍼 함수 (useCallback으로 안정화하여 자식 메모이제이션 유지)
   const updateState = useCallback((updates: Partial<GeneratorState>) => {
@@ -710,6 +738,32 @@ export function ImageGeneratorPanel({
         });
       }
 
+      /*
+        구도 스케치 가이드 블록.
+
+        ILLUSTRATION의 `buildIllustrationPrompt`가 쓰는 문구와 같은 계약이다 — **마지막 참조가
+        구도 가이드**이고, 화풍·펜선은 절대 따라 그리지 말라는 것. 이 두 가지를 빼면 모델이
+        거친 스케치의 선을 그대로 결과에 그린다(어노테이션 마커와 같은 실패 양상).
+        분석(`analysis`)이 있으면 배치 규칙을 텍스트로도 덧붙여 지시를 이중화한다.
+      */
+      if (canUseSketch && conceptSketch?.sketchPng) {
+        const labelHint = conceptSketch.labels.length > 0
+          ? `\nLabels in the sketch mark what belongs where: ${conceptSketch.labels
+              .map((l) => `"${l.text}" at (${Math.round(l.x * 100)}%, ${Math.round(l.y * 100)}%)`)
+              .join(', ')}. Render those elements at those positions; do not draw the label text itself.`
+          : '';
+        const analysisHint = conceptSketch.analysis
+          ? `\n${formatCompositionForPrompt(conceptSketch.analysis)}`
+          : '';
+        finalPrompt +=
+          '\n\n📎 The LAST reference image is a USER COMPOSITION SKETCH (a rough hand drawing).' +
+          ' DO NOT copy its art style, pen lines, or colors. Use it ONLY as a layout guide —' +
+          ' match the placement, scale and framing of the shapes it indicates.' +
+          ' The final image must be rendered in the intended art style, not the sketch style.' +
+          labelHint +
+          analysisHint;
+      }
+
       logger.debug('🎨 최종 프롬프트 (영어):', finalPrompt);
 
       // 3단계: 이미지 생성
@@ -743,6 +797,16 @@ export function ImageGeneratorPanel({
         finalReferenceImages = await Promise.all(
           referenceImages.map((img) => resolveStoredImage(img))
         );
+      }
+
+      /*
+        구도 스케치를 **마지막 reference**로 붙인다. ILLUSTRATION이 쓰는 규약과 같다 —
+        프롬프트가 "마지막 참조는 구도 가이드"라고 명시하므로 순서가 계약이다.
+        참조가 하나도 없던 경우(텍스트 생성)에도 스케치만 단독으로 붙는다.
+      */
+      if (canUseSketch && conceptSketch?.sketchPng) {
+        finalReferenceImages = [...(finalReferenceImages ?? []), conceptSketch.sketchPng];
+        logger.debug('   - 구도 스케치 1장 첨부 (마지막 reference)');
       }
 
       const callbacks = {
@@ -1301,6 +1365,10 @@ export function ImageGeneratorPanel({
           availableModels={getAvailableImageModels()}
           supportedAspectRatios={getImageModelDefinition(imageModel).supports.aspectRatios}
           supportedQualities={getImageModelDefinition(imageModel).supports.qualities}
+          canUseSketch={canUseSketch}
+          sketchThumb={conceptSketch?.sketchPng ?? null}
+          onOpenSketch={() => setShowSketchPanel(true)}
+          onClearSketch={() => setConceptSketch(null)}
           supportedImageSizes={getImageModelDefinition(imageModel).supports.imageSizes}
           cameraAngle={cameraAngle}
           cameraLens={cameraLens}
@@ -1328,6 +1396,18 @@ export function ImageGeneratorPanel({
         />
       </div>
 
+
+      {/* 구도 스케치 모달 — ILLUSTRATION의 스케치 패널을 그대로 재사용한다.
+          그쪽은 캐릭터 라벨을 붙이지만 여기서는 등록 캐릭터가 없으므로 자유 라벨 모드로 뜬다 */}
+      {canUseSketch && (
+        <ConceptSketchPanel
+          open={showSketchPanel}
+          apiKey={apiKey}
+          initial={conceptSketch ?? undefined}
+          onClose={() => setShowSketchPanel(false)}
+          onSave={(sketch) => setConceptSketch(sketch)}
+        />
+      )}
 
       {/* 도움말 팝업 */}
       {showHelp && (

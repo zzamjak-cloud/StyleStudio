@@ -59,6 +59,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 컨셉 3K 선택 시 크기 오류 / 게임 플레이 방식 생성에 반영 안 됨 | `concept/overview.md` |
 | 컨셉 히스토리 복원·커스텀 장르 유실·orphan 미정리 | `concept/overview.md` |
 | 일러스트 드롭했는데 이미지 안 들어감 / 여러 카드 동시 하이라이트 | `illustration/overview.md` |
+| 구도 스케치 버튼이 안 보임 / 스케치가 결과에 반영 안 됨 | `illustration/concept-sketch.md` |
 | 투명 PNG가 검게 생성 / 생성 버튼 계속 비활성 | `illustration/overview.md` |
 | 저장된 구도 스케치 라벨이 구워져 이동 불가 / 재진입 시 펜 선 사라짐 | `illustration/concept-sketch.md` |
 | 스케치 분석 결과가 생성에 반영 안 됨 / 라벨 위 그려짐 | `illustration/concept-sketch.md` |

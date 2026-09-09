@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { Languages, Wand2, HelpCircle, X, AlertTriangle, Camera, ChevronDown } from 'lucide-react';
+import { Languages, Wand2, HelpCircle, X, AlertTriangle, Camera, ChevronDown, Pencil } from 'lucide-react';
 import { SessionType } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ReferenceDocument } from '../../types/referenceDocument';
@@ -54,6 +54,12 @@ interface GeneratorSettingsProps {
   availableModels: ImageModelDefinition[];
   supportedAspectRatios: AspectRatioOption[];
   supportedQualities: ImageQualityOption[];
+  /** 구도 스케치를 지원하는 세션인지 (부모가 판정) */
+  canUseSketch: boolean;
+  /** 그려 둔 스케치 PNG(data URL). 없으면 '구도 그리기' 버튼만 뜬다 */
+  sketchThumb: string | null;
+  onOpenSketch: () => void;
+  onClearSketch: () => void;
   supportedImageSizes: ImageSizeOption[];
 
   // 참조 문서 (UI 세션용)
@@ -110,6 +116,10 @@ function GeneratorSettingsComponent({
   availableModels,
   supportedAspectRatios,
   supportedQualities,
+  canUseSketch,
+  sketchThumb,
+  onOpenSketch,
+  onClearSketch,
   supportedImageSizes,
   cameraAngle,
   cameraLens,
@@ -430,6 +440,45 @@ function GeneratorSettingsComponent({
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
                 />
               </div>
+            </div>
+          )}
+
+          {/* 구도 스케치 — 화면 안 배치가 결과를 가르는 세션에서만 노출한다.
+              그린 스케치는 마지막 참조 이미지로 붙고 프롬프트가 "구도 가이드"라고 명시한다 */}
+          {canUseSketch && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">구도 스케치</label>
+              {sketchThumb ? (
+                <div className="flex items-center gap-2">
+                  <img
+                    src={sketchThumb}
+                    alt="구도 스케치 미리보기"
+                    className="w-16 h-12 object-contain bg-white border border-gray-200 rounded"
+                  />
+                  <button
+                    onClick={onOpenSketch}
+                    className="flex-1 px-2 py-2 text-sm rounded-lg border-2 border-purple-200 text-purple-700 bg-purple-50 hover:border-purple-400"
+                  >
+                    편집
+                  </button>
+                  <button
+                    onClick={onClearSketch}
+                    className="px-2 py-2 text-sm rounded-lg border-2 border-gray-200 text-gray-600 bg-white hover:border-red-300 hover:text-red-600"
+                  >
+                    삭제
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={onOpenSketch}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm rounded-lg border-2 border-dashed border-gray-300 text-gray-600 bg-white hover:border-purple-400 hover:text-purple-700"
+                >
+                  <Pencil size={14} /> 구도 그리기
+                </button>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                거친 도형으로 배치만 잡으면 됩니다. 펜 선과 화풍은 결과에 반영되지 않습니다.
+              </p>
             </div>
           )}
 

@@ -15,7 +15,12 @@ import { logger } from '../../../lib/logger';
 interface ConceptSketchPanelProps {
   open: boolean;
   apiKey: string;
-  characters: IllustrationCharacter[];
+  /**
+   * 라벨 버튼으로 이름을 꽂을 등록 캐릭터. **ILLUSTRATION 세션에서만 채워진다.**
+   * 비어 있으면(배경·픽셀아트 등 일반 세션) 캐릭터 버튼 대신 자유 라벨 입력이 뜬다 —
+   * 그쪽에서는 표시할 대상이 캐릭터가 아니라 "여기 폭포", "여기 성" 같은 요소이기 때문.
+   */
+  characters?: IllustrationCharacter[];
   initial?: ConceptSketch;
   onClose: () => void;
   onSave: (sketch: ConceptSketch) => void;
@@ -52,7 +57,7 @@ function estimateTextWidth(text: string, fontSize: number): number {
 export function ConceptSketchPanel({
   open,
   apiKey,
-  characters,
+  characters = [],
   initial,
   onClose,
   onSave,
@@ -66,6 +71,7 @@ export function ConceptSketchPanel({
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
   const [isDrawing, setIsDrawing] = useState(false);
   const [analysis, setAnalysis] = useState<CompositionAnalysis | undefined>(initial?.analysis);
+  const [freeLabelText, setFreeLabelText] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // 편집 진입 시 기존 스케치 PNG를 캔버스 배경에 복원 (펜 선/도형은 PNG로만 보존되므로 추가 편집은 그 위에 누적)
@@ -87,6 +93,7 @@ export function ConceptSketchPanel({
     if (!open) {
       setStrokes([]);
       setBaseSketchImage(null);
+      setFreeLabelText('');
     }
   }, [open]);
 
@@ -161,6 +168,25 @@ export function ConceptSketchPanel({
     });
   }, []);
 
+  /** 캐릭터가 없는 세션용 — 임의 텍스트 라벨. `characterId` 없이 텍스트만 갖는다 */
+  const addFreeLabel = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setLabels((ls) => {
+      const offset = ls.length * 0.04;
+      return [
+        ...ls,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          text: trimmed,
+          x: Math.max(0.05, Math.min(0.85, 0.4 + offset)),
+          y: Math.max(0.05, Math.min(0.85, 0.45 + offset)),
+        },
+      ];
+    });
+    setFreeLabelText('');
+  }, []);
+
   const removeLabel = useCallback((id: string) => {
     setLabels((ls) => ls.filter((l) => l.id !== id));
   }, []);
@@ -211,7 +237,11 @@ export function ConceptSketchPanel({
           <div className="flex items-center gap-2">
             <Pencil size={18} className="text-purple-600" />
             <h3 className="font-semibold text-gray-800">구도 스케치</h3>
-            <span className="text-xs text-gray-500">— 거친 도형으로 인물 위치를 잡고, 좌측 캐릭터 버튼으로 이름 라벨을 추가하세요 (드래그로 이동, ✕로 제거)</span>
+            <span className="text-xs text-gray-500">
+              {characters.length > 0
+                ? '— 거친 도형으로 인물 위치를 잡고, 좌측 캐릭터 버튼으로 이름 라벨을 추가하세요 (드래그로 이동, ✕로 제거)'
+                : '— 거친 도형으로 화면 구도를 잡고, 좌측에서 요소 라벨을 추가하세요 (드래그로 이동, ✕로 제거)'}
+            </span>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg" title="닫기 (Esc)">
             <X size={18} />
@@ -269,20 +299,49 @@ export function ConceptSketchPanel({
             </div>
 
             <div>
-              <p className="text-xs font-medium text-gray-600 mb-2">캐릭터 라벨 추가</p>
-              <p className="text-[10px] text-gray-500 mb-2">버튼을 누르면 캐릭터 이름이 캔버스에 추가됩니다. 라벨은 드래그로 이동, ✕ 버튼으로 제거할 수 있습니다.</p>
-              <div className="space-y-1">
-                {characters.length === 0 && <p className="text-xs text-gray-400">등록된 캐릭터 없음</p>}
-                {characters.map((c) => (
+              <p className="text-xs font-medium text-gray-600 mb-2">
+                {characters.length > 0 ? '캐릭터 라벨 추가' : '요소 라벨 추가'}
+              </p>
+              <p className="text-[10px] text-gray-500 mb-2">
+                {characters.length > 0
+                  ? '버튼을 누르면 캐릭터 이름이 캔버스에 추가됩니다. 라벨은 드래그로 이동, ✕ 버튼으로 제거할 수 있습니다.'
+                  : '"폭포", "성문"처럼 무엇을 그릴지 적어 캔버스에 꽂으세요. 드래그로 이동, ✕로 제거합니다.'}
+              </p>
+              {characters.length > 0 ? (
+                <div className="space-y-1">
+                  {characters.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => addCharacterLabel(c)}
+                      className="w-full text-left text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-purple-50 hover:border-purple-300"
+                    >
+                      + {c.name}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex gap-1">
+                  <input
+                    value={freeLabelText}
+                    onChange={(e) => setFreeLabelText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addFreeLabel(freeLabelText);
+                      }
+                    }}
+                    placeholder="예: 폭포"
+                    className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-400"
+                  />
                   <button
-                    key={c.id}
-                    onClick={() => addCharacterLabel(c)}
-                    className="w-full text-left text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-purple-50 hover:border-purple-300"
+                    onClick={() => addFreeLabel(freeLabelText)}
+                    disabled={!freeLabelText.trim()}
+                    className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-purple-50 hover:border-purple-300 disabled:opacity-40"
                   >
-                    + {c.name}
+                    +
                   </button>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1">

@@ -1,6 +1,26 @@
 # 구도 스케치 (Concept Sketch)
 
-일러스트 세션에서 사용자가 **거친 도형으로 인물 위치를 직접 그리고 캐릭터 이름 라벨을 배치**하면, AI(Gemini)가 스케치를 분석해 `layout`/`perspective`/`placements` 등 **구도 정보(CompositionAnalysis)** 를 추출해 최종 이미지 생성에 반영하는 기능. 캔버스는 Konva(`react-konva`)로 구현하며, `IllustrationSetupPanel` 의 "구도 스케치" 섹션에서 모달로 연다. 선택 기능(Phase 4).
+사용자가 **거친 도형으로 배치를 직접 그리고 라벨을 꽂으면**, 그 스케치를 **마지막 참조 이미지**로 붙이고 프롬프트가 "구도 가이드"라고 명시해 최종 생성에 반영하는 기능. AI(Gemini) 분석을 돌리면 `layout`/`perspective`/`placements` 등 **구도 정보(CompositionAnalysis)** 가 텍스트로도 함께 들어간다. 캔버스는 Konva(`react-konva`).
+
+## 두 곳에서 쓴다 (모달은 하나)
+
+`ConceptSketchPanel` 하나를 **두 진입점이 공유한다.** 복사해 두면 한쪽만 고쳤을 때 다른 쪽 구도 지시가 조용히 달라진다.
+
+| 진입점 | 세션 | 라벨 | 영속성 |
+|--------|------|------|--------|
+| `IllustrationSetupPanel`의 "구도 스케치" 섹션 | ILLUSTRATION | **등록 캐릭터 버튼** — 이름을 그대로 꽂는다 | `illustrationData.conceptSketch`에 저장 |
+| `GeneratorSettings`의 "구도 스케치" 섹션 | `SKETCH_ENABLED_SESSIONS` (BASIC·STYLE·BACKGROUND·UI·PIXELART_BACKGROUND) | **자유 텍스트** — "폭포", "성문"처럼 무엇을 그릴지 | **저장하지 않는다** (아래 참조) |
+
+- `characters` prop이 **선택**이다. 비어 있으면 캐릭터 버튼 대신 자유 라벨 입력이 뜨고 헤더 문구도 바뀐다. `SketchLabel.characterId`가 원래 optional이라 자유 라벨이 그대로 들어맞는다.
+- 캐릭터가 하나를 채우는 세션(CHARACTER·ICON·LOGO·PIXELART_CHARACTER 등)은 그릴 구도가 없어 제외했고, **TILEMAP은 프롬프트가 요구하는 레이아웃이 이미 고정**이라 스케치가 방해가 된다.
+
+### 왜 생성 패널에서는 저장하지 않는가
+
+프롬프트(`additionalPrompt`)도 패널 상태라 세션 전환 시 사라진다. 스케치만 영속화하면 "프롬프트는 날아갔는데 스케치는 남은" 어긋난 상태가 된다. 게다가 `sketchPng`는 data URL이라 세션 파일이 커진다 — ILLUSTRATION이 이미 그 비용을 지고 있어 전 세션으로 퍼뜨릴 이유가 없다. 영속화가 필요해지면 `illustrationData.conceptSketch`처럼 세션 레벨로 올린다.
+
+### 라벨은 PNG에 굽지 않는다 → 프롬프트에 좌표로 넣어야 한다
+
+`handleSave`는 **라벨을 제외한 스케치 레이어만** export한다(재진입 시 라벨을 다시 드래그·제거할 수 있게 하려고). 즉 **모델은 라벨 텍스트를 보지 못한다.** 그래서 프롬프트에 `"폭포" at (40%, 45%)` 형태로 라벨을 직렬화해 넣는다. 이걸 빠뜨리면 라벨이 결과에 전혀 반영되지 않는다.
 
 ## 관련 파일
 
@@ -8,7 +28,9 @@
 - `src/lib/sketch/analyzeSketch.ts` — `analyzeCompositionSketch`(기본 분석 모델 `DEFAULT_ANALYSIS_MODEL` 로 스케치→`CompositionAnalysis`), `formatCompositionForPrompt`(분석 결과를 프롬프트용 텍스트로)
 - `src/lib/utils/annotationExport.ts` — `exportNodeToDataUrl`(Konva 노드→dataURL, 스케치 PNG 추출에 재사용)
 - `src/types/illustration.ts` — `ConceptSketch`/`SketchLabel`/`CompositionAnalysis`/`CharacterPlacement`
-- `src/components/illustration/IllustrationSetupPanel.tsx` — 스케치 섹션 UI + `handleSketchSave`/`handleSketchClear`(:37)
+- `src/components/illustration/IllustrationSetupPanel.tsx` — ILLUSTRATION 진입점. 스케치 섹션 UI + `handleSketchSave`/`handleSketchClear`
+- `src/components/generator/ImageGeneratorPanel.tsx` — 일반 세션 진입점. `SKETCH_ENABLED_SESSIONS`·`conceptSketch` 상태·마지막 reference 첨부·가이드 프롬프트 블록
+- `src/components/generator/GeneratorSettings.tsx` — "구도 스케치" 섹션(그리기/편집/삭제 + 썸네일)
 
 ## 데이터 모델
 

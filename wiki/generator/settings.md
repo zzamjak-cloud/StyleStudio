@@ -47,6 +47,12 @@
 - 덕테이프 `low/medium/high`, 2.5 계열은 `xhigh`·`max`가 추가된다. Gemini는 `['medium']` 한 종이라 UI가 안 뜬다.
 - 모델을 바꿔 지원하지 않는 티어가 남으면 effect가 **`medium`으로** 보정한다(첫 값 `low`로 가면 품질이 조용히 낮아진다).
 
+## 구도 스케치
+
+- `SKETCH_ENABLED_SESSIONS`(BASIC·STYLE·BACKGROUND·UI·PIXELART_BACKGROUND)에서만 "구도 스케치" 섹션이 뜬다. 그린 스케치는 **마지막 참조 이미지**로 붙고 프롬프트가 "마지막 참조는 구도 가이드, 펜선·화풍은 따라 그리지 말 것"을 명시한다.
+- 모달은 ILLUSTRATION의 `ConceptSketchPanel`을 **그대로 재사용**한다 — 캐릭터가 없으므로 자유 텍스트 라벨 모드로 뜬다. 상세는 [illustration/concept-sketch.md](../illustration/concept-sketch.md).
+- **세션에 저장하지 않는다**(이번 생성용 가이드). 이유는 위 문서 참조.
+
 ## 카메라 앵글 / 렌즈
 
 - 앵글·렌즈는 **인접한 두 개의 개별 `<select>`**(그룹 컨트롤 아님). 표시 조건 세션: `BACKGROUND`, `ILLUSTRATION`, `PIXELART_BACKGROUND`.
