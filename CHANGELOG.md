@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Fixed — dev 서버 포트 충돌 (개발 편의)
+
+- `npm run tauri:dev` 가 `Port 1420 is already in use` 로 실패하던 문제를 자동으로 정리합니다. `beforeDevCommand` 가 포트 충돌로 죽으면 그 사이 떠 있던 vite 는 부모만 죽고 살아남아, 실패할 때마다 좀비가 하나씩 쌓이는 구조였습니다. 이제 dev 실행 전에 `predev` 훅이 포트를 쥔 좀비 프로세스를 정리합니다(`npm run dev` · `npm run tauri:dev` 양쪽 자동, 수동은 `npm run dev:free-port`).
+- node 프로세스일 때만 종료하고, 다른 앱이 포트를 쓰고 있으면 경고만 남깁니다.
+
 ### Changed — 덕테이프를 주력 모델로
 
 - **새로 만드는 세션의 기본 이미지 모델이 덕테이프(gpt-image-2)로 바뀌었습니다.** 드롭다운에서도 맨 위에 옵니다. 기존 세션은 저장된 모델을 그대로 유지합니다.

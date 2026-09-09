@@ -19,8 +19,24 @@ StyleStudio 는 **Tauri 2 + React 19 + Vite 7** 데스크톱 앱이다. 프런�
 
 ### 스크립트
 - `scripts/bump-version.sh` — 3파일 버전 동기 + CHANGELOG + 커밋/태그
+- `scripts/free-dev-port.mjs` — dev 포트(1420)를 붙잡은 좀비 vite 정리. `predev` 훅으로 자동 실행
 - `scripts/ci/append_tauri_signing_env.py` — CI 서명키 주입
 - `.github/workflows/release.yml` — 태그 push 시 빌드·서명·`latest.json` 배포
+
+## dev 포트 1420 — 좀비 vite 자동 정리
+
+`vite.config.ts`가 `strictPort: true`이고 `tauri.conf.json`의 `devUrl`이 `http://localhost:1420` 고정이라, **포트가 막히면 dev 서버가 다른 포트로 비켜 가지 못하고 그냥 죽는다.**
+
+문제는 실패가 실패를 부른다는 것이다. `tauri dev`의 `beforeDevCommand`(= `npm run dev`)가 포트 충돌로 죽으면 tauri는 중단되는데, 그 사이 떠 있던 vite는 **부모(`cmd /c vite`)만 죽고 자식 `node vite.js`가 살아남아** 포트를 계속 물고 있다. 그래서 실패할 때마다 좀비가 하나씩 쌓이고, 매번 PID를 직접 찾아 죽여야 했다.
+
+`predev` 훅이 이걸 자동으로 정리한다. **npm 라이프사이클 훅이라 `npm run dev`와, 그걸 `beforeDevCommand`로 부르는 `npm run tauri:dev` 양쪽에서 자동으로 먼저 돈다** — 스크립트를 두 곳에 걸 필요가 없다. 수동 실행은 `npm run dev:free-port`.
+
+### 구현에서 걸린 두 가지
+
+1. **`netstat -ano -p TCP`를 쓰면 안 된다.** 그 필터는 IPv4만 보여주는데, vite는 `host` 옵션이 없으면 **IPv6 루프백(`[::1]`)에만 바인딩**한다. 실제로 이것 때문에 스크립트가 좀비를 못 찾고 조용히 통과했다. 필터 없이 `netstat -ano`로 받아 프로토콜 열로 직접 거른다. (Windows 상태 문자열은 로케일에 따라 번역될 수 있어 `LISTENING`으로 거르지 않고, 리스닝 소켓만 갖는 성질인 **원격 주소가 비어 있는지**로 판별한다.)
+2. **아무거나 죽이지 않는다.** 프로세스 이름이 node 계열일 때만 종료하고, 다른 앱이 1420을 쓰고 있으면 경고만 남기고 통과시킨다. 그리고 어떤 실패에도 **항상 exit 0** — 포트 정리에 실패하는 것보다 dev가 아예 안 뜨는 게 나쁘다.
+
+> 이미 dev 서버를 띄워 둔 상태에서 또 실행하면 **먼저 뜬 쪽이 종료된다.** 예전에도 두 번째가 포트 충돌로 실패했으므로 동시에 두 개가 살아 있던 적은 없고, 이제 나중 것이 이긴다.
 
 ## 기술 스택
 

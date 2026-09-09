@@ -15,7 +15,9 @@
   },
   "type": "module",
   "scripts": {
+    "predev": "node scripts/free-dev-port.mjs",
     "dev": "vite",
+    "dev:free-port": "node scripts/free-dev-port.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
