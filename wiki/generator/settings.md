@@ -24,7 +24,7 @@
 | `google/gemini-3.1-flash-lite-image` | 나노바나나 2 라이트 | gemini | 10종 | 1K | medium | 14 | 1 |
 
 - **2.5 계열 두 종은 `availability: 'pending'`이라 드롭다운에 뜨지 않는다** — OpenRouter 미등재. 등재되면 그 값만 `available`로 바꾼다. → `generator/image-generation-api.md`
-- 기본 모델은 `DEFAULT_IMAGE_MODEL`(`openai/gpt-image-2`). v0.7.2에서 나노바나나 프로에서 바뀌었다.
+- 기본 모델은 `DEFAULT_IMAGE_MODEL`(`openai/gpt-image-2`). v0.8.0에서 나노바나나 프로에서 바뀌었다.
 - **능력치는 전부 `supports`에서 온다.** UI에 모델 ID를 직접 비교하는 조건을 새로 만들지 말 것 — `isOpenAIModel()` / `supports.qualities.length > 1`을 쓴다.
 
 ## 이미지 비율 (aspectRatio)

@@ -68,7 +68,7 @@ seed·temperature·topK·topP도 이 모델들의 `supported_parameters`에 없�
 
 - `getAvailableImageModels()`: 통합 키 하나로 전 모델 사용 가능 — provider 필터는 없고 `pending`만 걸러낸다.
 - `normalizeImageModelId(id)`: 레거시 ID(`gemini-3-pro-image-preview` 등) → 현재 슬러그. `pending` 모델도 통과시킨다(등재 → 되돌림 순서에서 사용자가 고른 모델이 조용히 바뀌지 않도록).
-- `DEFAULT_IMAGE_MODEL = 'openai/gpt-image-2'` — **v0.7.2에서 나노바나나 프로에서 바뀌었다.** 이 상수 하나가 생성·대화형·컨셉 새 세션의 초기값을 함께 정한다(예전엔 6곳에 하드코딩돼 있었다). 기존 세션은 저장된 모델을 유지한다.
+- `DEFAULT_IMAGE_MODEL = 'openai/gpt-image-2'` — **v0.8.0에서 나노바나나 프로에서 바뀌었다.** 이 상수 하나가 생성·대화형·컨셉 새 세션의 초기값을 함께 정한다(예전엔 6곳에 하드코딩돼 있었다). 기존 세션은 저장된 모델을 유지한다.
 - `TILEMAP_FIXED_IMAGE_MODEL = 'openai/gpt-image-2'` (레이아웃 준수 때문 — 기존과 동일).
 - 모델을 바꿔 지원하지 않는 값이 남으면 **비율·크기·품질 모두 자동 보정**된다(`ImageGeneratorPanel`·`ChatPanel` effect). 품질 보정은 첫 값(low)이 아니라 `medium`으로 떨어뜨린다 — 첫 값으로 가면 품질이 조용히 낮아진다.
 
