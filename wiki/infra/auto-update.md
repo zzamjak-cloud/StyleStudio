@@ -70,13 +70,31 @@ UpdateState = { status: UpdateStatus, update: Update | null, progress: number, e
 ```
 
 수행(모두 semver 검증·작업트리 clean 확인 후):
+0. **원격에 없는 로컬 태그 점검** — 있으면 경고만 하고 계속 진행한다(아래 "태그 푸시" 참고)
 1. `package.json` 버전 (`bump-version.sh:56-61`)
 2. `src-tauri/tauri.conf.json` 버전 (`:65-70`)
 3. `src-tauri/Cargo.toml` 버전(sed) (`:74`)
 4. `CHANGELOG.md` `[Unreleased]` → `[NEW] - 날짜` 변환 (`:82-92`)
 5. 커밋 + `v{version}` 태그 생성 (`:96-98`)
 
-푸시(`git push origin main --tags`)는 수동. 태그 push 가 `release.yml` 을 트리거한다.
+`Cargo.lock` 의 자기 패키지 버전도 함께 맞춘다 — 안 맞추면 다음 `cargo build` 가 lock 을 고쳐 작업 트리가 더러워진다.
+
+### 태그 푸시 (⛔ `--tags` 금지)
+
+```bash
+git push origin main && git push origin v0.9.0   # 새 태그만 명시
+```
+
+**`git push origin main --tags` 를 쓰지 않는다.** `release.yml` 은 `v*` 태그 push 에 반응하므로, 원격에 없는 **구버전 로컬 태그까지 함께 밀리면 그 태그마다 릴리스 빌드가 트리거된다.**
+
+- 잔여 로컬 태그는 **중단된 범프**가 남긴다. `bump-version.sh` 는 커밋과 태그를 먼저 만들고 푸시는 사람이 하므로, 배포를 접으면 태그만 로컬에 남는다.
+- 실제 사례: `v0.4.22`·`v0.4.23`(배포되지 않은 개발 중 버전)이 로컬에 남아 v0.7.1·v0.9.0 배포 때 두 번 함께 밀렸다. 두 번 다 워크플로가 `Create GitHub Release` 단계에서 10초 내 실패해 릴리스·`latest.json` 은 건드리지 않았지만, 실패 알림이 남는다. **2026-09-10 에 두 태그를 로컬·원격에서 모두 삭제**했고, 스크립트가 `[0/5]` 단계에서 잔여 태그를 경고하도록 고쳤다.
+- 실수로 밀었다면: `git push origin :refs/tags/<태그>` 로 원격에서만 지운다(로컬 태그가 남아 있어 복구 가능). 배포할 일이 없는 태그면 `git tag -d <태그>` 로 로컬도 지운다.
+- 로컬·원격 태그 차이 확인:
+  ```bash
+  comm -23 <(git tag | sort) \
+    <(git ls-remote --tags origin | sed -n 's#.*refs/tags/\([^^]*\)$#\1#p' | sort -u)
+  ```
 
 ## 회귀 증상별 원인
 
@@ -90,3 +108,5 @@ UpdateState = { status: UpdateStatus, update: Update | null, progress: number, e
 | 릴리스 노트 안 보임 | `update.body` 비어있음(릴리스 본문/`latest.json` notes 누락) |
 | bump 후 CHANGELOG 이 안 바뀜 | `bump-version.sh` 의 `[Unreleased]` 치환 정규식이 LF 전제 — CHANGELOG.md 가 CRLF 이면 조용히 미매치(v0.4.22 에서 실제 발생, 수동 보완). 스크립트 수정 전까지 bump 후 CHANGELOG 반영 여부를 눈으로 확인할 것 |
 | 로컬 빌드가 업데이트 못 받음 | `tauri.local.conf.json` `createUpdaterArtifacts: false` |
+| 배포하지도 않은 구버전 태그로 릴리스 빌드가 돎 | `git push --tags` 로 잔여 로컬 태그가 함께 밀렸다 → 새 태그만 명시해 푸시한다(위 "태그 푸시") |
+| bump 실행 시 `[0/5]` 에서 잔여 태그 경고 | 중단된 범프가 남긴 태그다. 배포 예정이 없으면 `git tag -d <태그>` 로 지운다 |

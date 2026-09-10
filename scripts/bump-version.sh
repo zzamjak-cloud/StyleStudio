@@ -51,6 +51,20 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
+# 0. 원격에 없는 로컬 태그 점검.
+# 중단된 범프(태그는 만들고 푸시는 안 한 경우)가 남긴 태그가 쌓이면, 다음 릴리스에서
+# `--tags`로 함께 밀려 그 태그마다 릴리스 워크플로가 헛돌게 된다(v0.4.22/v0.4.23 사례).
+echo -e "${GREEN}[0/5] 원격에 없는 로컬 태그 점검...${NC}"
+STRAY_TAGS=$(comm -23 \
+  <(git tag | sort) \
+  <(git ls-remote --tags origin 2>/dev/null | sed -n 's#.*refs/tags/\([^^]*\)$#\1#p' | sort -u) || true)
+if [ -n "${STRAY_TAGS}" ]; then
+  echo -e "${YELLOW}경고: 원격에 없는 로컬 태그가 있습니다.${NC}"
+  echo "${STRAY_TAGS}" | sed 's/^/  - /'
+  echo -e "${YELLOW}배포하지 않을 태그라면 지우세요: git tag -d <태그>${NC}"
+  echo ""
+fi
+
 # 1. package.json 버전 업데이트
 echo -e "${GREEN}[1/5] package.json 업데이트...${NC}"
 node -e "
@@ -136,7 +150,11 @@ echo ""
 echo -e "${YELLOW}다음 단계:${NC}"
 echo "  1. CHANGELOG.md의 [${NEW_VERSION}] 섹션에 변경 내역을 작성하세요."
 echo "  2. 작성 완료 후: git add CHANGELOG.md && git commit --amend --no-edit"
-echo "  3. 원격에 푸시: git push origin main --tags"
+echo "  3. 원격에 푸시: git push origin main && git push origin v${NEW_VERSION}"
 echo ""
 echo -e "${YELLOW}또는 CHANGELOG가 이미 작성되어 있다면:${NC}"
-echo "  git push origin main --tags"
+echo "  git push origin main && git push origin v${NEW_VERSION}"
+echo ""
+echo -e "${YELLOW}주의: \`--tags\`로 푸시하지 마세요.${NC}"
+echo "  릴리스 워크플로가 v* 태그 push에 반응하므로, 원격에 없는 구버전 로컬 태그까지"
+echo "  함께 밀리면 그 태그마다 릴리스 빌드가 트리거됩니다. 새 태그만 지정해 푸시하세요."

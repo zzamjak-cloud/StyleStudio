@@ -24,3 +24,4 @@ AI 게임 아트 제작 데스크톱 앱 (React 19 + TypeScript + Tauri v2 + Zus
 ## 버전 관리
 
 - 버전은 3파일(`package.json`, `src-tauri/tauri.conf.json`, `Cargo.toml`) + `CHANGELOG.md` 동시 갱신. `scripts/bump-version.sh` 사용. → `wiki/infra/auto-update.md`
+- 태그 푸시는 **새 태그만 명시**한다: `git push origin main && git push origin v<버전>`. `--tags`는 원격에 없는 구버전 로컬 태그까지 밀어 릴리스 빌드를 헛돌린다.
