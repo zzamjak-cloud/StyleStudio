@@ -9,8 +9,11 @@ import { GEMINI_FLASH_TEXT_MODEL } from '../types/constants';
 import { chatComplete, generateImageViaOpenRouter } from '../lib/api/openrouter';
 import { getImageModelDefinition, normalizeImageModelId } from './api/imageModels';
 import { convertBase64ToJpeg, formatImageApiError } from './api/useImageGenerator';
+import { PIXELART_MODERN_STYLE_RULES } from '../lib/prompts/sessionPrompts';
+import { pixelateDataUrl } from '../lib/pixelart/pixelate';
+import { detectImageFormat } from '../lib/utils/imageDataUrl';
 
-// 사용자 메시지 앞에 그리드 힌트를 prefix로 결합해 모델이 반영하도록 유도
+// 사용자 메시지 앞에 그리드 힌트·픽셀아트 규칙을 prefix로 결합해 모델이 반영하도록 유도
 function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): string {
   if (!settings) return '';
   const parts: string[] = [];
@@ -20,6 +23,12 @@ function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): stri
     parts.push(
       `[그리드 레이아웃: ${settings.pixelArtGrid} — 하나의 이미지 안에 ${info.totalFrames}개 프레임을 ${info.rows}행 ${info.cols}열로 균등 배치]`
     );
+  }
+
+  // 픽셀아트 모드: 픽셀아트 세션과 동일한 채색 규칙을 적용한다.
+  // (디더링·그라데이션 금지, hue shifting + 하드 에지 색 띠, crisp pixel edges)
+  if (settings.pixelArtMode) {
+    parts.push(`🎮 PIXEL ART MODE\n${PIXELART_MODERN_STYLE_RULES}`);
   }
 
   return parts.length > 0 ? parts.join('\n\n') + '\n\n' : '';
@@ -175,6 +184,7 @@ export function useChatImageGeneration(
       imageSize,
       referenceCount: allImages.length,
       pixelArtGrid: settings?.pixelArtGrid,
+      pixelArtMode: !!settings?.pixelArtMode,
       prefixApplied: !!prefix,
     });
 
@@ -198,6 +208,49 @@ export function useChatImageGeneration(
             quality: modelDef.provider === 'openai' ? imageQuality : undefined,
             inputReferences: allImages.length > 0 ? allImages : undefined,
           });
+
+          /*
+            픽셀아트 모드는 JPEG 변환을 건너뛴다 — 손실 압축이 픽셀 경계에 링잉을 만들어
+            방금 세운 칼같은 경계를 다시 뭉갠다. 정규화 결과를 PNG로 그대로 넘긴다.
+            (저장 확장자는 ChatPanel이 실제 바이트를 보고 결정한다)
+          */
+          if (settings?.pixelArtMode) {
+            setGenerationStatus('픽셀 정규화 중...');
+            const rawFormat = detectImageFormat(`data:image/png;base64,${generated.base64}`);
+            const rawDataUrl = `data:image/${rawFormat === 'jpg' ? 'jpeg' : rawFormat};base64,${generated.base64}`;
+
+            try {
+              const pixelated = await pixelateDataUrl(rawDataUrl, {
+                size: settings.pixelateSize ?? 'auto',
+                paletteSize: settings.pixelatePaletteSize ?? 'auto',
+                grid: settings.pixelArtGrid,
+              });
+              logger.debug(
+                `✅ 채팅 픽셀 정규화 완료: ${pixelated.logicalWidth}x${pixelated.logicalHeight} ` +
+                `· ${pixelated.paletteSize}색 · x${pixelated.scale} 확대 (격자 정합 ${pixelated.gridScore.toFixed(2)})`
+              );
+
+              setIsGenerating(false);
+              setGenerationStatus('');
+              return {
+                content: '',
+                images: [pixelated.dataUrl],
+                imageSignatures: [],
+                isGeneratedImage: true,
+              };
+            } catch (pixelateError) {
+              // 정규화 실패 시에도 PNG 원본을 넘긴다 (JPEG로 되돌리면 픽셀이 더 망가진다)
+              logger.error('❌ 채팅 픽셀 정규화 실패:', pixelateError);
+              setIsGenerating(false);
+              setGenerationStatus('');
+              return {
+                content: '',
+                images: [rawDataUrl],
+                imageSignatures: [],
+                isGeneratedImage: true,
+              };
+            }
+          }
 
           // 내부 표준 JPEG로 통일 (자동 저장/썸네일 파이프라인 호환)
           const jpegBase64 = await convertBase64ToJpeg(generated.base64, generated.mediaType);

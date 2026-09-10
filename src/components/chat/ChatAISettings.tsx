@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { ChatGenerationSettings } from '../../types/chat';
 import { PixelArtGridLayout } from '../../types/pixelart';
+import { PaletteSizeOption, PixelateSizeOption } from '../../lib/pixelart/pixelate';
 import { getAvailableImageModels, getImageModelDefinition, isOpenAIModel } from '../../hooks/api/imageModels';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { DocumentManager } from '../generator/DocumentManager';
@@ -96,6 +97,75 @@ export function ChatAISettings({
               </button>
             ))}
           </div>
+        </div>
+
+        {/* 픽셀아트 모드.
+            채팅은 범용 세션이라 세션 타입으로 픽셀아트 의도를 알 수 없어 명시적 토글로 판정한다.
+            켜면 픽셀아트 세션과 동일한 기준(최신 채색 규칙 프롬프트 + 생성 후 픽셀 정규화)이 걸린다. */}
+        <div>
+          <label className="flex items-center justify-between gap-2 cursor-pointer">
+            <span className="text-sm font-medium text-gray-700">픽셀아트 모드</span>
+            <input
+              type="checkbox"
+              checked={settings.pixelArtMode ?? false}
+              onChange={(e) => onSettingsChange({ pixelArtMode: e.target.checked })}
+              className="w-4 h-4 accent-purple-500 cursor-pointer"
+            />
+          </label>
+          <p className="mt-1.5 text-[11px] text-gray-500 leading-relaxed">
+            픽셀아트 세션과 같은 기준을 적용합니다 — 디더링·그라데이션을 금지하고,
+            생성물의 픽셀 격자를 찾아 <span className="font-medium text-gray-600">딱 떨어지는 픽셀</span>로
+            재구성합니다(PNG로 저장).
+          </p>
+
+          {settings.pixelArtMode && (
+            <div className="mt-3 space-y-3">
+              {/* 논리 해상도 */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                  픽셀 해상도
+                  {settings.pixelArtGrid !== '1x1' && (
+                    <span className="text-gray-400"> (프레임당)</span>
+                  )}
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['auto', 32, 64, 128] as PixelateSizeOption[]).map((option) => (
+                    <button
+                      key={String(option)}
+                      onClick={() => onSettingsChange({ pixelateSize: option })}
+                      className={`px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                        (settings.pixelateSize ?? 'auto') === option
+                          ? 'bg-purple-500 text-white border-purple-500'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+                      }`}
+                    >
+                      {option === 'auto' ? '자동' : `${option}px`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 팔레트 색 수 */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">팔레트 색 수</label>
+                <div className="grid grid-cols-5 gap-2">
+                  {(['auto', 8, 16, 32, 48] as PaletteSizeOption[]).map((option) => (
+                    <button
+                      key={String(option)}
+                      onClick={() => onSettingsChange({ pixelatePaletteSize: option })}
+                      className={`px-1.5 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                        (settings.pixelatePaletteSize ?? 'auto') === option
+                          ? 'bg-purple-500 text-white border-purple-500'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+                      }`}
+                    >
+                      {option === 'auto' ? '자동' : `${option}색`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 모델 선택 */}

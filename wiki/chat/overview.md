@@ -4,6 +4,14 @@
 
 > **v0.6 OpenRouter 전환**: Gemini `generateContent` 멀티턴(`buildContents`·`thought_signature`)은 OpenRouter Image API가 지원하지 않아 제거됐다. 대화 맥락은 텍스트 요약 + 최근 6턴 텍스트를 프롬프트에 결합하고, "이어지는 편집"은 직전 생성 이미지를 `input_references` 첫 번째로 전달하는 방식으로 대체됐다.
 
+## 픽셀아트 모드
+
+채팅 설정(`ChatAISettings`)의 **픽셀아트 모드** 토글이 켜지면 픽셀아트 세션과 동일한 기준이 걸린다 — 프롬프트에 최신 채색 규칙 주입, JPEG 변환 건너뜀(PNG 유지), 생성 후 픽셀 정규화. 판정에 세션 타입을 쓸 수 없어(채팅은 범용 세션) 명시적 토글이며 기본값은 off다. 자세한 내용은 `pixelart/overview.md`의 "채팅 세션의 픽셀아트 모드".
+
+- 설정: `ChatGenerationSettings.pixelArtMode`·`pixelateSize`·`pixelatePaletteSize`
+- 저장 확장자는 `getImageSaveFormat`으로 실제 바이트에서 판별한다(과거 `.jpg` 하드코딩 → PNG가 `.jpg`로 나가는 버그)
+- `stylePreset`·`customStyle`은 타입 선언만 있는 **dead field**다
+
 ## 관련 파일
 
 - `src/components/chat/ChatPanel.tsx` — 채팅 패널 메인. `useChatSession`/`useChatImageGeneration` 결합, 전송(`handleSend`)·자동저장(`autoSaveImage`)·수동저장(`handleSaveImage`)·어노테이션 제출(`handleAnnotationSubmit`)·이미지 미리보기 모달. 좌측 대화 + 우측 `ChatAISettings` 레이아웃. 레거시 모델 ID 정규화 effect 포함

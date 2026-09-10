@@ -2,6 +2,7 @@ import { memo, useState, useRef, useEffect } from 'react';
 import { Languages, Wand2, HelpCircle, X, AlertTriangle, Camera, ChevronDown, Pencil } from 'lucide-react';
 import { SessionType } from '../../types/session';
 import { PixelArtGridLayout } from '../../types/pixelart';
+import { PaletteSizeOption, PixelateSizeOption } from '../../lib/pixelart/pixelate';
 import { ReferenceDocument } from '../../types/referenceDocument';
 import { CAMERA_ANGLES } from '../../types/cameraAngle';
 import { CAMERA_LENSES } from '../../types/cameraLens';
@@ -41,6 +42,9 @@ interface GeneratorSettingsProps {
   imageSize: ImageSizeOption;
   useReferenceImages: boolean;
   pixelArtGrid: PixelArtGridLayout;
+  pixelate: boolean;
+  pixelateSize: PixelateSizeOption;
+  pixelatePaletteSize: PaletteSizeOption;
   tilemapMode: TilemapMode;
   tilemapEdgeStyle: TilemapEdgeStyle;
   tilemapOutline: TilemapOutline;
@@ -76,6 +80,9 @@ interface GeneratorSettingsProps {
   onImageSizeChange: (value: ImageSizeOption) => void;
   onUseReferenceImagesChange: (value: boolean) => void;
   onPixelArtGridChange: (value: PixelArtGridLayout) => void;
+  onPixelateChange: (value: boolean) => void;
+  onPixelateSizeChange: (value: PixelateSizeOption) => void;
+  onPixelatePaletteSizeChange: (value: PaletteSizeOption) => void;
   onTilemapModeChange: (value: TilemapMode) => void;
   onTilemapEdgeStyleChange: (value: TilemapEdgeStyle) => void;
   onTilemapOutlineChange: (value: TilemapOutline) => void;
@@ -103,6 +110,9 @@ function GeneratorSettingsComponent({
   imageSize,
   useReferenceImages,
   pixelArtGrid,
+  pixelate,
+  pixelateSize,
+  pixelatePaletteSize,
   tilemapMode,
   tilemapEdgeStyle,
   tilemapOutline,
@@ -130,6 +140,9 @@ function GeneratorSettingsComponent({
   onImageSizeChange,
   onUseReferenceImagesChange,
   onPixelArtGridChange,
+  onPixelateChange,
+  onPixelateSizeChange,
+  onPixelatePaletteSizeChange,
   onTilemapModeChange,
   onTilemapEdgeStyleChange,
   onTilemapOutlineChange,
@@ -318,6 +331,78 @@ function GeneratorSettingsComponent({
               <p className="mt-2 text-[11px] text-gray-500">
                 타일맵은 1:1 비율 · 1K 해상도로 고정됩니다
               </p>
+            </div>
+          )}
+
+          {/* 픽셀 정규화 (픽셀아트 세션 전용).
+              AI는 "픽셀처럼 보이는" 그림을 그릴 뿐이라 확대하면 블록 경계가 흐리고
+              블록 내부 색이 흔들린다. 생성 후 격자를 찾아 논리 해상도로 재구성한다. */}
+          {(sessionType === 'PIXELART_CHARACTER' ||
+            sessionType === 'PIXELART_BACKGROUND' ||
+            sessionType === 'PIXELART_ICON') && (
+            <div className={getGridSectionStyle(sessionType)}>
+              <label className="flex items-center justify-between gap-2 cursor-pointer">
+                <span className="text-sm font-semibold text-gray-700">픽셀 정규화</span>
+                <input
+                  type="checkbox"
+                  checked={pixelate}
+                  onChange={(e) => onPixelateChange(e.target.checked)}
+                  className="w-4 h-4 accent-cyan-600 cursor-pointer"
+                />
+              </label>
+              <p className="mt-1.5 text-[11px] text-gray-500 leading-relaxed">
+                생성물의 픽셀 격자를 찾아 <span className="font-medium text-gray-600">딱 떨어지는 픽셀</span>로
+                재구성합니다. 표시·저장·히스토리 모두 정규화 결과가 되며,
+                AI 원본이 필요하면 이 옵션을 끄고 생성하세요.
+              </p>
+
+              {pixelate && (
+                <div className="mt-3 space-y-3">
+                  {/* 논리 해상도 */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                      픽셀 해상도
+                      {pixelArtGrid !== '1x1' && <span className="font-normal text-gray-400"> (프레임당)</span>}
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(['auto', 32, 64, 128] as PixelateSizeOption[]).map((option) => (
+                        <button
+                          key={String(option)}
+                          onClick={() => onPixelateSizeChange(option)}
+                          className={`p-1.5 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(
+                            sessionType,
+                            pixelateSize === option
+                          )}`}
+                        >
+                          {option === 'auto' ? '자동' : `${option}px`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 팔레트 색 수 */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1.5">팔레트 색 수</label>
+                    <div className="grid grid-cols-5 gap-2">
+                      {(['auto', 8, 16, 32, 48] as PaletteSizeOption[]).map((option) => (
+                        <button
+                          key={String(option)}
+                          onClick={() => onPixelatePaletteSizeChange(option)}
+                          className={`p-1.5 rounded-md text-xs font-medium border-2 transition-all ${getGridButtonStyle(
+                            sessionType,
+                            pixelatePaletteSize === option
+                          )}`}
+                        >
+                          {option === 'auto' ? '자동' : `${option}색`}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-gray-500">
+                      색을 줄이면 픽셀아트다워지지만 원본의 미묘한 계조는 사라집니다.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -18,6 +18,12 @@ export const IMAGE_GENERATION_DEFAULTS = {
   PIXEL_ART_GRID: '1x1' as const,
   /** 참조 이미지 사용 여부 */
   USE_REFERENCE_IMAGES: true,
+  /** 픽셀 정규화 기본 ON — AI 생성물은 그대로 두면 픽셀 격자에 정렬되지 않는다 */
+  PIXELATE: true,
+  /** 픽셀 정규화 논리 해상도 (자동 = 격자 감지 또는 그리드 권장값) */
+  PIXELATE_SIZE: 'auto' as const,
+  /** 픽셀 정규화 팔레트 색 수 (자동 = 히스토그램에서 산정) */
+  PIXELATE_PALETTE_SIZE: 'auto' as const,
 } as const;
 
 // ============================================

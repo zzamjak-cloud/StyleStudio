@@ -66,6 +66,9 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 스케치 분석 결과가 생성에 반영 안 됨 / 라벨 위 그려짐 | `illustration/concept-sketch.md` |
 | 픽셀아트 생성물에 격자선이 그려짐 | `pixelart/overview.md` → `prompts/overview.md` |
 | 스프라이트 시트 프레임 수/해상도가 이상함 | `pixelart/overview.md` |
+| 확대하면 픽셀이 흐림 / 컬러가 뭉개짐 (픽셀 정규화) | `pixelart/overview.md` |
+| 채팅에서 픽셀아트가 정규화 안 됨 / .jpg로 저장됨 | `pixelart/overview.md` → `chat/overview.md` |
+| 정규화 후 색이 너무 단순해짐 / 논리 해상도가 엉뚱함 | `pixelart/overview.md` |
 | 픽셀 업스케일(pixelArtUpscaler) 동작 안 함 | `pixelart/overview.md` |
 | 그리드(1x1~8x8) 선택 UI가 안 보임 | `pixelart/overview.md` |
 | 변형 타일을 랜덤 배치하면 이음새가 어긋남 | `tilemap/overview.md` |

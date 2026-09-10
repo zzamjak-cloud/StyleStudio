@@ -36,6 +36,76 @@ function parseResolutionEstimate(resolutionStr?: string): number {
 }
 
 /**
+ * 최신 픽셀아트 채색 규칙.
+ * 디더링·체커보드·그라데이션은 구세대(NES/DOS) 표현으로, 모델이 "pixel art"라는 단어만 보고
+ * 기본값으로 끌어오는 경향이 강하다. 세 픽셀 세션의 모든 분기(1x1·그리드)에 동일하게 주입한다.
+ */
+export const PIXELART_MODERN_STYLE_RULES = `🎨 MODERN PIXEL ART SHADING (mandatory):
+✓ Hue-shifted shading: shift hue toward warm/cool instead of only darkening
+✓ Hard-edged color bands (3-5 flat steps per surface) — every band boundary is pixel-crisp
+✓ Limited, deliberate palette with clean flat color areas
+✓ Crisp pixel edges, every pixel aligned to the same pixel grid (no mixels)
+
+⛔ NO DITHERING: Do NOT use dithering, dither patterns, checkerboard/50% stipple shading,
+   halftone dots, scattered single-pixel noise, or grain to blend two colors. This is an
+   outdated retro technique. Blend with additional hard-edged palette steps instead.
+⛔ NO GRADIENTS: no smooth gradients, no soft transitions, no anti-aliasing, no blur.
+⛔ Target aesthetic: modern indie pixel art (Dead Cells / Owlboy era), NOT 1980s console output.`;
+
+/**
+ * 분석 결과의 negative_prompt를 생성 프롬프트의 AVOID 섹션으로 변환.
+ * 디더링 관련 키워드는 분석 결과에 없어도 항상 강제 포함한다.
+ */
+function buildPixelArtAvoidSection(analysis?: ImageAnalysisResult): string {
+  const mandatory = [
+    'dithering',
+    'dither pattern',
+    'checkerboard shading',
+    'stippling',
+    'halftone',
+    'smooth gradients',
+    'anti-aliasing',
+    'blur',
+    'mixels',
+    'sub-pixel rendering',
+  ];
+  const analyzed = (analysis?.negative_prompt || '')
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  // 중복 제거(대소문자 무시), 분석값 우선 순서 유지
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const token of [...analyzed, ...mandatory]) {
+    const key = token.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(token);
+  }
+
+  return `⛔ AVOID: ${merged.join(', ')}`;
+}
+
+/**
+ * 분석 결과의 pixelart_specific 값을 프롬프트 스펙 블록으로 변환.
+ * resolution 외 필드는 지금까지 분석만 되고 생성에 전달되지 않았다.
+ */
+function buildPixelArtSpecSection(analysis?: ImageAnalysisResult): string {
+  const p = analysis?.pixelart_specific;
+  if (!p) return '';
+
+  const lines: string[] = [];
+  if (p.color_palette_count) lines.push(`✓ Palette: ${p.color_palette_count}`);
+  if (p.outline_style) lines.push(`✓ Outline: ${p.outline_style}`);
+  if (p.shading_technique) lines.push(`✓ Shading: ${p.shading_technique}`);
+  if (p.perspective) lines.push(`✓ Perspective: ${p.perspective}`);
+
+  if (lines.length === 0) return '';
+  return ['📐 MATCH REFERENCE SPEC:', ...lines].join('\n');
+}
+
+/**
  * 세션 타입에 따른 프롬프트 생성 파라미터
  */
 export interface PromptGenerationParams {
@@ -399,6 +469,8 @@ function generatePixelArtCharacterPrompt(params: PromptGenerationParams): string
   const { basePrompt, pixelArtGrid, analysis } = params;
 
   const resolution = parseResolutionEstimate(analysis?.pixelart_specific?.resolution_estimate);
+  const specSection = buildPixelArtSpecSection(analysis);
+  const avoidSection = buildPixelArtAvoidSection(analysis);
 
   if (pixelArtGrid && pixelArtGrid !== '1x1') {
     const gridInfo = getPixelArtGridInfo(pixelArtGrid);
@@ -412,6 +484,8 @@ function generatePixelArtCharacterPrompt(params: PromptGenerationParams): string
 ✓ Consistent character design across all frames
 ✓ Same color palette (limited colors)
 ✓ Crisp pixel edges (no anti-aliasing)
+${specSection ? `\n${specSection}\n` : ''}
+${PIXELART_MODERN_STYLE_RULES}
 
 🖼️ BACKGROUND: Pure white background (#FFFFFF) for all cells. No gradients, no patterns, no checkered pattern, no transparency.
 
@@ -419,6 +493,8 @@ function generatePixelArtCharacterPrompt(params: PromptGenerationParams): string
 
 🤸 ANIMATION SEQUENCE (${frameCount} frames):
 ${basePrompt || 'Character animation frames'}
+
+${avoidSection}
 
 Generate ${frameCount} pixel art frames in ${gridLayout} grid.`;
   }
@@ -429,8 +505,12 @@ Animation: ${basePrompt}
 
 Resolution: ${resolution}x${resolution}px
 Match the pixel art style, color palette, and character design.
+${specSection ? `\n${specSection}\n` : ''}
+${PIXELART_MODERN_STYLE_RULES}
 
-BACKGROUND: Pure white background (#FFFFFF) only. No gradients, no patterns, no checkered pattern, no transparency.`;
+BACKGROUND: Pure white background (#FFFFFF) only. No gradients, no patterns, no checkered pattern, no transparency.
+
+${avoidSection}`;
 }
 
 /**
@@ -440,6 +520,8 @@ function generatePixelArtBackgroundPrompt(params: PromptGenerationParams): strin
   const { basePrompt, pixelArtGrid, analysis } = params;
 
   const resolution = parseResolutionEstimate(analysis?.pixelart_specific?.resolution_estimate);
+  const specSection = buildPixelArtSpecSection(analysis);
+  const avoidSection = buildPixelArtAvoidSection(analysis);
 
   if (pixelArtGrid && pixelArtGrid !== '1x1') {
     const gridInfo = getPixelArtGridInfo(pixelArtGrid);
@@ -453,11 +535,18 @@ function generatePixelArtBackgroundPrompt(params: PromptGenerationParams): strin
 ✓ Consistent art style across scenes
 ✓ Same color palette approach
 ✓ Crisp pixel edges (no anti-aliasing)
+${specSection ? `\n${specSection}\n` : ''}
+${PIXELART_MODERN_STYLE_RULES}
+
+🌌 SKY / LARGE FLAT AREAS: render wide areas (sky, water, walls, ground) as a few hard-edged
+hue-shifted color bands. Never blend them with dithering, stippling, or noise.
 
 ⛔ CRITICAL - NO GRID LINES: Do NOT draw any lines, borders, dividers, or separators between cells. The grid layout is purely conceptual - there should be NO visible grid structure in the final image.
 
 🌄 SCENE VARIATIONS (${frameCount} backgrounds):
 ${basePrompt || 'Background scene variations'}
+
+${avoidSection}
 
 Generate ${frameCount} pixel art backgrounds in ${gridLayout} grid.`;
   }
@@ -467,7 +556,14 @@ Generate ${frameCount} pixel art backgrounds in ${gridLayout} grid.`;
 Scene: ${basePrompt}
 
 Resolution: ${resolution}x${resolution}px
-Match the pixel art style and color palette.`;
+Match the pixel art style and color palette.
+${specSection ? `\n${specSection}\n` : ''}
+${PIXELART_MODERN_STYLE_RULES}
+
+🌌 SKY / LARGE FLAT AREAS: render wide areas (sky, water, walls, ground) as a few hard-edged
+hue-shifted color bands. Never blend them with dithering, stippling, or noise.
+
+${avoidSection}`;
 }
 
 /**
@@ -477,6 +573,8 @@ function generatePixelArtIconPrompt(params: PromptGenerationParams): string {
   const { basePrompt, pixelArtGrid, analysis } = params;
 
   const resolution = parseResolutionEstimate(analysis?.pixelart_specific?.resolution_estimate);
+  const specSection = buildPixelArtSpecSection(analysis);
+  const avoidSection = buildPixelArtAvoidSection(analysis);
 
   if (pixelArtGrid && pixelArtGrid !== '1x1') {
     const gridInfo = getPixelArtGridInfo(pixelArtGrid);
@@ -491,6 +589,8 @@ function generatePixelArtIconPrompt(params: PromptGenerationParams): string {
 ✓ Same color palette
 ✓ Crisp pixel edges (no anti-aliasing)
 ✓ Centered composition
+${specSection ? `\n${specSection}\n` : ''}
+${PIXELART_MODERN_STYLE_RULES}
 
 🖼️ BACKGROUND: Pure white background (#FFFFFF) for all cells. No gradients, no patterns, no checkered pattern, no transparency.
 
@@ -498,6 +598,8 @@ function generatePixelArtIconPrompt(params: PromptGenerationParams): string {
 
 🎲 ICON VARIATIONS (${frameCount} items):
 ${basePrompt || 'Game item icons'}
+
+${avoidSection}
 
 Generate ${frameCount} pixel art icons in ${gridLayout} grid.`;
   }
@@ -508,8 +610,12 @@ Icon: ${basePrompt}
 
 Resolution: ${resolution}x${resolution}px
 Match the pixel art style and color palette.
+${specSection ? `\n${specSection}\n` : ''}
+${PIXELART_MODERN_STYLE_RULES}
 
-BACKGROUND: Pure white background (#FFFFFF) only. No gradients, no patterns, no checkered pattern, no transparency.`;
+BACKGROUND: Pure white background (#FFFFFF) only. No gradients, no patterns, no checkered pattern, no transparency.
+
+${avoidSection}`;
 }
 
 /**

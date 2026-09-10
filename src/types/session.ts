@@ -1,6 +1,7 @@
 import { AspectRatioOption } from '../hooks/api/imageModels';
 import { ImageAnalysisResult } from './analysis';
 import { PixelArtGridLayout } from './pixelart';
+import { PaletteSizeOption, PixelateSizeOption } from '../lib/pixelart/pixelate';
 import { ReferenceDocument } from './referenceDocument';
 import { IllustrationSessionData } from './illustration';
 import { ChatSessionData } from './chat';
@@ -51,4 +52,7 @@ export interface GenerationSettings {
   cameraAngle?: string; // 카메라 앵글 프리셋 ID
   cameraLens?: string;  // 카메라 렌즈/화각 프리셋 ID
   thinkingMode?: boolean; // GPT-Image-2 / Gemini 추론 기반 생성 prefix 적용 여부 (베타)
+  pixelate?: boolean; // 픽셀 정규화 적용 여부 (픽셀아트 세션 전용)
+  pixelateSize?: PixelateSizeOption; // 논리 해상도 ('auto' | 32 | 64 | 128)
+  pixelatePaletteSize?: PaletteSizeOption; // 팔레트 색 수 ('auto' | 8 | 16 | 32 | 48)
 }

@@ -219,8 +219,8 @@ export const PIXELART_ANALYZER_PROMPT = `
 
 {
   "style": {
-    "art_style": "pixel art (예: 8-bit NES style, 16-bit SNES style, 32-bit GBA style, modern indie pixel art)",
-    "technique": "픽셀아트 기법 (예: hue shifting, color banding, flat shading, pixel perfect lines, limited palette)",
+    "art_style": "pixel art (기본값: modern indie pixel art. 참조가 명백히 레트로 콘솔 스타일일 때만 16-bit SNES style / 8-bit NES style 사용)",
+    "technique": "픽셀아트 기법 (예: hue shifting, hard-edged color banding, flat shading, pixel perfect lines, limited palette)",
     "color_palette": "색상 팔레트 (예: 4-color Gameboy palette, 16-color limited palette, vibrant SNES colors, pastel indie palette)",
     "lighting": "조명 (예: flat lighting, simple cel-shaded, retro ambient, dramatic pixel shadows)",
     "mood": "분위기"
@@ -249,13 +249,13 @@ export const PIXELART_ANALYZER_PROMPT = `
     "resolution_estimate": "추정 해상도 (예: 64x64, 128x128, 256x256, 320x240)",
     "color_palette_count": "사용된 색상 수 (예: 4 colors, 16 colors, 32 colors, 64+ colors)",
     "pixel_density": "픽셀 밀도 (예: Low-res 8-bit, Mid-res 16-bit, Hi-res 32-bit, Modern high-res)",
-    "style_era": "스타일 시대 (예: NES 8-bit era, SNES 16-bit era, GBA 32-bit era, Modern indie pixel art)",
+    "style_era": "스타일 시대 (기본값: Modern indie pixel art. 참조에서 레트로 콘솔 제약이 명확히 관측될 때만 SNES 16-bit era 등 사용)",
     "perspective": "시점 (예: Top-down, Side-view, Isometric, Front-view, Three-quarter view)",
     "outline_style": "외곽선 스타일 (예: Black 1px outlines, Colored sel-out outlines, No outlines, Thick pixel borders)",
-    "shading_technique": "음영 기법 (예: Hue shifting, Color banding, Flat colors, Cell shading, Gradient banding)",
+    "shading_technique": "음영 기법 (예: Hue shifting, Color banding, Flat colors, Cell shading — 모두 하드 에지. dithering/gradient 금지)",
     "anti_aliasing": "안티앨리어싱 사용 여부 (예: None - pure pixels, Selective AA on curves, Manual pixel smoothing)"
   },
-  "negative_prompt": "픽셀아트에서 피해야 할 요소들 (영문 키워드: blur, anti-aliasing, smooth gradients, photorealistic, high detail rendering, vector art, mixels, fuzzy edges, noise texture, interpolation, sub-pixel rendering)"
+  "negative_prompt": "픽셀아트에서 피해야 할 요소들 (영문 키워드: blur, anti-aliasing, smooth gradients, photorealistic, high detail rendering, vector art, mixels, fuzzy edges, noise texture, interpolation, sub-pixel rendering, dithering, dither pattern, checkerboard shading, stippling, halftone)"
 }
 
 **중요 분석 지침 (픽셀아트 특화):**
@@ -280,13 +280,16 @@ export const PIXELART_ANALYZER_PROMPT = `
    - 실제 사용된 색상 개수를 추정 (4색, 16색, 32색 등)
    - 제한된 팔레트인지 자유로운 팔레트인지 판단
    - 레트로 콘솔 팔레트 제약 여부 확인 (NES 54색, SNES 32,768색 등)
+   - ⚠️ 팔레트가 콘솔 제약과 명확히 일치하지 않으면 레트로 콘솔 이름을 붙이지 말 것.
+     레트로 시대 라벨은 디더링·저채도 채색을 함께 끌고 오므로, 확실할 때만 사용한다.
 
 5. **음영 기법 (Shading Technique) - 최신 픽셀아트 스타일**:
    - **Hue shifting**: 색상 변화로 명암 표현 (현대 픽셀아트의 주요 기법)
    - **Color banding**: 명확한 색상 띠로 구분 (distinct bands)
    - **Flat colors**: 단색 영역 (no shading)
    - **Cell shading**: 애니메이션 스타일의 명확한 음영 경계
-   - **Gradient banding**: 부드러운 색상 전환을 여러 단계의 띠로 표현
+   - ⚠️ **그라데이션 금지**: 부드러운 색상 전환은 하드 에지 색 띠(3~5단계)로 환산해 기술한다.
+     "gradient", "smooth transition" 같은 표현을 쓰지 말 것 — 띠 경계는 항상 픽셀 단위로 선명하다.
    - ⚠️ **Dithering은 제외**: 오래된 기법으로 최신 픽셀아트에서는 거의 사용하지 않음
 
 6. **시점 (Perspective)**:
@@ -305,7 +308,7 @@ export const PIXELART_ANALYZER_PROMPT = `
    - **Low-res 8-bit**: 큰 픽셀, NES/Gameboy 스타일
    - **Mid-res 16-bit**: 균형잡힌 디테일, SNES/Genesis 스타일
    - **Hi-res 32-bit**: 세밀한 디테일, GBA/PS1 스타일
-   - **Modern indie**: 높은 해상도, 픽셀아트 미학 유지
+   - **Modern indie**: 높은 해상도, 픽셀아트 미학 유지 (**기본 지향 — 판단이 애매하면 이쪽**)
 
 9. **안티앨리어싱 (Anti-aliasing)**:
    - 픽셀아트는 일반적으로 안티앨리어싱을 사용하지 않음
@@ -317,6 +320,7 @@ export const PIXELART_ANALYZER_PROMPT = `
     - **필수 포함**: blur, anti-aliasing, smooth gradients, photorealistic
     - **필수 포함**: mixels (크기 다른 픽셀), fuzzy edges, interpolation
     - **필수 포함**: sub-pixel rendering, vector art, high poly 3D
+   - **필수 포함**: dithering, dither pattern, checkerboard shading, stippling, halftone (오래된 디더링 채색 차단)
     - 제한된 색상 팔레트를 벗어나는 요소 차단
 
 **출력 형식:**
@@ -335,7 +339,7 @@ export const PIXELART_BACKGROUND_ANALYZER_PROMPT = `
 {
   "style": {
     "art_style": "pixel art background (예: 8-bit NES background, 16-bit SNES background, 32-bit GBA background, modern indie pixel art background)",
-    "technique": "픽셀아트 기법 (예: hue shifting, color banding, flat shading, pixel perfect lines, limited palette)",
+    "technique": "픽셀아트 기법 (예: hue shifting, hard-edged color banding, flat shading, pixel perfect lines, limited palette)",
     "color_palette": "색상 팔레트 (예: 4-color Gameboy palette, 16-color limited palette, vibrant SNES colors, pastel indie palette)",
     "lighting": "조명 (예: flat lighting, simple cel-shaded, retro ambient, dramatic pixel shadows)",
     "mood": "분위기"
@@ -364,15 +368,15 @@ export const PIXELART_BACKGROUND_ANALYZER_PROMPT = `
     "resolution_estimate": "추정 해상도 (예: 256x240 NES, 320x240 SNES, 240x160 GBA, 512x512 modern)",
     "color_palette_count": "사용된 색상 수 (예: 4 colors, 16 colors, 32 colors, 64+ colors)",
     "pixel_density": "픽셀 밀도 (예: Low-res 8-bit, Mid-res 16-bit, Hi-res 32-bit, Modern high-res)",
-    "style_era": "스타일 시대 (예: NES 8-bit era, SNES 16-bit era, GBA 32-bit era, Modern indie pixel art)",
+    "style_era": "스타일 시대 (기본값: Modern indie pixel art. 참조에서 레트로 콘솔 제약이 명확히 관측될 때만 SNES 16-bit era 등 사용)",
     "perspective": "시점 (예: Top-down, Side-view, Isometric, Front-view, Parallax scrolling)",
     "outline_style": "외곽선 스타일 (예: Black 1px outlines, Colored sel-out outlines, No outlines, Thick pixel borders)",
-    "shading_technique": "음영 기법 (예: Hue shifting, Color banding, Flat colors, Cell shading, Gradient banding)",
+    "shading_technique": "음영 기법 (예: Hue shifting, Color banding, Flat colors, Cell shading — 모두 하드 에지. dithering/gradient 금지)",
     "anti_aliasing": "안티앨리어싱 사용 여부 (예: None - pure pixels, Selective AA on curves, Manual pixel smoothing)",
     "tiling_pattern": "타일 패턴 (예: 16x16 tiles, 32x32 tiles, seamless repeating, modular tiles)",
     "parallax_layers": "패럴랙스 레이어 (예: single layer, 2-layer depth, 3-layer depth, multi-layer parallax)"
   },
-  "negative_prompt": "픽셀아트 배경에서 피해야 할 요소들 (영문 키워드: blur, anti-aliasing, smooth gradients, photorealistic, high detail rendering, vector art, mixels, fuzzy edges, noise texture, interpolation, sub-pixel rendering, characters, people, humans, figures, portraits, faces, living beings)"
+  "negative_prompt": "픽셀아트 배경에서 피해야 할 요소들 (영문 키워드: blur, anti-aliasing, smooth gradients, photorealistic, high detail rendering, vector art, mixels, fuzzy edges, noise texture, interpolation, sub-pixel rendering, dithering, dither pattern, checkerboard shading, stippling, halftone, characters, people, humans, figures, portraits, faces, living beings)"
 }
 
 **중요 분석 지침 (픽셀아트 배경 특화):**
@@ -406,15 +410,29 @@ export const PIXELART_BACKGROUND_ANALYZER_PROMPT = `
    - 레트로 콘솔 제약 준수 여부
    - 배경 전용 색상 수 (4색, 16색, 32색 등)
 
-7. **composition.background 필드**:
+7. **음영 기법 (Shading Technique) - 최신 픽셀아트 스타일**:
+   - **Hue shifting**: 명암을 밝기 대신 색상 이동으로 표현 (현대 픽셀아트의 주요 기법)
+   - **Color banding**: 명확한 하드 에지 색상 띠로 구분 (distinct hard-edged bands)
+   - **Flat colors**: 단색 영역 (no shading)
+   - **Cell shading**: 애니메이션 스타일의 명확한 음영 경계
+   - ⚠️ **Dithering은 제외**: 오래된 기법으로 최신 픽셀아트에서는 거의 사용하지 않음.
+     참조에 디더링·체커보드 패턴이 보여도 shading_technique 필드에 절대 기재하지 말고,
+     가장 가까운 최신 기법(hue shifting 또는 color banding)으로 대체 기술한다.
+   - ⚠️ **그라데이션 금지**: 부드러운 색상 전환은 하드 에지 색 띠 몇 단계로 환산해 기술한다.
+
+8. **composition.background 필드**:
    - 배경의 모든 요소를 픽셀 단위로 상세히 기술
    - 지형, 건물, 타일, 자연 요소, 시간대, 날씨, 분위기 등
-   - 픽셀아트 특유의 표현 방식 명시 (예: dithered sky, tiled grass, modular rocks)
+   - 픽셀아트 특유의 표현 방식 명시 (예: hue-shifted sky bands, tiled grass, modular rocks)
+   - ⛔ **디더링 관련 표현 금지**: dithered, dither pattern, checkerboard shading, stippled,
+     halftone 같은 단어를 절대 쓰지 말 것. 참조에 디더링이 보여도 기술하지 않고,
+     같은 그라데이션을 hard-edged color bands(하드 에지 색 띠)로 환산해 기술한다.
 
-8. **Negative Prompt 생성 (매우 중요)**:
+9. **Negative Prompt 생성 (매우 중요)**:
    - 픽셀아트 배경을 해치는 요소를 명확히 나열
    - **필수 포함**: blur, anti-aliasing, smooth gradients, photorealistic
    - **필수 포함**: mixels, fuzzy edges, interpolation, sub-pixel rendering
+   - **필수 포함**: dithering, dither pattern, checkerboard shading, stippling, halftone, noise texture (오래된 디더링 채색 차단)
    - **필수 포함**: characters, people, humans, figures, portraits, faces, living beings (배경 전용 보장)
 
 **출력 형식:**

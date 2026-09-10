@@ -6,6 +6,7 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { join } from '@tauri-apps/api/path';
 import { getAiGenRoot } from '../../lib/config/paths';
+import { getImageSaveFormat } from '../../lib/utils/imageDataUrl';
 import type { Session } from '../../types/session';
 import { useChatSession, RECENT_MESSAGES_TO_KEEP } from '../../hooks/useChatSession';
 import { useChatImageGeneration } from '../../hooks/useChatImageGeneration';
@@ -176,7 +177,13 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
       const savePath = await getAiGenRoot();
       const timestamp = Date.now();
       const randomSuffix = Math.random().toString(36).slice(2, 8);
-      const fileName = `chat-image-${timestamp}-${randomSuffix}.jpg`;
+      /*
+        확장자를 하드코딩하지 않는다 — 픽셀아트 모드 결과는 PNG다(손실 압축이 픽셀
+        경계를 뭉개므로 JPEG로 변환하지 않는다). `.jpg`로 고정하면 PNG 바이트가
+        .jpg 파일로 나가 뷰어·임포터가 잘못 해석한다. (lib/utils/imageDataUrl.ts)
+      */
+      const { extension } = getImageSaveFormat(imageBase64);
+      const fileName = `chat-image-${timestamp}-${randomSuffix}.${extension}`;
       const fullPath = await join(savePath, fileName);
 
       // base64 데이터에서 순수 데이터 추출
@@ -276,13 +283,14 @@ function ChatPanelComponent({ session, apiKey, onSessionUpdate }: ChatPanelProps
     console.log('   - 이미지 데이터 prefix:', imageBase64.substring(0, 50));
 
     try {
-      // Gemini API는 JPEG 형식으로 이미지를 생성하므로 JPG로 저장
+      // 저장 포맷은 실제 바이트로 판별한다 (픽셀아트 모드 결과는 PNG)
       const timestamp = Date.now();
+      const { extension, filter } = getImageSaveFormat(imageBase64);
       console.log('📝 save 다이얼로그 오픈 시도...');
 
       const filePath = await save({
-        filters: [{ name: 'JPEG 이미지', extensions: ['jpg', 'jpeg'] }],
-        defaultPath: `chat-image-${timestamp}.jpg`,
+        filters: [filter],
+        defaultPath: `chat-image-${timestamp}.${extension}`,
       });
 
       console.log('📝 선택된 파일 경로:', filePath);

@@ -29,6 +29,11 @@ import { getCameraAnglePrompt } from '../../types/cameraAngle';
 import { getCameraLensPrompt } from '../../types/cameraLens';
 import { buildUnifiedPrompt } from '../../lib/promptBuilder';
 import { buildPromptForSession } from '../../lib/prompts/sessionPrompts';
+import {
+  PaletteSizeOption,
+  PixelateSizeOption,
+  pixelateDataUrl,
+} from '../../lib/pixelart/pixelate';
 import { useImageGenerator } from '../../hooks/api/useImageGenerator';
 import { useGeminiTranslator } from '../../hooks/api/useGeminiTranslator';
 import { useTilemapProcessing } from '../../hooks/useTilemapProcessing';
@@ -367,6 +372,9 @@ interface GeneratorState {
   progressMessage: string;
   generatedImage: string | null;
   pixelArtGrid: PixelArtGridLayout;
+  pixelate: boolean; // 픽셀 정규화 적용 여부 (픽셀아트 세션 전용)
+  pixelateSize: PixelateSizeOption; // 픽셀 정규화 논리 해상도
+  pixelatePaletteSize: PaletteSizeOption; // 픽셀 정규화 팔레트 색 수
   tilemapMode: TilemapMode; // 타일셋 모드 (변형/룰타일)
   tilemapBaseTerrain: string; // 룰타일: 베이스 지형 (한국어 원문)
   tilemapOverlayTerrain: string; // 룰타일: 오버레이 지형 (한국어 원문)
@@ -425,6 +433,9 @@ export function ImageGeneratorPanel({
           ? TILEMAP_RULETILE_GRID
           : (tilemapData?.grid ?? '4x4'))
       : IMAGE_GENERATION_DEFAULTS.PIXEL_ART_GRID,
+    pixelate: IMAGE_GENERATION_DEFAULTS.PIXELATE,
+    pixelateSize: IMAGE_GENERATION_DEFAULTS.PIXELATE_SIZE,
+    pixelatePaletteSize: IMAGE_GENERATION_DEFAULTS.PIXELATE_PALETTE_SIZE,
     tilemapMode: (sessionType === 'TILEMAP' ? (tilemapData?.mode ?? 'variation') : 'variation') as TilemapMode,
     tilemapBaseTerrain: tilemapData?.baseTerrain ?? '',
     tilemapOverlayTerrain: tilemapData?.overlayTerrain ?? '',
@@ -474,6 +485,9 @@ export function ImageGeneratorPanel({
     progressMessage,
     generatedImage,
     pixelArtGrid,
+    pixelate,
+    pixelateSize,
+    pixelatePaletteSize,
     tilemapMode,
     tilemapBaseTerrain,
     tilemapOverlayTerrain,
@@ -524,6 +538,9 @@ export function ImageGeneratorPanel({
   const setProgressMessage = useCallback((value: string) => updateState({ progressMessage: value }), [updateState]);
   const setGeneratedImage = useCallback((value: string | null) => updateState({ generatedImage: value }), [updateState]);
   const setPixelArtGrid = useCallback((value: PixelArtGridLayout) => updateState({ pixelArtGrid: value }), [updateState]);
+  const setPixelate = useCallback((value: boolean) => updateState({ pixelate: value }), [updateState]);
+  const setPixelateSize = useCallback((value: PixelateSizeOption) => updateState({ pixelateSize: value }), [updateState]);
+  const setPixelatePaletteSize = useCallback((value: PaletteSizeOption) => updateState({ pixelatePaletteSize: value }), [updateState]);
   const setTilemapMode = useCallback((value: TilemapMode) => updateState({ tilemapMode: value }), [updateState]);
   const setTilemapBaseTerrain = useCallback((value: string) => updateState({ tilemapBaseTerrain: value }), [updateState]);
   const setTilemapOverlayTerrain = useCallback((value: string) => updateState({ tilemapOverlayTerrain: value }), [updateState]);
@@ -623,6 +640,8 @@ export function ImageGeneratorPanel({
     }
 
     const isRuletile = sessionType === 'TILEMAP' && tilemapMode === 'ruletile';
+    // 픽셀 정규화는 픽셀아트 세션에만 적용한다 — 일반 세션 결과를 블록화하면 그림이 망가진다
+    const isPixelArtSession = sessionType.startsWith('PIXELART_');
     // 지형을 비우면 그 지형은 투명으로 합성된다(어떤 바닥에도 얹는 길 타일).
     // 다만 **둘 다** 비면 아웃라인 말고는 아무것도 남지 않으므로 막는다.
     if (isRuletile && !tilemapBaseTerrain.trim() && !tilemapOverlayTerrain.trim()) {
@@ -806,6 +825,32 @@ export function ImageGeneratorPanel({
               }
             }
 
+            // 픽셀 정규화 — AI 원본은 픽셀 격자에 정렬돼 있지 않다(경계 흐림·블록 내부 색 흔들림).
+            // 격자를 찾아 논리 해상도로 재구성한 뒤 정수배 Nearest-Neighbor로 되돌린다.
+            //
+            // 주의: 표시·자동저장·히스토리 모두 이 정규화 결과를 쓴다(WYSIWYG). AI 원본은
+            // 보존되지 않는다 — 히스토리는 항목당 이미지 키가 하나뿐이라(`{sessionId}-gen-{id}`)
+            // 원본을 함께 남기려면 storage.ts의 키·마이그레이션·export/import·orphan 정리를
+            // 모두 확장해야 한다. 원본이 필요하면 토글을 끄고 생성한다.
+            if (isPixelArtSession && pixelate) {
+              setProgressMessage('픽셀 정규화 중...');
+              try {
+                const pixelated = await pixelateDataUrl(dataUrl, {
+                  size: pixelateSize,
+                  paletteSize: pixelatePaletteSize,
+                  grid: pixelArtGrid,
+                });
+                dataUrl = pixelated.dataUrl;
+                logger.debug(
+                  `✅ 픽셀 정규화 완료: ${pixelated.logicalWidth}x${pixelated.logicalHeight} ` +
+                  `· ${pixelated.paletteSize}색 · x${pixelated.scale} 확대 (격자 정합 ${pixelated.gridScore.toFixed(2)})`
+                );
+              } catch (pixelateError) {
+                logger.error('❌ 픽셀 정규화 실패:', pixelateError);
+                // 실패해도 원본 이미지 사용 (배경 제거와 동일한 방어 패턴)
+              }
+            }
+
             setGeneratedImage(dataUrl);
             setZoomLevel('fit'); // 이미지 생성 시 줌을 '화면에 맞춤'으로 리셋
             setIsGenerating(false);
@@ -847,6 +892,14 @@ export function ImageGeneratorPanel({
                   pixelArtGrid: pixelArtGrid, // 스프라이트 그리드 레이아웃
                   cameraAngle: cameraAngle !== 'none' ? cameraAngle : undefined, // 카메라 앵글
                   cameraLens: cameraLens !== 'none' ? cameraLens : undefined,   // 카메라 렌즈/화각
+                  // 픽셀 정규화 설정 (픽셀아트 세션에서만 의미가 있다)
+                  ...(isPixelArtSession
+                    ? {
+                        pixelate,
+                        pixelateSize,
+                        pixelatePaletteSize,
+                      }
+                    : {}),
                 },
                 referenceDocumentIds: referenceDocuments?.map(doc => doc.id), // 참조 문서 ID 목록
               };
@@ -1122,6 +1175,10 @@ export function ImageGeneratorPanel({
       pixelArtGrid: entry.settings.pixelArtGrid ?? prev.pixelArtGrid,
       cameraAngle: entry.settings.cameraAngle ?? 'none',
       cameraLens: entry.settings.cameraLens ?? 'none',
+      // 픽셀 정규화 설정 — 구버전 히스토리엔 없으므로 현재 값을 유지한다
+      pixelate: entry.settings.pixelate ?? prev.pixelate,
+      pixelateSize: entry.settings.pixelateSize ?? prev.pixelateSize,
+      pixelatePaletteSize: entry.settings.pixelatePaletteSize ?? prev.pixelatePaletteSize,
       additionalPrompt: entry.additionalPrompt ?? prev.additionalPrompt,
       generatedImage: restoredHistoryImage,
     }));
@@ -1322,6 +1379,9 @@ export function ImageGeneratorPanel({
           imageSize={imageSize}
           useReferenceImages={useReferenceImages}
           pixelArtGrid={pixelArtGrid}
+          pixelate={pixelate}
+          pixelateSize={pixelateSize}
+          pixelatePaletteSize={pixelatePaletteSize}
           tilemapMode={tilemapMode}
           tilemapBaseTerrain={tilemapBaseTerrain}
           tilemapOverlayTerrain={tilemapOverlayTerrain}
@@ -1349,6 +1409,9 @@ export function ImageGeneratorPanel({
           onImageSizeChange={setImageSize}
           onUseReferenceImagesChange={setUseReferenceImages}
           onPixelArtGridChange={setPixelArtGrid}
+          onPixelateChange={setPixelate}
+          onPixelateSizeChange={setPixelateSize}
+          onPixelatePaletteSizeChange={setPixelatePaletteSize}
           onTilemapModeChange={setTilemapMode}
           onTilemapBaseTerrainChange={setTilemapBaseTerrain}
           onTilemapOverlayTerrainChange={setTilemapOverlayTerrain}

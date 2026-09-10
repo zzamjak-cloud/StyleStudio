@@ -39,7 +39,7 @@ export interface PixelArtSpecificAnalysis {
   style_era: string;              // 스타일 시대 (예: "NES 8-bit", "SNES 16-bit", "GBA 32-bit", "Modern indie")
   perspective: string;            // 시점 (예: "Top-down", "Side-view", "Isometric", "Front-view")
   outline_style: string;          // 외곽선 스타일 (예: "Black 1px outlines", "Colored outlines", "No outlines")
-  shading_technique: string;      // 음영 기법 (예: "Dithering", "Color banding", "Flat colors")
+  shading_technique: string;      // 음영 기법 (예: "Hue shifting", "Color banding", "Flat colors") — 디더링은 구세대 기법이라 분석기가 채우지 않는다
   anti_aliasing: string;          // 안티앨리어싱 사용 여부 (예: "None - pure pixels", "Selective AA on curves")
 }
 
