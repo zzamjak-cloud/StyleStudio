@@ -37,8 +37,9 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 강화 모드가 일반/전용 프롬프트로 잘못 감 | `analysis/analysis-prompt.md` |
 | 모델 바꿨더니 비율/해상도가 리셋됨 | `generator/overview.md` |
 | 한글 프롬프트가 번역 안 되고 그대로 전송됨 | `generator/overview.md` → `api/overview.md` |
-| 모델 드롭다운 / 덕테이프 / 나노바나나 2 라이트가 안 보임 | `generator/settings.md` |
-| 2.5 모델이 드롭다운에 안 보임 (OpenRouter 등재 대기 중) | `generator/image-generation-api.md` |
+| 모델 드롭다운 / 나노바나나 2 라이트가 안 보임 | `generator/settings.md` |
+| 2.5 플레어·선버스트 계열 상세, 품질 xhigh/max | `generator/image-generation-api.md` |
+| 투명 배경(알파 PNG) 체크박스가 안 보임 / 꺼짐 | `generator/settings.md` |
 | 특정 비율/품질이 모델을 바꾸니 사라지거나 튕김 | `generator/image-generation-api.md` |
 | Reference Strength를 올려도 효과 없음 | `generator/settings.md` |
 | 2K/4K 눌러도 안 바뀜(비용 확인 모달) | `generator/settings.md` |
@@ -243,6 +244,8 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 - **저장 디바운스는 상수(`SESSION_LIMITS.AUTO_SAVE_INTERVAL`)가 아니라** `sessionHelpers`의 500ms + App의 1000ms 타이머 조합이 실제 동작.
 - **세션 소속 권위는 `Session.folderId`가 아니라 `session_folder_map`** 이며, 아이콘 매핑이 `SESSION_CONFIG`(이모지)와 `getSessionTypeInfo`(lucide) 두 곳으로 분리 — 타입 추가 시 양쪽 갱신 필요.
 - **모든 AI 호출은 OpenRouter 통합 키 하나**(store `openrouter_api_key`)로 나간다. 구버전 Gemini/OpenAI 키는 자동 이관되지 않음. Seed/Temperature/Top-K/Top-P·마스크 편집·극단 비율(1:3/3:1)은 OpenRouter 미지원으로 제거됨.
+- **`ModelAvailability`는 `'available'|'pending'` 두 값뿐이다 — `retired` 상태는 없다.** 2026-09-12에 `openai/gpt-image-2`(덕테이프)를 `retired` 처리하고 `RETIRED_MODEL_SUCCESSOR`로 2.5 선버스트에 자동 승격시키는 로직을 도입했으나, 실제 생성 테스트(타일맵 변형)에서 2.5가 퇴보하는 것이 확인돼 같은 날 되돌렸다. 지금은 **6종 모두 `available`**이고 저장된 모델은 항상 그대로 유지된다(예외 없음). → `generator/image-generation-api.md`
+- **`DEFAULT_IMAGE_MODEL`·`TILEMAP_FIXED_IMAGE_MODEL`은 다시 `openai/gpt-image-2`(덕테이프)다.** 2026-09-12에 잠깐 2.5 선버스트로 올렸다가 같은 날 되돌렸다 — 타일맵 변형 세트를 실제로 뽑아보니 **재질 스케일 붕괴**(참조 재질을 3~4배 확대해 그림)와 **변형 랜덤성 붕괴**(8칸 변형이 같은 모양을 반복)가 확인됐다. 품질 티어를 올려도 해결되지 않는다(구도 해석의 차이). 2.5 두 티어는 여전히 `available`이라 드롭다운에서 직접 고를 수 있다(품질 xhigh/max·투명 배경 지원 유지) — 다시 기본값으로 올리려면 위 두 가지를 실제 생성물로 먼저 재현·해결 확인할 것. → `tilemap/overview.md`
 - **스프라이트 시트는 canvas 분할/합성 코드가 없다** — 프롬프트 지시만으로 모델이 단일 이미지에 격자 배치.
 - **이미지 모델 능력치는 추측하지 말고 `openrouter.ai/api/v1/images/models`를 실측해 `imageModels.ts`에 옮긴다** — 최소공통으로 깎으면 주력 모델(덕테이프)의 기능을 못 쓴다. UI는 `supports`만 읽고 **모델 ID를 직접 비교하지 않는다**(`isOpenAIModel()`·`getAnnotationMode()`·`supports.qualities.length > 1`).
 - **부분 편집의 좌표 직렬화는 Gemini 전용 우회다** — 덕테이프는 합성본을 직접 받는다. 분기는 `getAnnotationMode()` 한 곳. 마스크 인페인팅은 OpenRouter에 없어서 못 쓴다(2026-09-09 확인).

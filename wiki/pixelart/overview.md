@@ -74,6 +74,7 @@ PixelArtSpecificAnalysis = {   // 참조 이미지 분석 결과 (pixelart 세�
 - **`⛔ AVOID` 섹션(`buildPixelArtAvoidSection`, `sessionPrompts.ts:59`)**: 분석 결과 `negative_prompt`를 생성 프롬프트로 전달한다(이전에는 분석 패널 표시 전용이라 생성에 아무 영향이 없었다). 디더링 계열 키워드 10종은 분석 결과에 없어도 항상 강제 포함, 대소문자 무시 중복 제거.
 - **`📐 MATCH REFERENCE SPEC` 섹션(`buildPixelArtSpecSection`)**: `pixelart_specific`의 `color_palette_count`·`outline_style`·`shading_technique`·`perspective`를 프롬프트에 전달한다(이전에는 `resolution_estimate`만 사용).
 - 캐릭터·아이콘은 순백 배경(그라디언트·체크무늬·투명 금지)을 명시 — 후처리 배경 제거·타일 분리를 쉽게 하기 위함.
+- **투명 배경(알파 PNG) 토글**이 켜져 있으면 이 순백 배경 지시가 `applyTransparentBackground`(`sessionPrompts.ts`)로 치환된다 — `PIXELART_CHARACTER`·`PIXELART_ICON`은 `TRANSPARENT_BACKGROUND_CAPABLE_SESSIONS`에 포함되어 gpt-image-2.5 계열(`supports.transparentBackground`)에서 노출된다. 켜면 JPEG 변환도 건너뛰어 알파를 보존한 PNG가 그대로 픽셀 정규화 단계로 들어간다(`downsampleToLogical`가 코어 과반 기준으로 알파를 이진화). 상세는 `generator/settings.md`의 "투명 배경" 절.
 
 ## 그리드 레이아웃 & 스프라이트 시트 (핵심)
 
@@ -167,7 +168,7 @@ median-cut의 균등 인구 분할은 색 클러스터 경계를 존중하지 �
 | 채색이 구세대 디더링(체커보드 점박이)으로 나옴 | `PIXELART_MODERN_STYLE_RULES` 주입 누락 또는 모델 무시. 분석 프롬프트가 `dithered`류 단어를 결과에 실어보냈는지도 확인(`analysisPrompt.ts:427` 금지 지침) |
 | 분석 네거티브가 생성에 반영 안 됨 | `buildPixelArtAvoidSection`은 픽셀 세션 3종에만 연결됨 — 다른 세션은 여전히 `negative_prompt` 미전달 |
 | 분석 결과가 NES/8-bit로만 잡힘 | 분석 프롬프트 기본값은 `Modern indie pixel art`(`analysisPrompt.ts:222,252`). 레트로 라벨은 콘솔 팔레트 제약이 명확할 때만 붙도록 유도 |
-| 배경이 순백이 아님 | 캐릭터·아이콘만 `#FFFFFF` 강제, 배경 세션은 미강제 |
+| 배경이 순백이 아님 | 캐릭터·아이콘만 `#FFFFFF` 강제, 배경 세션은 미강제. 투명 배경 토글이 켜져 있으면 의도된 동작(순백 지시가 알파 지시로 치환됨) |
 | 확대하면 픽셀이 흐리고 색이 뭉개짐 | 픽셀 정규화 토글이 꺼져 있음. 켜져 있는데도 그러면 격자 감지 실패(로그의 `격자 정합` 점수 확인 — 1.35 미만이면 격자 미인정) |
 | 정규화 결과가 원본과 너무 다르게 단순함 | 정상 동작 — 2단계 최빈색 추출이 미세 계조를 의도적으로 버린다. 팔레트 색 수를 올리면 완화되지만 그만큼 다시 뭉개진다 |
 | 논리 해상도가 엉뚱하게 잡힘 | 1x1 자동 감지 오검출 → 픽셀 해상도를 32/64/128로 직접 지정. 그리드 세션은 자동 감지를 쓰지 않으므로 이 증상이 없다 |

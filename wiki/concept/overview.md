@@ -51,7 +51,7 @@ ART_STYLE_PRESETS = 로우 폴리 / 카툰 렌더 / 셀 셰이딩 / 소프트 3D
 
 `ConceptRightPanel.tsx`:
 - 프롬프트 textarea 도 uncontrolled(ref). 히스토리 선택 시 `promptValue` 를 ref 에 직접 반영(:62).
-- 모델 옵션: `나노바나나 프로`/`나노바나나 2`/`나노바나나 2 라이트`/`덕테이프` — OpenRouter 통합 키로 전부 사용 가능(`getAvailableImageModels()`).
+- 모델 옵션: `나노바나나 프로`/`나노바나나 2`/`나노바나나 2 라이트`/`덕테이프`/`덕테이프 2.5 플레어`/`덕테이프 2.5 선버스트` — 6종 모두 OpenRouter 통합 키로 사용 가능(`getAvailableImageModels()`).
 - 비율·크기·그리드는 `getImageModelDefinition(settings.model)` 의 지원 목록 기준으로 활성화. 크기 2K/3K 클릭 시 **비용 경고 팝업**(2K≈4배, 3K≈9배) 확인 후 적용.
 
 ## 세션 저장 정책
@@ -67,7 +67,7 @@ ART_STYLE_PRESETS = 로우 폴리 / 카툰 렌더 / 셀 셰이딩 / 소프트 3D
 `ConceptHistory.tsx`:
 - 드래그 핸들로 패널 높이 100~600px 조절, 토글 버튼으로 100↔300 스냅.
 - 썸네일은 `LazyImage`(키면 IndexedDB lazy 디코딩), 그리드≠1x1 이면 배지 표시.
-- 항목 클릭 → `onSelect` → `handleHistorySelect`(`ConceptPanel.tsx:261`): `requestAnimationFrame` 으로 로딩 UI 먼저 반영 후 모델/비율/크기/그리드/게임정보/프롬프트를 복원(유효성 화이트리스트 검사). 저장은 `save` 다이얼로그, 키면 `loadImage` 복원 후 저장.
+- 항목 클릭 → `onSelect` → `handleHistorySelect`(`ConceptPanel.tsx:261`): `requestAnimationFrame` 으로 로딩 UI 먼저 반영 후 모델/비율/크기/그리드/게임정보/프롬프트를 복원(유효성 화이트리스트 검사). 품질은 `isOpenAIModel(model)`이면 `normalizeImageQuality(model, entry.settings.quality)`로 복원(`ConceptPanel.tsx:294-295`) — 저장된 품질이 복원 모델에 없는 티어(예: 2.5 `xhigh`)면 되돌린다. 저장은 `save` 다이얼로그, 키면 `loadImage` 복원 후 저장.
 
 ## 회귀 증상별 원인
 
@@ -79,5 +79,6 @@ ART_STYLE_PRESETS = 로우 폴리 / 카툰 렌더 / 셀 셰이딩 / 소프트 3D
 | 히스토리 복원 시 모델이 기본값으로 | `entry.settings.model` 이 화이트리스트 밖 → pro 로 fallback(의도됨) |
 | 커스텀 장르/스타일이 세션마다 사라짐 | localStorage 저장 실패 → `CUSTOM_GENRES_KEY`/`CUSTOM_STYLES_KEY` |
 | 구세션 모델 ID 로 생성 실패 | 레거시 ID 정규화 effect(`normalizeImageModelId`) 미동작 |
+| 히스토리 복원 후 생성 시 품질 400 | `normalizeImageQuality` 미적용 — `ConceptPanel.tsx:294-295`가 복원 시점에 정규화한다 |
 | 히스토리 삭제 후 저장 용량 안 줄어듦 | IndexedDB orphan 미정리 → `deleteImage("{id}-concept-{entryId}")` |
 | 지원 안 하는 비율 선택 상태 유지 | 모델 변경 후 자동 보정 effect 누락(`ConceptPanel.tsx:116`) |

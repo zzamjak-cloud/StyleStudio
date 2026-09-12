@@ -2,7 +2,7 @@ import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { Session } from '../types/session';
 import { ChatMessage, ChatGenerationSettings, ChatSessionData, estimateTokenCount } from '../types/chat';
 import { ReferenceDocument } from '../types/referenceDocument';
-import { DEFAULT_IMAGE_MODEL, isOpenAIModel } from './api/imageModels';
+import { DEFAULT_IMAGE_MODEL, isOpenAIModel, normalizeImageQuality } from './api/imageModels';
 import { updateSession } from '../utils/sessionHelpers';
 import { deleteImage } from '../lib/imageStorage';
 import { CHAT_SIGNATURE_KEY_MARKER } from '../lib/storage';
@@ -170,8 +170,9 @@ export function useChatSession(
     delete nextSettings.thinkingMode;
     if (!isOpenAIModel(nextSettings.imageModel)) {
       delete nextSettings.imageQuality;
-    } else if (!nextSettings.imageQuality) {
-      nextSettings.imageQuality = 'medium';
+    } else {
+      // 모델을 바꾸면 지원하지 않는 티어(2.5의 xhigh/max 등)가 남을 수 있어 매번 정규화한다
+      nextSettings.imageQuality = normalizeImageQuality(nextSettings.imageModel, nextSettings.imageQuality);
     }
     updateChatData({ settings: nextSettings });
   }, [updateChatData]);

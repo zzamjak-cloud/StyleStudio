@@ -58,6 +58,9 @@ interface GeneratorSettingsProps {
   availableModels: ImageModelDefinition[];
   supportedAspectRatios: AspectRatioOption[];
   supportedQualities: ImageQualityOption[];
+  /** 선택된 모델이 알파 PNG(background: transparent)를 지원하는지 (부모가 판정) */
+  canUseTransparentBackground: boolean;
+  transparentBackground: boolean;
   /** 구도 스케치를 지원하는 세션인지 (부모가 판정) */
   canUseSketch: boolean;
   /** 그려 둔 스케치 PNG(data URL). 없으면 '구도 그리기' 버튼만 뜬다 */
@@ -93,6 +96,7 @@ interface GeneratorSettingsProps {
   onShowHelpChange: (value: boolean) => void;
   onImageModelChange: (value: ImageGenerationModel) => void;
   onImageQualityChange: (value: ImageQualityOption) => void;
+  onTransparentBackgroundChange: (value: boolean) => void;
   onCameraAngleChange: (value: string) => void;
   onCameraLensChange: (value: string) => void;
   onDocumentAdd?: (document: ReferenceDocument) => void;
@@ -126,6 +130,8 @@ function GeneratorSettingsComponent({
   availableModels,
   supportedAspectRatios,
   supportedQualities,
+  canUseTransparentBackground,
+  transparentBackground,
   canUseSketch,
   sketchThumb,
   onOpenSketch,
@@ -153,6 +159,7 @@ function GeneratorSettingsComponent({
   onShowHelpChange,
   onImageModelChange,
   onImageQualityChange,
+  onTransparentBackgroundChange,
   onCameraAngleChange,
   onCameraLensChange,
   onDocumentAdd,
@@ -567,17 +574,14 @@ function GeneratorSettingsComponent({
             </div>
           )}
 
-          {/* 모델 — TILEMAP은 덕테이프 고정이라 선택지도 표시도 하지 않는다.
-              (나노바나나 계열은 타일맵이 요구하는 레이아웃을 지키지 못한다)
-              바꿀 수 없는 값을 사이드바에 남겨둘 이유가 없어 제거했고,
-              키가 없을 때의 경고만 남긴다 — 없으면 생성이 그냥 실패한다 */}
-          {sessionType === 'TILEMAP' ? (
-            !apiKey.trim() ? (
-              <p className="text-xs text-amber-600">
-                이미지 생성에는 OpenRouter API Key가 필요합니다. 헤더의 설정 아이콘에서 입력해 주세요.
-              </p>
-            ) : null
-          ) : (
+          {/* 모델. TILEMAP도 선택할 수 있지만 목록이 덕테이프 계열로 좁혀져 내려온다
+              (부모가 `getTilemapImageModels()`를 넘긴다 — 나노바나나 계열은 타일맵이 요구하는
+              레이아웃을 지키지 못한다). 키가 없을 때의 경고는 그대로 남긴다 */}
+          {sessionType === 'TILEMAP' && !apiKey.trim() && (
+            <p className="text-xs text-amber-600">
+              이미지 생성에는 OpenRouter API Key가 필요합니다. 헤더의 설정 아이콘에서 입력해 주세요.
+            </p>
+          )}
           <div>
             <div className="flex items-center gap-3">
               <label className="w-20 flex-shrink-0 text-sm font-semibold text-gray-700">모델</label>
@@ -599,8 +603,13 @@ function GeneratorSettingsComponent({
                 />
               </div>
             </div>
+            {sessionType === 'TILEMAP' && (
+              <p className="text-xs text-gray-500 mt-1">
+                타일맵은 레이아웃 준수가 중요해 덕테이프 계열만 제공합니다. 검증된 값은 덕테이프이며,
+                2.5 계열은 재질 스케일·변형 랜덤성이 떨어질 수 있습니다.
+              </p>
+            )}
           </div>
-          )}
 
           {/* 이미지 비율 선택 */}
           {sessionType !== 'TILEMAP' && (
@@ -652,17 +661,19 @@ function GeneratorSettingsComponent({
           {/* 이미지 품질. 선택지가 2개 이상인 모델(gpt-image 계열)에서만 노출한다 —
               나노바나나 계열은 ['medium'] 한 종이라 고를 게 없다. 모델 ID를 직접 비교하지
               않는 이유: 2.5 계열이 늘어나도 이 조건을 고칠 필요가 없어야 한다.
-              TILEMAP은 medium 고정이므로 노출하지 않는다 — 재질 스와치는 균질한 필드라
-              high로 올려도 얻는 게 없고 비용·시간만 늘어난다 */}
-          {supportedQualities.length > 1 && sessionType !== 'TILEMAP' && (
+              TILEMAP도 노출한다 — 모델을 고를 수 있게 된 이상 품질만 잠가 둘 이유가 없다.
+              기본값은 여전히 medium이다(재질 스와치는 균질한 필드라 티어를 올려도 얻는 게
+              적고 비용·시간만 늘어난다). */}
+          {supportedQualities.length > 1 && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">이미지 품질</label>
-              <div className="grid grid-cols-3 gap-2">
+              {/* 2.5 계열은 5티어라 3열 고정이면 줄바꿈된다 — 개수에 맞춰 열을 잡는다 */}
+              <div className={`grid gap-1 ${supportedQualities.length > 3 ? 'grid-cols-5' : 'grid-cols-3'}`}>
                 {supportedQualities.map((quality) => (
                   <button
                     key={quality}
                     onClick={() => onImageQualityChange(quality)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                    className={`px-1 py-2 rounded-lg text-xs font-medium border-2 transition-all ${
                       imageQuality === quality
                         ? 'bg-purple-600 text-white border-purple-700 shadow-lg'
                         : 'bg-white text-gray-700 border-gray-200 hover:border-purple-400'
@@ -674,6 +685,25 @@ function GeneratorSettingsComponent({
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 품질이 높을수록 처리 시간과 생성 비용이 증가할 수 있습니다.
+              </p>
+            </div>
+          )}
+
+          {/* 투명 배경 (알파 PNG). 모델이 background 파라미터를 지원하고, 원래 순백 배경을
+              강제하던 세션일 때만 노출한다 — 판정은 부모(ImageGeneratorPanel)가 한다 */}
+          {canUseTransparentBackground && (
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={transparentBackground}
+                  onChange={(e) => onTransparentBackgroundChange(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                />
+                <span className="text-sm font-semibold text-gray-700">투명 배경 (알파 PNG)</span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1">
+                흰 배경 대신 알파 채널로 생성하고, JPEG 변환 없이 PNG 원본을 유지합니다.
               </p>
             </div>
           )}

@@ -12,7 +12,9 @@ import { join } from '@tauri-apps/api/path';
 import { getAiGenRoot, getSessionImageFolder } from '../../lib/config/paths';
 import { deleteImage } from '../../lib/imageStorage';
 import { logger } from '../../lib/logger';
-import { DEFAULT_IMAGE_MODEL, getImageModelDefinition, isOpenAIModel, normalizeImageModelId } from '../../hooks/api/imageModels';
+import { DEFAULT_IMAGE_MODEL, getImageModelDefinition, isOpenAIModel, normalizeImageModelId,
+  normalizeImageQuality,
+} from '../../hooks/api/imageModels';
 
 interface ConceptPanelProps {
   session: Session;
@@ -289,7 +291,9 @@ export const ConceptPanel = memo(({ session, apiKey, onSessionUpdate, onSessionS
           model,
           ratio,
           size,
-          quality: isOpenAIModel(model) ? (entry.settings as any).quality ?? 'medium' : undefined,
+          quality: isOpenAIModel(model)
+            ? normalizeImageQuality(model, (entry.settings as any).quality)
+            : undefined,
           grid,
         },
       }));

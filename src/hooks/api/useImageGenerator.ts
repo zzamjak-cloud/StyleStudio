@@ -17,6 +17,7 @@ import {
   DEFAULT_IMAGE_MODEL,
   getImageModelDefinition,
   normalizeImageModelId,
+  normalizeImageQuality,
 } from './imageModels';
 
 // 두 provider 모두 참조 이미지 14장까지 수용 (OpenRouter input_references 한도: gemini 14 / gpt 16)
@@ -39,6 +40,7 @@ export interface ImageGenerationParams {
   pixelArtGrid?: PixelArtGridLayout; // 픽셀아트 그리드 레이아웃 (선택)
   referenceDocuments?: ReferenceDocument[]; // 참조 문서 (UI 세션 전용)
   imageModel?: ImageGenerationModel; // 이미지 생성 모델
+  transparentBackground?: boolean; // 알파 PNG로 생성 (gpt-image-2.5 계열만 지원)
 }
 
 export interface GenerationCallbacks {
@@ -166,6 +168,9 @@ export function useImageGenerator() {
 
     const modelId = normalizeImageModelId(params.imageModel ?? DEFAULT_IMAGE_MODEL);
     const modelDef = getImageModelDefinition(modelId);
+    // 모델이 background 파라미터를 지원할 때만 투명 요청을 성립시킨다 (미지원 모델은 400)
+    const wantsTransparent =
+      !!params.transparentBackground && modelDef.supports.transparentBackground;
 
     logger.debug('🎨 이미지 생성 시작');
     logger.debug('   - 모델:', modelId);
@@ -205,6 +210,7 @@ export function useImageGenerator() {
         pixelArtGrid: params.pixelArtGrid,
         analysis: params.analysis,
         referenceDocuments: params.referenceDocuments,
+        transparentBackground: wantsTransparent,
       });
     }
 
@@ -223,7 +229,8 @@ export function useImageGenerator() {
         aspectRatio: params.aspectRatio || '1:1',
         // Gemini 계열만 resolution 지원, gpt-image 계열만 quality 지원
         resolution: modelDef.provider === 'gemini' ? params.imageSize || '2K' : undefined,
-        quality: modelDef.provider === 'openai' ? params.quality ?? 'medium' : undefined,
+        quality: modelDef.provider === 'openai' ? normalizeImageQuality(modelId, params.quality) : undefined,
+        background: wantsTransparent ? 'transparent' : undefined,
         inputReferences,
       });
     } catch (error) {
@@ -237,6 +244,14 @@ export function useImageGenerator() {
         throw new Error(formatImageApiError(status, message.replace(/^.*?\):\s*/, '')));
       }
       throw error;
+    }
+
+    // 투명 배경 요청분은 JPEG로 합성하면 알파가 사라지므로 원본 PNG를 그대로 넘긴다.
+    // 수신부(ImageGeneratorPanel)는 매직 넘버로 포맷을 판별하므로 MIME 불일치 문제는 없다.
+    if (wantsTransparent) {
+      logger.debug('✅ 이미지 생성 완료! (투명 배경 PNG 유지)');
+      callbacks.onComplete(generated.base64);
+      return;
     }
 
     callbacks.onProgress?.('이미지 생성 완료, 변환 중...');

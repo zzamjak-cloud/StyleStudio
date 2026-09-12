@@ -7,7 +7,7 @@ import { logger } from '../lib/logger';
 import { loadImage } from '../lib/imageStorage';
 import { GEMINI_FLASH_TEXT_MODEL } from '../types/constants';
 import { chatComplete, generateImageViaOpenRouter } from '../lib/api/openrouter';
-import { getImageModelDefinition, normalizeImageModelId } from './api/imageModels';
+import { getImageModelDefinition, normalizeImageModelId, normalizeImageQuality } from './api/imageModels';
 import { convertBase64ToJpeg, formatImageApiError } from './api/useImageGenerator';
 import { PIXELART_MODERN_STYLE_RULES } from '../lib/prompts/sessionPrompts';
 import { pixelateDataUrl } from '../lib/pixelart/pixelate';
@@ -205,7 +205,7 @@ export function useChatImageGeneration(
             prompt: effectiveUserMessage,
             aspectRatio,
             resolution: modelDef.provider === 'gemini' ? imageSize : undefined,
-            quality: modelDef.provider === 'openai' ? imageQuality : undefined,
+            quality: modelDef.provider === 'openai' ? normalizeImageQuality(imageModel, imageQuality) : undefined,
             inputReferences: allImages.length > 0 ? allImages : undefined,
           });
 

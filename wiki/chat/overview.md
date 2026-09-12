@@ -63,7 +63,8 @@ ChatGenerationSettings = {
 - **텍스트 컨텍스트**(`buildConversationContext`): 요약(`chatData.summary`) + `summarizedUpTo` 이후 최근 `MAX_CONTEXT_TURNS=6` 턴의 텍스트를 프롬프트 앞에 결합.
 - **참조 이미지**: 직전 생성 이미지(`resolveLatestGeneratedImage`, IndexedDB 키면 `loadImage` 복원) → 사용자 첨부 → 문서 추출 이미지 순으로 최대 `MAX_REFERENCES=14`장을 `input_references` 로 전송.
 - 그리드는 API 파라미터가 아니라 **프롬프트 prefix**(`buildSettingsPrefix`)로 결합. 첨부 문서는 `summary`(없으면 content 1500자)만 주입해 토큰 절약.
-- 요청 파라미터: Gemini 계열은 `aspect_ratio` + `resolution`, gpt-image-2는 `aspect_ratio` + `quality`. 5xx 에러는 `MAX_RETRIES=2`, `RETRY_DELAY=5000ms` 로 재시도, 4xx는 `formatImageApiError` 로 한국어화.
+- 요청 파라미터: Gemini 계열은 `aspect_ratio` + `resolution`, gpt-image 계열은 `aspect_ratio` + `quality`(`normalizeImageQuality(imageModel, imageQuality)`로 모델이 지원하지 않는 티어를 요청 직전 보정 — `useChatImageGeneration.ts:208`). 5xx 에러는 `MAX_RETRIES=2`, `RETRY_DELAY=5000ms` 로 재시도, 4xx는 `formatImageApiError` 로 한국어화.
+- 채팅은 투명 배경(알파 PNG) UI가 없다 — `ChatAISettings`에 토글이 없으므로 항상 `convertBase64ToJpeg`로 JPEG 통일(픽셀아트 모드 제외).
 - 응답: `data[0].b64_json` → `convertBase64ToJpeg` 로 내부 표준 JPEG 통일 → `data:image/jpeg;base64,` data URL.
 - 텍스트 응답은 없다(Image API는 이미지만 반환) — `content` 는 항상 빈 문자열.
 
@@ -87,6 +88,7 @@ ChatGenerationSettings = {
 | 대화 맥락이 생성에 반영 안 됨 | `buildConversationContext` 미결합 — 요약/최근 턴이 프롬프트 앞에 붙는지 확인 |
 | 요약 후에도 토큰이 안 줄어듦 | `markSummarized` 가 이미지 미제거 → 요약 범위 이미지 `undefined` + tokenCount 재계산 |
 | 구세션 모델 ID 로 400 | 레거시 ID(`gemini-3-pro-image-preview` 등) 미정규화 → `normalizeImageModelId` (`ChatPanel` effect) |
+| 품질 티어(`xhigh`/`max`) 선택 후 모델 바꾸면 400 | `normalizeImageQuality` 미적용 — `updateSettings`(`useChatSession.ts:175`)와 요청 직전(`useChatImageGeneration.ts:208`) 둘 다 정규화한다 |
 | 극단 비율(1:3/3:1) 구세션 오류 | OpenRouter 미지원으로 제거됨 → 모델별 지원 비율로 자동 보정(`ChatPanel` effect) |
 | 메시지 삭제 후 저장 용량 안 줄어듦 | IndexedDB orphan(이미지/signature) 미정리 → `deleteMessage` 에서 키 삭제 |
 | 첨부 이미지 누적으로 세션 비대 | 붙여넣기 다운스케일 누락 → `downscaleImage` 적용 |

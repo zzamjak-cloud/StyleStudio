@@ -28,7 +28,10 @@ import {
 import { getCameraAnglePrompt } from '../../types/cameraAngle';
 import { getCameraLensPrompt } from '../../types/cameraLens';
 import { buildUnifiedPrompt } from '../../lib/promptBuilder';
-import { buildPromptForSession } from '../../lib/prompts/sessionPrompts';
+import {
+  buildPromptForSession,
+  TRANSPARENT_BACKGROUND_CAPABLE_SESSIONS,
+} from '../../lib/prompts/sessionPrompts';
 import {
   PaletteSizeOption,
   PixelateSizeOption,
@@ -50,6 +53,8 @@ import {
   TILEMAP_FIXED_IMAGE_MODEL,
   getAvailableImageModels,
   getImageModelDefinition,
+  getTilemapImageModels,
+  isTilemapCompatibleModel,
   type ImageGenerationModel,
   type ImageQualityOption,
   type AspectRatioOption,
@@ -391,6 +396,8 @@ interface GeneratorState {
   historyHeight: number;
   imageModel: ImageGenerationModel;
   imageQuality: ImageQualityOption;
+  /** 알파 PNG 생성 여부. 모델·세션이 지원할 때만 의미가 있다 (세션에 저장하지 않는다) */
+  transparentBackground: boolean;
 }
 
 export function ImageGeneratorPanel({
@@ -454,6 +461,7 @@ export function ImageGeneratorPanel({
     // 제대로 지키지 못해 정상적인 타일 세트가 나오지 않는다
     imageModel: sessionType === 'TILEMAP' ? TILEMAP_FIXED_IMAGE_MODEL : DEFAULT_IMAGE_MODEL,
     imageQuality: 'medium',
+    transparentBackground: false,
   });
 
   /*
@@ -504,6 +512,7 @@ export function ImageGeneratorPanel({
     historyHeight,
     imageModel,
     imageQuality,
+    transparentBackground,
   } = state;
 
   // 타일맵 생성 후처리 (TILEMAP 세션에서만 동작)
@@ -559,6 +568,12 @@ export function ImageGeneratorPanel({
   const setShowHelp = useCallback((value: boolean) => updateState({ showHelp: value }), [updateState]);
   const setImageModel = useCallback((value: ImageGenerationModel) => updateState({ imageModel: value }), [updateState]);
   const setImageQuality = useCallback((value: ImageQualityOption) => updateState({ imageQuality: value }), [updateState]);
+  const setTransparentBackground = useCallback((value: boolean) => updateState({ transparentBackground: value }), [updateState]);
+
+  // 투명 배경 토글 노출 조건 — 모델이 background를 지원하고, 원래 순백 배경을 강제하던 세션일 때
+  const canUseTransparentBackground =
+    getImageModelDefinition(imageModel).supports.transparentBackground &&
+    TRANSPARENT_BACKGROUND_CAPABLE_SESSIONS.includes(sessionType);
 
   // 줌 메뉴 외부 클릭 시 닫기
   useEffect(() => {
@@ -569,10 +584,10 @@ export function ImageGeneratorPanel({
     }
   }, [showZoomMenu]);
 
-  // TILEMAP은 덕테이프 고정 — 히스토리 복원 등으로 다른 모델이 들어와도 되돌린다.
-  // (모델 드롭다운 자체가 숨겨져 있어 사용자가 되돌릴 방법이 없으므로 방어가 필요하다)
+  // TILEMAP은 덕테이프 계열 안에서만 고를 수 있다 — 히스토리 복원 등으로 나노바나나 계열이
+  // 들어오면 검증된 기본값으로 되돌린다. 계열 안(2.0 ↔ 2.5)의 선택은 사용자 몫이라 건드리지 않는다.
   useEffect(() => {
-    if (sessionType === 'TILEMAP' && imageModel !== TILEMAP_FIXED_IMAGE_MODEL) {
+    if (sessionType === 'TILEMAP' && !isTilemapCompatibleModel(imageModel)) {
       updateState({ imageModel: TILEMAP_FIXED_IMAGE_MODEL });
     }
   }, [sessionType, imageModel, updateState]);
@@ -588,14 +603,6 @@ export function ImageGeneratorPanel({
       updateState({ pixelArtGrid: TILEMAP_RULETILE_GRID });
     }
   }, [sessionType, tilemapMode, pixelArtGrid, updateState]);
-
-  // 타일맵은 이미지 품질 medium 고정 — 재질 스와치는 균질한 필드라 high로 올려도
-  // 얻는 게 없고 비용·시간만 늘어난다 (품질 선택 UI도 숨겨져 있다)
-  useEffect(() => {
-    if (sessionType === 'TILEMAP' && imageQuality !== 'medium') {
-      updateState({ imageQuality: 'medium' });
-    }
-  }, [sessionType, imageQuality, updateState]);
 
   useEffect(() => {
     const modelDef = getImageModelDefinition(imageModel);
@@ -619,10 +626,15 @@ export function ImageGeneratorPanel({
         : modelDef.supports.qualities[0];
     }
 
+    // background 미지원 모델(나노바나나 계열)로 바꾸면 투명 요청은 무효이므로 내린다
+    if (transparentBackground && !modelDef.supports.transparentBackground) {
+      nextState.transparentBackground = false;
+    }
+
     if (Object.keys(nextState).length > 0) {
       updateState(nextState);
     }
-  }, [imageModel, aspectRatio, imageSize, imageQuality, updateState]);
+  }, [imageModel, aspectRatio, imageSize, imageQuality, transparentBackground, updateState]);
 
   // setState updater 패턴 + useCallback으로 자식 memo 무효화 방지
   const handleHistoryResize = useCallback((delta: number) => {
@@ -962,6 +974,7 @@ export function ImageGeneratorPanel({
           aspectRatio: aspectRatio,
           imageSize: imageSize,
           quality: imageQuality,
+          transparentBackground: canUseTransparentBackground && transparentBackground,
           sessionType: sessionType,
           // 픽셀아트 전용 설정
           analysis: analysis, // 이미지 분석 결과 (픽셀아트 해상도 추출용)
@@ -1392,9 +1405,11 @@ export function ImageGeneratorPanel({
           showHelp={showHelp}
           imageModel={imageModel}
           imageQuality={imageQuality}
-          availableModels={getAvailableImageModels()}
+          availableModels={sessionType === 'TILEMAP' ? getTilemapImageModels() : getAvailableImageModels()}
           supportedAspectRatios={getImageModelDefinition(imageModel).supports.aspectRatios}
           supportedQualities={getImageModelDefinition(imageModel).supports.qualities}
+          canUseTransparentBackground={canUseTransparentBackground}
+          transparentBackground={transparentBackground}
           canUseSketch={canUseSketch}
           sketchThumb={conceptSketch?.sketchPng ?? null}
           onOpenSketch={() => setShowSketchPanel(true)}
@@ -1422,6 +1437,7 @@ export function ImageGeneratorPanel({
           onShowHelpChange={setShowHelp}
           onImageModelChange={setImageModel}
           onImageQualityChange={setImageQuality}
+          onTransparentBackgroundChange={setTransparentBackground}
           onCameraAngleChange={setCameraAngle}
           onCameraLensChange={setCameraLens}
           onDocumentAdd={onDocumentAdd}

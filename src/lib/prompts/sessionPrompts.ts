@@ -121,6 +121,7 @@ export interface PromptGenerationParams {
   tilemapMode?: TilemapMode; // TILEMAP: 변형/룰타일 모드
   tilemapBaseTerrain?: string; // TILEMAP 룰타일: 베이스 지형 (영어 번역본)
   tilemapOverlayTerrain?: string; // TILEMAP 룰타일: 오버레이 지형 (영어 번역본)
+  transparentBackground?: boolean; // 알파 PNG 생성 모드 (순백 배경 지시를 투명 지시로 치환)
 }
 
 /**
@@ -147,6 +148,35 @@ const promptGenerators: Record<SessionType, PromptGeneratorFunction> = {
 /**
  * 메인 프롬프트 빌더 함수
  */
+/**
+ * 투명 배경(알파 PNG) 옵션을 노출하는 세션 — 프롬프트가 순백 배경을 강제하던 세션들.
+ * 배경 세션(BACKGROUND/PIXELART_BACKGROUND)과 타일맵은 대상이 아니다
+ * (타일맵 알파는 AI가 아니라 합성기가 만든다 — wiki/tilemap/overview.md).
+ */
+export const TRANSPARENT_BACKGROUND_CAPABLE_SESSIONS: SessionType[] = [
+  'CHARACTER',
+  'ICON',
+  'LOGO',
+  'PIXELART_CHARACTER',
+  'PIXELART_ICON',
+];
+
+const WHITE_BACKGROUND_LINE = /^(\s*(?:🖼️\s*)?BACKGROUND:)\s*Pure white background[^\n]*/gm;
+const TRANSPARENT_BACKGROUND_INSTRUCTION =
+  'Fully transparent background (alpha channel). No background fill, no gradients, no checkered pattern, no drop shadow cast onto the background.';
+
+/**
+ * 투명 배경 모드에서 "순백 배경 강제" 지시를 알파 배경 지시로 치환한다.
+ * 템플릿 10곳을 각각 분기시키는 대신 완성된 본문에서 한 번에 바꾼다 — 장면을 서술하는
+ * 다른 `BACKGROUND:` 줄(배경 세션 등)은 `Pure white background`로 시작하지 않아 걸리지 않는다.
+ */
+function applyTransparentBackground(body: string): string {
+  return body.replace(
+    WHITE_BACKGROUND_LINE,
+    (_match, label: string) => `${label} ${TRANSPARENT_BACKGROUND_INSTRUCTION}`
+  );
+}
+
 export function buildPromptForSession(params: PromptGenerationParams): string {
   let body: string;
   if (params.sessionType === 'TILEMAP') {
@@ -157,6 +187,10 @@ export function buildPromptForSession(params: PromptGenerationParams): string {
   } else {
     const generator = promptGenerators[params.sessionType];
     body = generator ? generator(params) : params.basePrompt;
+  }
+
+  if (params.transparentBackground) {
+    body = applyTransparentBackground(body);
   }
 
   if (params.thinkingMode) {

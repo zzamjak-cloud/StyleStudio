@@ -122,8 +122,10 @@ export interface ImageApiRequest {
   aspectRatio?: string;
   /** '1K' | '2K' | '4K' — Gemini 계열 전용 */
   resolution?: string;
-  /** 'low' | 'medium' | 'high' — gpt-image 계열 전용 */
+  /** 'low' | 'medium' | 'high' | 'xhigh' | 'max' — gpt-image 계열 전용 */
   quality?: string;
+  /** 'transparent' | 'opaque' | 'auto' — transparent는 gpt-image-2.5 계열만 지원 */
+  background?: string;
   /** 참조 이미지 data URL 배열 */
   inputReferences?: string[];
 }
@@ -154,6 +156,7 @@ export async function generateImageViaOpenRouter(
   if (request.aspectRatio) body.aspect_ratio = request.aspectRatio;
   if (request.resolution) body.resolution = request.resolution;
   if (request.quality) body.quality = request.quality;
+  if (request.background) body.background = request.background;
   if (request.inputReferences && request.inputReferences.length > 0) {
     body.input_references = request.inputReferences.map((img) => ({
       type: 'image_url',

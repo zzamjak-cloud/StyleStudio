@@ -31,7 +31,8 @@ GeneratorState = {
   cameraAngle: string, cameraLens: string,          // 프리셋 ID, 기본 'none'
   zoomLevel: 'fit'|'actual'|number, showZoomMenu, showPathTooltip, showAdvanced, showHelp,
   seed?: number, temperature, topK, topP, referenceStrength,
-  historyHeight, imageModel: ImageGenerationModel, imageQuality: ImageQualityOption
+  historyHeight, imageModel: ImageGenerationModel, imageQuality: ImageQualityOption,
+  transparentBackground: boolean   // 알파 PNG 생성 여부. 모델·세션이 지원할 때만 의미 있음(세션에 저장 안 함)
 }
 SessionType = BASIC | STYLE | CHARACTER | BACKGROUND | ICON
             | PIXELART_CHARACTER | PIXELART_BACKGROUND | PIXELART_ICON
@@ -88,9 +89,10 @@ SessionType = BASIC | STYLE | CHARACTER | BACKGROUND | ICON
   변환하는 순간 알파가 흰색으로 굳는다.
 - 타일맵 유니티 내보내기는 원래부터 `.png` 고정이었다(`tilemapExporter`) — 영향받지 않았다.
 
-> 남아 있는 것: `useOpenAIImageGenerator.convertBase64ToJpeg` 는 덕테이프(gpt-image-2)의 PNG
-> 응답을 **흰 배경 위에 합성해 JPEG로** 바꾼다. 타일맵은 AI 원본이 불투명한 재질 스와치라
-> 무관하지만, 투명 배경이 필요한 다른 세션을 만든다면 이 변환부터 걷어내야 한다.
+> `useImageGenerator.ts`의 `convertBase64ToJpeg`는 여전히 응답 PNG를 **흰 배경 위에 합성해 JPEG로** 바꾼다.
+> 타일맵은 AI 원본이 불투명한 재질 스와치라 무관하다. 투명 배경이 필요한 세션(CHARACTER·ICON·LOGO·
+> PIXELART_CHARACTER·PIXELART_ICON)은 이제 이 변환을 **건너뛰는 네이티브 경로**가 있다 — 투명 배경
+> 토글(모델이 `supports.transparentBackground`일 때만 노출) → `generator/settings.md`·`generator/image-generation-api.md`.
 
 - 저장 루트는 `~/Downloads/AI_Gen/` (`paths.ts` `AI_GEN_ROOT_SEGMENT`). 세션별 하위 폴더로 고정(v0.4.4).
 
@@ -99,8 +101,8 @@ SessionType = BASIC | STYLE | CHARACTER | BACKGROUND | ICON
 | 증상 | 원인 |
 |------|------|
 | 모델 바꿨더니 비율/해상도가 리셋됨 | 모델별 지원 목록에 없는 값이면 `useEffect`(`ImageGeneratorPanel.tsx:501`)가 첫 지원 값으로 자동 보정 — 의도된 동작 |
-| 모델 목록 이상 | `getAvailableImageModels()`는 통합 키 체제에서 항상 전 모델 반환 — 레거시 ID는 `normalizeImageModelId` 확인 |
+| 모델 목록 이상 | `getAvailableImageModels()`는 `availability === 'available'`만 반환(`pending` 제외, 현재 카탈로그엔 없음) — 레거시 ID는 `normalizeImageModelId` 확인 |
 | 참조 이미지를 넣었는데 분석 프롬프트가 안 들어감 | 참조 있으면(`hasRefImages`) 분석 `positivePrompt`를 basePrompt에 넣지 않음(세션 프롬프트가 "참조 복제"를 지시) — 의도 |
 | 한글 프롬프트가 그대로 전송됨 | `containsKorean` 미검출 또는 번역 실패. 번역은 항상 Gemini 키 사용(모델이 OpenAI여도) |
-| 생성 이미지 색이 이상/투명 안 됨 | 응답을 항상 JPEG로 간주(`data:image/jpeg`). 투명 배경 대상 세션은 현재 `TRANSPARENT_BACKGROUND_SESSION_TYPES` 빈 배열이라 없음 |
+| 생성 이미지 색이 이상/투명 안 됨 | 기본 경로는 응답을 항상 JPEG로 통일(`convertBase64ToJpeg`, 투명은 흰 배경으로 합성됨). **알파 PNG가 필요하면 투명 배경 토글**(모델이 `supports.transparentBackground`일 때만 노출) — 켜면 JPEG 변환을 건너뛰고 원본 PNG를 그대로 쓴다. `TRANSPARENT_BACKGROUND_SESSION_TYPES`(빈 배열, dead code)와는 별개 경로다 |
 | 저장 폴더가 안 열림 | `getAiGenRoot` 실패 또는 OS opener 권한 문제 |

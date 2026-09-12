@@ -101,6 +101,11 @@ export interface ImageModelDefinition {
     maxReferenceImages: number;
     /** OpenRouter `n` 상한. 1이면 한 번에 한 장만 나온다 */
     maxImagesPerRequest: number;
+    /**
+     * OpenRouter `background: 'transparent'` 지원 여부 — 알파 PNG를 직접 받을 수 있는가.
+     * gpt-image-2의 background enum은 `auto|opaque`뿐이라 2.5 계열만 true다.
+     */
+    transparentBackground: boolean;
   };
 }
 
@@ -128,21 +133,23 @@ export const IMAGE_MODELS: ImageModelDefinition[] = [
       qualities: ['low', 'medium', 'high'],
       maxReferenceImages: 16,
       maxImagesPerRequest: 10,
+      transparentBackground: false,
     },
   },
   /*
-    아래 두 모델은 **OpenRouter 미등재**라 `pending`이다 (2026-09-09 확인).
-    OpenAI 직접 API에는 `gpt-image-2.5-flare` / `gpt-image-2.5-sunburst`로 존재하며 품질 티어에
-    xhigh·max가 추가됐다. 등재되면 다음을 **반드시 실측으로 확인하고** 값을 맞춘 뒤 `available`로
-    바꾼다 — OpenRouter는 파라미터를 자체 정규화하므로 OpenAI 문서와 다를 수 있다:
-      curl -s https://openrouter.ai/api/v1/images/models | jq '.data[] | select(.id|test("2.5"))'
-    확인 항목: aspect_ratio enum · quality enum(xhigh/max 노출 여부) · n 상한 · input_references 상한.
+    2026-09-12 OpenRouter 등재 확인 후 `available`로 전환 (`/api/v1/images/models` 실측):
+      aspect_ratio  1:1 3:2 2:3 4:3 3:4 16:9 9:16 21:9 auto   → gpt-image-2와 동일
+      quality       auto low medium high xhigh max            → xhigh·max 노출 확인
+      background    auto transparent opaque                   → **2.5만 transparent 지원**
+      n 1~10 · input_references 0~16 · output_compression 0~100 · streaming ✓ · resolution ✗
+    두 티어는 파라미터가 완전히 같고 토큰 단가도 같다. 차이는 정밀(sunburst) vs 속도(flare)뿐.
+    재확인: curl -s https://openrouter.ai/api/v1/images/models | jq '.data[] | select(.id|test("2.5"))'
   */
   {
     id: 'openai/gpt-image-2.5-flare',
     label: '덕테이프 2.5 플레어',
     provider: 'openai',
-    availability: 'pending',
+    availability: 'available',
     annotationMode: 'composite',
     supports: {
       aspectRatios: GPT_IMAGE_ASPECT_RATIOS,
@@ -150,13 +157,14 @@ export const IMAGE_MODELS: ImageModelDefinition[] = [
       qualities: ['low', 'medium', 'high', 'xhigh', 'max'],
       maxReferenceImages: 16,
       maxImagesPerRequest: 10,
+      transparentBackground: true,
     },
   },
   {
     id: 'openai/gpt-image-2.5-sunburst',
     label: '덕테이프 2.5 선버스트',
     provider: 'openai',
-    availability: 'pending',
+    availability: 'available',
     annotationMode: 'composite',
     supports: {
       aspectRatios: GPT_IMAGE_ASPECT_RATIOS,
@@ -164,6 +172,7 @@ export const IMAGE_MODELS: ImageModelDefinition[] = [
       qualities: ['low', 'medium', 'high', 'xhigh', 'max'],
       maxReferenceImages: 16,
       maxImagesPerRequest: 10,
+      transparentBackground: true,
     },
   },
   {
@@ -178,6 +187,7 @@ export const IMAGE_MODELS: ImageModelDefinition[] = [
       qualities: ['medium'],
       maxReferenceImages: 14,
       maxImagesPerRequest: 1,
+      transparentBackground: false,
     },
   },
   {
@@ -192,6 +202,7 @@ export const IMAGE_MODELS: ImageModelDefinition[] = [
       qualities: ['medium'],
       maxReferenceImages: 14,
       maxImagesPerRequest: 1,
+      transparentBackground: false,
     },
   },
   {
@@ -207,6 +218,7 @@ export const IMAGE_MODELS: ImageModelDefinition[] = [
       qualities: ['medium'],
       maxReferenceImages: 14,
       maxImagesPerRequest: 1,
+      transparentBackground: false,
     },
   },
 ];
@@ -219,7 +231,12 @@ export const GEMINI_IMAGE_MODELS = IMAGE_MODELS.filter(
  * 앱 전역 기본 이미지 모델 — 덕테이프(gpt-image-2).
  *
  * 나노바나나 프로에서 바꿨다. 덕테이프는 프롬프트가 요구하는 **레이아웃과 지시를 훨씬
- * 정확히 지키고**(타일맵을 이 모델로 고정한 이유와 같다) 세부 묘사도 앞선다. 이 상수 하나가
+ * 정확히 지키고**(타일맵을 이 모델로 고정한 이유와 같다) 세부 묘사도 앞선다.
+ *
+ * 2.5 계열이 파라미터상 상위 호환(xhigh·max, 투명 배경)이라 한때 기본값을 선버스트로
+ * 옮겼지만, 실제 생성물에서 재질 스케일과 변형 랜덤성이 무너져 되돌렸다(근거는
+ * `TILEMAP_FIXED_IMAGE_MODEL` 주석). 2.5는 드롭다운에 남아 있으니 필요한 작업에서
+ * 사용자가 직접 고르면 된다. 이 상수 하나가
  * 새 세션(생성·대화형·컨셉)의 드롭다운 초기값과 `normalizeImageModelId`의 폴백을 함께
  * 정한다 — 세션별로 하드코딩해 두면 한 곳만 바꿨을 때 세션마다 기본값이 달라진다.
  *
@@ -235,8 +252,14 @@ export const DEFAULT_IMAGE_MODEL: ImageGenerationModel = 'openai/gpt-image-2';
  * 사용할 수 없는 결과를 내지만 덕테이프는 거의 실수 없이 지킨다. 그래서 모델 선택을
  * 없애고 이 값으로 고정한다 — `GeneratorSettings`도 TILEMAP에서 모델 드롭다운을 숨긴다.
  *
- * 2.5 계열이 등재되면 여기도 후보다. 다만 **실측 없이 바꾸지 말 것** — 이 값은 실제 생성
- * 결과로 정해졌고, 레이아웃 준수에 실패하면 타일 세트가 통째로 못 쓰게 된다.
+ * **2.5 선버스트로 올렸다가 2026-09-12에 되돌렸다.** 같은 gpt-image 계열이고 파라미터도
+ * 동일하지만, 변형 세트를 실제로 뽑아 보니 두 가지가 무너졌다:
+ *   1. **재질 스케일** — 참조 이미지를 줬는데도 같은 재질을 3~4배 확대한 것처럼 그렸다.
+ *      잔돌 디테일이 뭉개져 타일로 쓸 밀도가 나오지 않는다.
+ *   2. **변형 랜덤성** — 같은 형상(모서리 홈 등)이 8칸 전부 같은 위치에 반복됐다.
+ *      변형 세트의 존재 이유가 사라진다.
+ * 2.5를 다시 후보로 올리려면 이 두 가지를 실제 생성물로 먼저 확인할 것. 품질 티어를
+ * 올리는 것만으로는 스케일 문제가 해결되지 않는다(티어가 아니라 구도 해석의 차이다).
  */
 export const TILEMAP_FIXED_IMAGE_MODEL: ImageGenerationModel = 'openai/gpt-image-2';
 
@@ -286,4 +309,41 @@ export function getAnnotationMode(modelId: string): AnnotationMode {
  */
 export function getAvailableImageModels(): ImageModelDefinition[] {
   return IMAGE_MODELS.filter((model) => model.availability === 'available');
+}
+
+/**
+ * TILEMAP 세션에서 고를 수 있는 모델 — 덕테이프(gpt-image) 계열만.
+ *
+ * 나노바나나 계열은 타일맵이 요구하는 레이아웃(변형 NxN 그리드 / 룰타일 3패널)을 자주 무시해
+ * 쓸 수 없는 결과를 낸다. 그래서 전체 목록 대신 이 목록을 준다 — 계열 안에서 2.0/2.5를
+ * 비교해 볼 수는 있어야 하되, 레이아웃을 못 지키는 모델이 섞이면 안 된다.
+ * 기본값은 `TILEMAP_FIXED_IMAGE_MODEL`(실제 생성물로 검증된 유일한 값).
+ */
+export function getTilemapImageModels(): ImageModelDefinition[] {
+  return getAvailableImageModels().filter((model) => model.provider === 'openai');
+}
+
+/** TILEMAP에서 이 모델을 쓸 수 있는가 (히스토리 복원 등으로 들어온 값 방어용) */
+export function isTilemapCompatibleModel(modelId: string): boolean {
+  return getTilemapImageModels().some((model) => model.id === normalizeImageModelId(modelId));
+}
+
+/** `background: 'transparent'`를 직접 보낼 수 있는 모델인지 (알파 PNG 네이티브 생성) */
+export function supportsTransparentBackground(modelId: string): boolean {
+  return getImageModelDefinition(modelId).supports.transparentBackground;
+}
+
+/**
+ * 모델이 지원하지 않는 품질이 저장돼 있으면 안전한 값으로 되돌린다.
+ * 모델 교체(예: 2.5의 `max` → 나노바나나)로 API가 400을 내는 걸 막는다.
+ */
+export function normalizeImageQuality(
+  modelId: string,
+  quality: string | undefined
+): ImageQualityOption {
+  const { qualities } = getImageModelDefinition(modelId).supports;
+  if (quality && qualities.includes(quality as ImageQualityOption)) {
+    return quality as ImageQualityOption;
+  }
+  return qualities.includes('medium') ? 'medium' : qualities[0];
 }

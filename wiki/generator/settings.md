@@ -12,20 +12,20 @@
 
 ## 모델 선택
 
-`availableModels`(부모가 `getAvailableImageModels()` 전달)를 `모델` 라벨과 같은 줄의 **단일 드롭다운**으로 렌더.
+`availableModels`를 `모델` 라벨과 같은 줄의 **단일 드롭다운**으로 렌더. 부모가 세션에 따라 목록을 갈아 끼운다 — 일반 세션은 `getAvailableImageModels()`(6종), **TILEMAP은 `getTilemapImageModels()`(덕테이프 계열 3종)**. 예전에는 TILEMAP에서 드롭다운 자체를 숨겼지만, 계열 안에서 2.0↔2.5를 비교할 수 있어야 해서 목록을 좁히는 방식으로 바꿨다 → `tilemap/overview.md`.
 
-| id | 라벨 | provider | 비율 | 해상도 | 품질 | 참조 | n |
-|----|------|----------|------|--------|------|------|---|
-| `openai/gpt-image-2` | 덕테이프 **(기본)** | openai | 8종 | — (1K 고정) | low/medium/high | 16 | 10 |
-| `openai/gpt-image-2.5-flare` | 덕테이프 2.5 플레어 | openai | 8종 | — | +xhigh/max | 16 | 10 |
-| `openai/gpt-image-2.5-sunburst` | 덕테이프 2.5 선버스트 | openai | 8종 | — | +xhigh/max | 16 | 10 |
-| `google/gemini-3-pro-image-preview` | 나노바나나 프로 | gemini | 10종 | 1K/2K/4K | medium | 14 | 1 |
-| `google/gemini-3.1-flash-image-preview` | 나노바나나2 | gemini | 10종 | 1K/2K/4K | medium | 14 | 1 |
-| `google/gemini-3.1-flash-lite-image` | 나노바나나 2 라이트 | gemini | 10종 | 1K | medium | 14 | 1 |
+| id | 라벨 | provider | 비율 | 해상도 | 품질 | 참조 | n | 투명배경 |
+|----|------|----------|------|--------|------|------|---|---|
+| `openai/gpt-image-2` | 덕테이프 **(기본)** | openai | 8종 | — (1K 고정) | low/medium/high | 16 | 10 | — |
+| `openai/gpt-image-2.5-flare` | 덕테이프 2.5 플레어 | openai | 8종 | — | low/medium/high/xhigh/max | 16 | 10 | ✓ |
+| `openai/gpt-image-2.5-sunburst` | 덕테이프 2.5 선버스트 | openai | 8종 | — | low/medium/high/xhigh/max | 16 | 10 | ✓ |
+| `google/gemini-3-pro-image-preview` | 나노바나나 프로 | gemini | 10종 | 1K/2K/4K | medium | 14 | 1 | — |
+| `google/gemini-3.1-flash-image-preview` | 나노바나나2 | gemini | 10종 | 1K/2K/4K | medium | 14 | 1 | — |
+| `google/gemini-3.1-flash-lite-image` | 나노바나나 2 라이트 | gemini | 10종 | 1K | medium | 14 | 1 | — |
 
-- **2.5 계열 두 종은 `availability: 'pending'`이라 드롭다운에 뜨지 않는다** — OpenRouter 미등재. 등재되면 그 값만 `available`로 바꾼다. → `generator/image-generation-api.md`
-- 기본 모델은 `DEFAULT_IMAGE_MODEL`(`openai/gpt-image-2`). v0.8.0에서 나노바나나 프로에서 바뀌었다.
-- **능력치는 전부 `supports`에서 온다.** UI에 모델 ID를 직접 비교하는 조건을 새로 만들지 말 것 — `isOpenAIModel()` / `supports.qualities.length > 1`을 쓴다.
+- **6종 모두 `availability: 'available'`** — `ModelAvailability`는 `'available'|'pending'` 두 값뿐이고 현재 카탈로그에 `pending`은 없다. 2.5 두 티어는 여전히 드롭다운에서 사용자가 직접 고를 수 있지만(품질 xhigh/max·투명 배경 지원), 실제 생성 테스트(타일맵 변형)에서 재질 스케일·변형 랜덤성 회귀가 확인돼 기본값에서는 제외됐다 — 근거는 `tilemap/overview.md`.
+- 기본 모델은 `DEFAULT_IMAGE_MODEL`(`openai/gpt-image-2`). v0.8.0에서 나노바나나 프로 → 덕테이프로 바뀐 뒤, 2026-09-12에 잠깐 2.5 선버스트로 옮겼다가 같은 날 되돌렸다.
+- **능력치는 전부 `supports`에서 온다.** UI에 모델 ID를 직접 비교하는 조건을 새로 만들지 말 것 — `isOpenAIModel()` / `supports.qualities.length > 1` / `supports.transparentBackground`를 쓴다.
 
 ## 이미지 비율 (aspectRatio)
 
@@ -43,9 +43,16 @@
 
 ## 이미지 품질 (imageQuality)
 
-- **`supports.qualities.length > 1`일 때만 노출**하고 버튼도 그 배열에서 렌더한다. 모델 ID를 비교하지 않는 이유는 2.5 계열이 늘어나도 조건을 안 고치기 위해서다.
-- 덕테이프 `low/medium/high`, 2.5 계열은 `xhigh`·`max`가 추가된다. Gemini는 `['medium']` 한 종이라 UI가 안 뜬다.
-- 모델을 바꿔 지원하지 않는 티어가 남으면 effect가 **`medium`으로** 보정한다(첫 값 `low`로 가면 품질이 조용히 낮아진다).
+- **`supports.qualities.length > 1`일 때만 노출**하고 버튼도 그 배열에서 렌더한다. 모델 ID를 비교하지 않는 이유는 티어가 늘어나도 조건을 안 고치기 위해서다.
+- 티어 5종(2.5 계열, `low/medium/high/xhigh/max`)이면 버튼 그리드가 `grid-cols-5`, 3종 이하(TILEMAP 제외 다른 모델)면 `grid-cols-3`(`GeneratorSettings.tsx:668`). Gemini는 `['medium']` 한 종이라 UI가 안 뜬다.
+- 모델을 바꿔 지원하지 않는 티어가 남으면 effect가 **`medium`으로** 보정한다(첫 값 `low`로 가면 품질이 조용히 낮아진다). 같은 보정은 `normalizeImageQuality(modelId, quality)`(`imageModels.ts`) 헬퍼로 `useImageGenerator`(요청 직전)·`useChatSession`·`useChatImageGeneration`·`ConceptPanel`(히스토리 복원)에도 적용된다.
+
+## 투명 배경 (알파 PNG)
+
+- **`canUseTransparentBackground` prop이 true일 때만 체크박스가 뜬다**(`GeneratorSettings.tsx:689-702`). 노출 판정은 부모 `ImageGeneratorPanel`이 한다: `getImageModelDefinition(imageModel).supports.transparentBackground && TRANSPARENT_BACKGROUND_CAPABLE_SESSIONS.includes(sessionType)`(`ImageGeneratorPanel.tsx:571-574`).
+- `TRANSPARENT_BACKGROUND_CAPABLE_SESSIONS`(`sessionPrompts.ts`)는 `CHARACTER`·`ICON`·`LOGO`·`PIXELART_CHARACTER`·`PIXELART_ICON` — 원래 프롬프트가 순백 배경을 강제하던 세션들이다. `BACKGROUND`/`PIXELART_BACKGROUND`·`TILEMAP`은 대상이 아니다(타일맵 알파는 AI가 아니라 합성기가 만든다).
+- 상태는 `GeneratorState.transparentBackground`(세션에 저장하지 않는 로컬 state). 켜면 API에 `background: 'transparent'`가 전달되고, 응답 PNG는 `convertBase64ToJpeg`를 건너뛰어 알파를 그대로 유지한다(`useImageGenerator.ts`).
+- 모델을 background 미지원 모델(나노바나나 계열)로 바꾸면 effect가 자동으로 끈다(`ImageGeneratorPanel.tsx`의 모델 보정 effect, `!modelDef.supports.transparentBackground`면 `transparentBackground: false`).
 
 ## 구도 스케치
 
@@ -112,3 +119,5 @@
 | 2K/4K 눌러도 안 바뀜 | 비용 확인 모달에서 미확인. 확인해야 적용 |
 | seed 고정했는데 모델 체크가 안 뜸 | seed가 있으면 첫 생성이 아니라고 보고 모델 가용성 체크 스킵 |
 | 고급 슬라이더가 안 보임 | v0.6에서 제거됨(OpenRouter 미지원) — 의도된 동작 |
+| 투명 배경 체크박스가 안 보임 | 모델이 `supports.transparentBackground=false`(덕테이프·나노바나나 계열) 이거나 세션이 `TRANSPARENT_BACKGROUND_CAPABLE_SESSIONS` 밖(예: BACKGROUND) — 기본 모델(덕테이프)은 지원하지 않으므로 2.5 계열을 직접 골라야 보인다 |
+| 모델 바꿨더니 투명 배경 체크가 꺼짐 | 의도된 동작 — 새 모델이 background 미지원이면 자동으로 끈다 |
