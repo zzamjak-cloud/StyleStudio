@@ -12,6 +12,7 @@ import {
   importSessionFromFile,
 } from '../lib/storage';
 import { deleteImage } from '../lib/imageStorage';
+import { scheduleOrphanImageCleanup } from '../lib/imageOrphanCleanup';
 import {
   updateSession,
   updateSessionInList,
@@ -70,11 +71,16 @@ export function useSessionManagement(): UseSessionManagementReturn {
 
       // 1회성 백필: 과거 레거시 세션(base64/대용량 문자열)을 즉시 마이그레이션
       const backfilled = await backfillStoredSessionsIfNeeded();
+      let finalSessions = savedSessions;
       if (backfilled) {
         const reloadedSessions = await loadSessions();
         setSessions(reloadedSessions);
         await pruneSessionFolderMapToSessions(reloadedSessions.map((s) => s.id));
+        finalSessions = reloadedSessions;
       }
+
+      // 로드·백필이 모두 끝난 뒤에만 예약한다 (초기화 오류 시 catch로 빠져 예약되지 않음)
+      scheduleOrphanImageCleanup(finalSessions);
     } catch (error) {
       logger.error('초기화 오류:', error);
       setShowSettings(true);

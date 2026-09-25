@@ -1573,6 +1573,47 @@ function checkExportStamp(): CheckResult {
 }
 
 /**
+ * 세션 저장소 키 수집이 타일맵 시트 키를 포함하는지 확인한다.
+ *
+ * 시트 키는 `{sessionId}-` 접두어가 없는 `tilemap-sheet-{id}`(생성 경로)와 import 후
+ * 저장되는 `{sessionId}-tilemap-sheet-{id}`가 섞여 있어 접두어로는 찾을 수 없다.
+ * 수집에서 빠지면 레거시 IndexedDB → 파일 저장소 승격 대상에서도 빠진다.
+ */
+async function checkSessionStorageKeys(): Promise<CheckResult> {
+  // storage.ts는 Tauri 플러그인을 import하므로 이 검사만 격리해서 불러온다
+  const { collectSessionStorageKeys } = await import('../storage');
+  const session = {
+    id: 's1',
+    type: 'TILEMAP',
+    referenceImages: ['s1-0'],
+    imageKeys: ['s1-0'],
+    generationHistory: [{ id: 'g1', imageBase64: 's1-gen-g1' }],
+    tilemapData: {
+      grid: '4x4',
+      sheets: [
+        { id: 'sheet-a', imageKey: 'tilemap-sheet-sheet-a', createdAt: '' },
+        { id: 'sheet-b', imageKey: 's1-tilemap-sheet-sheet-b', createdAt: '' },
+        { id: 'sheet-c', imageKey: 'data:image/png;base64,AAAA', createdAt: '' },
+      ],
+      slotAssignments: [],
+    },
+  } as unknown as Parameters<typeof collectSessionStorageKeys>[0];
+
+  const keys = collectSessionStorageKeys(session);
+  const expected = ['s1-0', 's1-gen-g1', 'tilemap-sheet-sheet-a', 's1-tilemap-sheet-sheet-b'];
+  const problems: string[] = [];
+  for (const key of expected) if (!keys.includes(key)) problems.push(`누락: ${key}`);
+  if (keys.some((k) => k.startsWith('data:'))) problems.push('base64가 키로 수집됨');
+  if (keys.length !== expected.length) problems.push(`개수 ${keys.length} (기대 ${expected.length}): ${keys.join(', ')}`);
+
+  return {
+    name: '세션 저장소 키 수집 — 타일맵 시트 키(구·신 형식) 포함, base64 제외',
+    passed: problems.length === 0,
+    detail: problems.length === 0 ? `수집 ${keys.length}건: ${keys.join(', ')}` : problems.join('\n'),
+  };
+}
+
+/**
  * **경계 품질 게이트** — 선명도와 아웃라인 연속성을 한 번의 합성으로 함께 검증한다.
  *
  * 1) **선명도**: 초기 구현은 경계 밴드에서 프린지 색을 알파 블렌딩했다. 알파 블렌딩은
@@ -1770,6 +1811,7 @@ export async function runAllTilemapChecks(
     ['엣지 계약 (2단계)', () => runEdgeContractChecks()],
     ['signature 테이블 (3단계)', () => runSignatureChecks()],
     ['내보내기 폴더명', () => [checkExportStamp()]],
+    ['세션 저장소 키 수집', async () => [await checkSessionStorageKeys()]],
     ['경계선 프리셋', () => [checkEdgeStylePresets()]],
     ['경계 품질 (합성 1회)', async () => [await checkBoundaryQuality()]],
     ['맵 배치 접합 (합성 1회)', async () => [await checkComposedJoins()]],

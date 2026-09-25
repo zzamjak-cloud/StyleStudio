@@ -1,6 +1,6 @@
 # 세션 코어 & 앱 셸
 
-StyleStudio 의 작업 단위는 **세션(Session)** 이다. 세션은 12종 타입(`SessionType`) 중 하나를 가지며, 각 타입은 참조 이미지·분석 결과·생성 히스토리 또는 타입별 전용 데이터(chatData/conceptData/illustrationData)를 보관한다. 모든 세션은 Tauri `plugin-store` 의 `settings.json` 에 배열로 영속화되고(→ `session/storage.md`), 대용량 base64 이미지는 AppData 파일 저장소로 분리된다(→ `imageStorage.ts`). 앱 셸(`App.tsx`)은 좌측 `Sidebar`(세션/폴더 트리)와 우측 메인 패널로 구성되며, `currentSession.type` + `currentView` 에 따라 lazy 로딩된 패널(Chat/Concept/Illustration/Generator/Analysis)을 스위칭한다. 세션 상태는 `useSessionManagement`, 폴더 상태는 `useFolderManagement`, 자동 저장은 `useAutoSave` + `sessionHelpers.persistSessions`(디바운스)가 담당한다.
+StyleStudio 의 작업 단위는 **세션(Session)** 이다. 세션은 13종 타입(`SessionType`) 중 하나를 가지며, 각 타입은 참조 이미지·분석 결과·생성 히스토리 또는 타입별 전용 데이터(chatData/conceptData/illustrationData/tilemapData)를 보관한다. 모든 세션은 Tauri `plugin-store` 의 `settings.json` 에 배열로 영속화되고(→ `session/storage.md`), 대용량 base64 이미지는 AppData 파일 저장소로 분리된다(→ `imageStorage.ts`). 앱 셸(`App.tsx`)은 좌측 `Sidebar`(세션/폴더 트리)와 우측 메인 패널로 구성되며, `currentSession.type` + `currentView` 에 따라 lazy 로딩된 패널(Chat/Concept/Illustration/Generator/Analysis)을 스위칭한다. 세션 상태는 `useSessionManagement`, 폴더 상태는 `useFolderManagement`, 자동 저장은 `useAutoSave` + `sessionHelpers.persistSessions`(디바운스)가 담당한다.
 
 ## 관련 파일
 
@@ -25,7 +25,7 @@ StyleStudio 의 작업 단위는 **세션(Session)** 이다. 세션은 12종 타
 SessionType =
   'BASIC' | 'STYLE' | 'CHARACTER' | 'BACKGROUND' | 'ICON'
   | 'PIXELART_CHARACTER' | 'PIXELART_BACKGROUND' | 'PIXELART_ICON'
-  | 'UI' | 'LOGO' | 'ILLUSTRATION' | 'CONCEPT'   // 12종 (session.ts:7)
+  | 'UI' | 'LOGO' | 'ILLUSTRATION' | 'CONCEPT' | 'TILEMAP'   // 13종 (session.ts:10)
 
 Session = {
   id: string                        // Date.now().toString() (+ random suffix on import 충돌)
@@ -43,6 +43,7 @@ Session = {
   illustrationData?: IllustrationSessionData // ILLUSTRATION 전용
   chatData?: ChatSessionData        // BASIC 전용
   conceptData?: ConceptSessionData  // CONCEPT 전용
+  tilemapData?: TilemapSessionData  // TILEMAP 전용
 }
 
 GenerationHistoryEntry = {
@@ -63,10 +64,10 @@ GenerationHistoryEntry = {
 | `BASIC` | `chatData` | `ChatPanel` (App.tsx:1177) | `handleNewSession` (App.tsx:899) |
 | `CONCEPT` | `conceptData` | `ConceptPanel` (App.tsx:1185) | App.tsx:914 |
 | `ILLUSTRATION` | `illustrationData` | setup 폼 → `ImageGeneratorPanel` (App.tsx:1194) | App.tsx:891 |
-| 그 외 9종 | `analysis`+`referenceImages` | `AnalysisPanel` → `ImageGeneratorPanel` (App.tsx:1256) | 빈 analysis |
+| 그 외 10종(TILEMAP 포함) | `analysis`+`referenceImages` | `AnalysisPanel` → `ImageGeneratorPanel` (App.tsx:1256) | 빈 analysis |
 
 - **패널 lazy 로딩**: `ImageGeneratorPanel`/`IllustrationSetupPanel`/`ChatPanel`/`ConceptPanel` 은 `lazy(() => import(...))` 로 코드 분할(App.tsx:13~24). 첫 진입 전까지 번들 로드를 미룬다. 로딩 중엔 `PanelFallback`(스피너).
-- 패널에 `key={currentSession.id}` 를 줘서 세션 전환 시 패널이 새로 마운트되도록 강제(Chat/Concept, App.tsx:1179·1187).
+- 패널에 `key={currentSession.id}` 를 줘서 세션 전환 시 패널이 새로 마운트되도록 강제(Chat/Concept).
 
 ## 세션 생성 흐름
 
@@ -94,7 +95,7 @@ GenerationHistoryEntry = {
 
 ## 세션 삭제
 
-- `handleDeleteSession`(useSessionManagement.ts:124): 목록에서 제거 후, 현재 세션이 삭제 대상이면 **이전 세션 → 없으면 다음 세션 → 없으면 null** 로 선택 이동. `persistSessions` 로 저장. (참조 이미지 파일은 별도 정리 — `deleteSessionImages` 는 폴더 삭제 경로에서 세션 삭제를 통해 호출되지 않음; 히스토리 삭제 시 `deleteImage` orphan 정리만 수행, useSessionManagement.ts:282)
+- `handleDeleteSession`(useSessionManagement.ts:124): 목록에서 제거 후, 현재 세션이 삭제 대상이면 **이전 세션 → 없으면 다음 세션 → 없으면 null** 로 선택 이동. `persistSessions` 로 저장. (이미지 파일은 즉시 지우지 않는다 — `deleteSessionImages` 는 호출부 없는 dead code. 폴더 삭제 Ctrl+Z가 세션 객체만 복원하기 때문. 삭제된 세션의 파일은 다음 앱 시작 시 `scheduleOrphanImageCleanup` 이 회수 → `session/storage.md` "고아 파일 정리". 히스토리 삭제 시에는 `deleteImage` 로 해당 키만 즉시 정리)
 
 ## 회귀 증상별 원인
 

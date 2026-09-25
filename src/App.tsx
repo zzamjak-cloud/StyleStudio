@@ -78,7 +78,7 @@ import {
 } from './utils/sessionHelpers';
 import { DEFAULT_IMAGE_MODEL } from './hooks/api/imageModels';
 import { logger } from './lib/logger';
-import { exportFolderToFile, exportWorkspaceSnapshotToFile, importFromFile } from './lib/storage';
+import { exportFolderToFile, exportWorkspaceSnapshotToFile, importFromFile, migrateSessionExtras } from './lib/storage';
 
 /**
  * 신규 세션 생성 시 만들어 두는 빈 분석 플레이스홀더와 같은지 검사합니다.
@@ -126,6 +126,20 @@ function prepareImportedSessions(
   });
 
   return { sessions, sessionIdMap };
+}
+
+/**
+ * import한 세션의 부가 영역 base64(생성 히스토리·채팅·컨셉·일러스트·타일맵)를 저장소 키로 바꾼 세션.
+ * 저장(persistSessions)도 같은 변환을 하지만 메모리 세션은 base64로 남아, 일부 부가 이미지 정리가
+ * data:를 건너뛰는 문제가 있었다. 앱 재시작 후 로드 상태(부가 영역 = 키, lazy 디코딩)와 같아지므로 전 타입에 안전하다.
+ */
+async function migrateImportedSession(session: Session): Promise<Session> {
+  try {
+    return await migrateSessionExtras(session);
+  } catch (error) {
+    logger.warn(`⚠️ 세션 "${session.name}" 부가 이미지 저장소 변환 실패 — base64로 유지:`, error);
+    return session;
+  }
 }
 
 function remapImportedSessionFolderMap(
@@ -758,7 +772,7 @@ function App() {
           const totalSessions = preparedSessions.length;
 
           for (let i = 0; i < preparedSessions.length; i++) {
-            const importedSession = preparedSessions[i];
+            const importedSession = await migrateImportedSession(preparedSessions[i]);
 
             // 진행 상태 업데이트
             setImportProgress({
@@ -834,7 +848,7 @@ function App() {
           const totalSessions = preparedSessions.length;
 
           for (let i = 0; i < preparedSessions.length; i++) {
-            const importedSession = preparedSessions[i];
+            const importedSession = await migrateImportedSession(preparedSessions[i]);
 
             setImportProgress({
               stage: 'saving',
@@ -938,9 +952,10 @@ function App() {
           await moveSessionToFolder(importedSession.id, targetFolderId);
         }
 
-        // 세션 추가
-        updatedSessions = addSessionToList(updatedSessions, importedSession);
-        lastValidSession = importedSession;
+        // 세션 추가 (부가 영역은 저장소 키로 바꾼 세션)
+        const storedSession = await migrateImportedSession(importedSession);
+        updatedSessions = addSessionToList(updatedSessions, storedSession);
+        lastValidSession = storedSession;
 
         logger.info(
           `   ✅ 세션 "${importedSession.name}" 추가 완료 (참조 이미지: ${importedSession.imageCount}개, 유효: ${hasValidImages})`

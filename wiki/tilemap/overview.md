@@ -71,7 +71,7 @@ TILEMAP은 사용자가 고를 수 없는 값이 여럿이다. **바꿀 수 없�
 ```
 TilemapSessionData = {      // Session.tilemapData
   grid: '4x4' | '8x8'
-  sheets: TilemapSheet[]           // 시트 이미지 키 목록 (imageStorage: tilemap-sheet-{id})
+  sheets: TilemapSheet[]           // 시트 이미지 키 목록 (imageStorage: tilemap-sheet-{id} / import 후 {sessionId}-tilemap-sheet-{id} / import 직후 메모리엔 base64)
   slotAssignments: TileSlotAssignment[]  // 슬롯 수 = 현재 grid의 totalFrames
   mode?: 'variation' | 'ruletile'  // 미지정 시 'variation' (초기 세션 호환)
   baseTerrain?: string             // 룰타일: 베이스 지형 입력 원문 (빈 값 = 투명)
@@ -392,7 +392,7 @@ a = 0 (변에서 2px) → a: 0→1 (0.12 구간 스무스스텝) → a = 1 (내�
 | 내보내기 폴더 옆에 잉여 jpg가 생김 | 공통 자동 저장 가드(`sessionType !== 'TILEMAP'`)가 풀렸다 — 위 "세션 폴더에 남는 파일" 절 |
 | 변형 교체·락이 동작 안 함 (룰타일) | 의도된 동작. 룰타일은 역할 고정 세트라 `reshuffleSlots`·`toggleLock`이 `effectiveMode === 'ruletile'`이면 no-op이고, UI도 안내 문구만 띄운다 |
 | 그리드/모드 바꿨는데 이전 타일이 남아있음 | 다음 **생성 실행 시점**에만 리셋된다(`processNewSheet`의 `setChanged` 체크) |
-| 재진입 시 회색 박스만 표시 | `tilemap-sheet-*` imageStorage 키 유실 — 콘솔의 "⚠️ 타일 시트 이미지 미발견" 확인. 세션 삭제 시 이 키들은 정리되지 않아 orphan으로 남을 수 있음 |
+| 재진입 시 회색 박스만 표시 | `tilemap-sheet-*` imageStorage 키 유실 — 콘솔의 "⚠️ 타일 시트 이미지 미발견" 확인. 수정 전 버전으로 export한 파일은 시트가 키로만 들어 있어 다른 PC에서 이렇게 된다. 훅은 `imageKey`가 `data:`면 그대로 쓴다(import 직후 메모리 세션). 세션 삭제는 이미지를 아예 지우지 않는다 → `session/storage.md` |
 | 미리보기 캔버스 버튼이 비활성화됨 | `currentTiles`에 `null`이 있으면 비활성 — 모든 슬롯이 채워져야 열림 |
 | 비율/해상도 선택 UI가 안 보임 | 의도된 동작 — TILEMAP은 1:1·1K 고정 |
 | 고급 설정 UI가 안 보임 | 의도된 동작 — 덕테이프 계열은 Seed/Temperature/Top-K/Top-P를 지원하지 않는다 |

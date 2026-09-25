@@ -1,6 +1,6 @@
 # 세션 타입 설정 (sessionConfig.ts · paths.ts)
 
-`sessionConfig.ts` 는 12종 `SessionType` 각각의 **표시/설명/색상/그리드 안내 문구**를 한 곳에 모은 룩업 테이블(`SESSION_CONFIG`)이다. UI 라벨·아이콘 이모지·그리드 버튼 색상 클래스·그리드 레이아웃별 설명·프롬프트 placeholder 를 담는다. 코드 흐름을 바꾸는 기능 플래그는 아니며 **순전히 프레젠테이션 설정**이다(타입별 동작 분기는 `App.tsx`·각 패널이 `type` 값으로 직접 처리). `paths.ts` 는 이와 별개로 **생성 결과 이미지의 파일 시스템 저장 경로**(`~/Downloads/AI_Gen/`)를 관리한다.
+`sessionConfig.ts` 는 13종 `SessionType` 각각의 **표시/설명/색상/그리드 안내 문구**를 한 곳에 모은 룩업 테이블(`SESSION_CONFIG`)이다. UI 라벨·아이콘 이모지·그리드 버튼 색상 클래스·그리드 레이아웃별 설명·프롬프트 placeholder 를 담는다. 코드 흐름을 바꾸는 기능 플래그는 아니며 **순전히 프레젠테이션 설정**이다(타입별 동작 분기는 `App.tsx`·각 패널이 `type` 값으로 직접 처리). `paths.ts` 는 이와 별개로 **생성 결과 이미지의 파일 시스템 저장 경로**(`~/Downloads/AI_Gen/`)를 관리한다.
 
 ## 관련 파일
 
@@ -46,8 +46,8 @@ PixelArtGridLayout = '1x1' | '2x2' | '3x3' | '4x4' | '6x6' | '8x8'
 | `PIXELART_BACKGROUND` | 픽셀아트 배경 | 🏞️ | cyan |
 | `PIXELART_ICON` | 픽셀아트 아이콘 | 💎 | cyan |
 | `CONCEPT` | 컨셉 | 🎨 | purple |
-
-> Sidebar/NewSessionModal 의 아이콘은 `SESSION_CONFIG.icon`(이모지)이 아니라 lucide 아이콘을 별도 `getSessionTypeInfo`(Sidebar.tsx:13)로 매핑한다. 두 소스가 분리돼 있으니 타입 추가 시 **양쪽 모두** 갱신 필요.
+| `TILEMAP` | 타일맵 | 🧱 | lime |
+> Sidebar/NewSessionModal 의 아이콘은 `SESSION_CONFIG.icon`(이모지)이 아니라 lucide 아이콘을 별도 `getSessionTypeInfo`(Sidebar.tsx:13)로 매핑한다. 두 소스가 분리돼 있으니 타입 추가 시 **양쪽 모두** 갱신 필요. 그 밖에 `sessionPrompts.promptGenerators`(`Record<SessionType, …>`)와 `sketchGuide.SKETCH_GUIDE_KIND`(빼면 스케치 제외)도 확인한다.
 
 ## 접근 헬퍼 (sessionConfig.ts)
 

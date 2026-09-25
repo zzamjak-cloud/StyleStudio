@@ -13,8 +13,8 @@ import { logger } from './logger';
 const DB_NAME = 'StyleStudioImages';
 const STORE_NAME = 'images';
 const DB_VERSION = 1;
-const IMAGE_FS_DIR = 'images';
-const IMAGE_FS_EXT = '.txt';
+export const IMAGE_FS_DIR = 'images';
+export const IMAGE_FS_EXT = '.txt';
 
 function getImageFileName(key: string): string {
   return `${key}${IMAGE_FS_EXT}`;

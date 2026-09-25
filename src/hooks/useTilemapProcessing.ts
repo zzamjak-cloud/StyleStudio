@@ -17,7 +17,9 @@ import {
   VARIATION_COMPOSER_VERSION,
 } from '../lib/tilemap/variationComposer';
 import { composeFinalSheet } from '../lib/tilemap/tilemapExporter';
+import { Store } from '@tauri-apps/plugin-store';
 import { saveImageWithKey, loadImage, deleteImage } from '../lib/imageStorage';
+import { collectReferencedImageKeys } from '../lib/imageOrphanCleanup';
 import { logger } from '../lib/logger';
 
 interface UseTilemapProcessingOptions {
@@ -186,7 +188,10 @@ export function useTilemapProcessing({
       for (const sheet of tilemapData.sheets) {
         if (!isSheetReferenced(referenced, sheet.id)) continue;
         try {
-          const dataUrl = await loadImage(sheet.imageKey);
+          // import 직후(재시작 전) 메모리 세션은 키 자리에 base64를 그대로 들고 있다
+          const dataUrl = sheet.imageKey.startsWith('data:')
+            ? sheet.imageKey
+            : await loadImage(sheet.imageKey);
           if (!dataUrl) {
             logger.warn('⚠️ 타일 시트 이미지 미발견:', sheet.imageKey);
             continue;
@@ -269,7 +274,8 @@ export function useTilemapProcessing({
           for (const sheet of tilemapData.sheets) {
             if (!isSheetReferenced(referenced, sheet.id)) continue;
             const dataUrl =
-              materialSheetsRef.current.get(sheet.id) ?? (await loadImage(sheet.imageKey));
+              materialSheetsRef.current.get(sheet.id) ??
+              (sheet.imageKey.startsWith('data:') ? sheet.imageKey : await loadImage(sheet.imageKey));
             if (!dataUrl) continue;
             materialSheetsRef.current.set(sheet.id, dataUrl);
             const set = await buildRuleTileSet(dataUrl, tilemapData.grid, {
@@ -399,6 +405,32 @@ export function useTilemapProcessing({
       내보내기 폴더에 각각 남으므로 잃는 것이 없다).
     */
     const displaced = prevData?.sheets.filter((s) => s.id !== sheetId) ?? [];
+    /*
+      구 export 파일(시트 값이 base64가 아니라 키 그대로 — 원래 세션이 남은 PC에서 import하거나 두 번
+      import)을 다시 불러오면 두 세션이 같은 시트 키를 가리킬 수 있다. 저장된 세션 목록에서 키별
+      참조 세션 수를 센다 — 요청을 onTilemapDataChange(→ 디바운스 저장)보다 먼저 보내 현재
+      세션의 변경 전 저장본이 1회로 잡힌다. 2개 이상이면 공유 키라 지우지 않는다.
+      읽기 실패 시에도 지우지 않는다(남은 파일은 앱 시작 고아 정리가 회수).
+    */
+    const storedRefCounts: Promise<Map<string, number> | null> =
+      displaced.length === 0
+        ? Promise.resolve(new Map())
+        : Store.load('settings.json')
+            .then((store) => store.get<unknown>('sessions'))
+            .then((stored) => {
+              const counts = new Map<string, number>();
+              for (const session of Array.isArray(stored) ? stored : []) {
+                const keys = collectReferencedImageKeys([[session]]);
+                for (const old of displaced) {
+                  if (keys.has(old.imageKey)) counts.set(old.imageKey, (counts.get(old.imageKey) ?? 0) + 1);
+                }
+              }
+              return counts;
+            })
+            .catch((e) => {
+              logger.warn('⚠️ 타일맵 시트 공유 여부 확인 실패 — 정리 건너뜀:', e);
+              return null;
+            });
     onTilemapDataChange({
       grid,
       mode,
@@ -416,11 +448,19 @@ export function useTilemapProcessing({
     });
 
     // 정리 실패가 생성 결과를 잃게 하면 안 되므로 기다리지 않고 로그만 남긴다
-    for (const old of displaced) {
-      deleteImage(old.imageKey).catch((e) =>
-        logger.warn('⚠️ 이전 타일맵 시트 정리 실패(무시):', old.imageKey, e)
-      );
-    }
+    void storedRefCounts.then((counts) => {
+      if (!counts) return;
+      for (const old of displaced) {
+        if (old.imageKey.startsWith('data:')) continue; // 저장소에 없는 base64(import 직후)
+        if ((counts.get(old.imageKey) ?? 0) > 1) {
+          logger.debug('🧩 다른 세션이 참조하는 타일맵 시트 — 삭제 안 함:', old.imageKey);
+          continue;
+        }
+        deleteImage(old.imageKey).catch((e) =>
+          logger.warn('⚠️ 이전 타일맵 시트 정리 실패(무시):', old.imageKey, e)
+        );
+      }
+    });
     return { tiles: assignedTiles, baseTiles, grid, mode };
   }, [enabled, onTilemapDataChange, grid, tilemapData, mode, baseTerrain, overlayTerrain, edgeStyle, outline, outline2, outlineSide]);
 

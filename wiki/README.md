@@ -17,7 +17,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 |------------|---------|
 | 신규 세션 진입 시 흰 화면 / 세션 전환 렉 | `session/overview.md` |
 | 자동 저장·디바운스·앱 종료 시 변경 유실 | `session/overview.md` |
-| 세션 12종 타입·패널 라우팅·lazy 로딩 | `session/overview.md` |
+| 세션 13종 타입·패널 라우팅·lazy 로딩 | `session/overview.md` |
 | import 세션 이미지 손상 / settings.json 비대 | `session/storage.md` |
 | dev·prod 전환 후 이미지 사라짐 / 이미지 키 정합 | `session/storage.md` |
 | 세션/폴더 내보내기·불러오기 파일 포맷 | `session/storage.md` |
@@ -111,7 +111,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 ### session/ — 세션 코어
 | 파일 | 내용 |
 |------|------|
-| `overview.md` | 세션 모델·타입 12종, 생성/전환/삭제 흐름, 이중 디바운스 자동저장, 앱 셸·패널 라우팅·lazy 로딩 |
+| `overview.md` | 세션 모델·타입 13종, 생성/전환/삭제 흐름, 이중 디바운스 자동저장, 앱 셸·패널 라우팅·lazy 로딩 |
 | `storage.md` | settings.json 영속화, 이미지 파일저장소(imageStorage) 분리·복원, 저장/로드 파이프라인, 세션 export/import |
 | `session-config.md` | SESSION_CONFIG 타입별 프레젠테이션 설정, 접근 헬퍼, paths.ts 생성물 저장 경로 |
 
@@ -203,6 +203,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 앱 셸·패널 라우팅·저장 디바운스·폴더 Undo | `src/App.tsx` |
 | 영속화 계층(settings.json I/O·export/import) | `src/lib/storage.ts` |
 | 이미지 실데이터 저장소(AppData 파일·IndexedDB 폴백) | `src/lib/imageStorage.ts` |
+| 고아 이미지 파일 정리(앱 시작 시) | `src/lib/imageOrphanCleanup.ts` + `dev/image-orphan-check.html` |
 | 세션 상태·CRUD·앱 초기화 훅 | `src/hooks/useSessionManagement.ts` |
 | 폴더 상태·이동·import·복원 훅 | `src/hooks/useFolderManagement.ts` |
 | 세션/폴더 트리 UI·드래그앤드롭·rename | `src/components/common/Sidebar.tsx` |
@@ -255,6 +256,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 - **`tileSlicer.sliceTileSheet`는 레거시 세션 복원 전용** — 새로 만드는 세트는 두 모드 모두 자르지 않는다.
 - **`pixelArtUpscaler.ts` 함수는 dead code** — 레포 어디서도 호출 안 됨.
 - **`PixelArtGridLayout` 타입 중복 정의** — `types/pixelart.ts`, `sessionConfig.ts`.
+- **세션 삭제는 이미지 파일을 즉시 지우지 않는다** — `deleteSessionImages`는 dead code, 폴더 삭제 Ctrl+Z가 세션만 복원하므로 즉시 삭제로 연결 금지. 회수는 앱 시작 시 `imageOrphanCleanup`(시작 스냅샷 기준·24h 경과·알려진 키 형식만 `images/.trash/`로 이동 → 14일 후 영구 삭제, dev는 dry-run). 새 이미지 키는 `{sessionId}-` 접두어를 붙이고 세션 객체에 키를 남길 것 — 접두어 없는 키는 참조가 끊기는 순간 고아가 된다(`tilemap-sheet-*`는 참조 없으면 삭제, 모르는 형식은 보존). 새 접미 형식은 `SESSION_PREFIXED_KEY`에 추가해야 삭제 세션분이 회수된다. → `session/storage.md`
 - **히스토리의 `imageBase64`와 디스크 자동 저장 파일(`~/Downloads/AI_Gen/`)은 독립** — 히스토리 삭제가 파일을 지우지 않음.
 - **`useWindowState()` 는 정의만 있고 호출부 없음** — 창은 `tauri.conf.json`의 `maximized:true`로만 시작.
 - **OpenRouter API 키는 `.env`가 아니라 SettingsModal 입력→store 영속.** `.env`의 `VITE_GOOGLE_*`는 OAuth 전용.

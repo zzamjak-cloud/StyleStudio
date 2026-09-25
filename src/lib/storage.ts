@@ -146,7 +146,7 @@ async function restoreImageField(
  * conceptData.history, conceptData.referenceImage)에 들어 있는 base64 이미지를
  * IndexedDB로 옮기고, 객체에는 키만 남긴다. settings.json 직렬화 비용을 크게 줄인다.
  */
-async function migrateSessionExtras(session: Session): Promise<Session> {
+export async function migrateSessionExtras(session: Session): Promise<Session> {
   const sessionId = session.id;
 
   // 1) generationHistory[].imageBase64
@@ -285,11 +285,31 @@ async function migrateSessionExtras(session: Session): Promise<Session> {
     }
   }
 
+  // 5) tilemapData.sheets[].imageKey
+  // 평소엔 생성 시점의 키(`tilemap-sheet-{id}`)라 그대로 둔다. import 직후처럼 base64가
+  // 들어온 경우에만 세션 접두어 키로 저장한다 — 같은 파일을 두 번 import해도 키가 겹치지 않게.
+  let nextTilemapData = session.tilemapData;
+  if (nextTilemapData && nextTilemapData.sheets.length > 0) {
+    const sheets = await Promise.all(
+      nextTilemapData.sheets.map(async (sheet) => {
+        const next = await persistImageField(
+          sheet.imageKey,
+          `${sessionId}-tilemap-sheet-${sheet.id}`
+        );
+        return next === sheet.imageKey ? sheet : { ...sheet, imageKey: next ?? sheet.imageKey };
+      })
+    );
+    if (sheets.some((s, i) => s !== nextTilemapData!.sheets[i])) {
+      nextTilemapData = { ...nextTilemapData, sheets };
+    }
+  }
+
   if (
     nextGenerationHistory === session.generationHistory &&
     nextChatData === session.chatData &&
     nextConceptData === session.conceptData &&
-    nextIllustrationData === session.illustrationData
+    nextIllustrationData === session.illustrationData &&
+    nextTilemapData === session.tilemapData
   ) {
     return session;
   }
@@ -300,6 +320,7 @@ async function migrateSessionExtras(session: Session): Promise<Session> {
     chatData: nextChatData,
     conceptData: nextConceptData,
     illustrationData: nextIllustrationData,
+    tilemapData: nextTilemapData,
   };
 }
 
@@ -307,7 +328,7 @@ async function migrateSessionExtras(session: Session): Promise<Session> {
  * 세션 객체의 부가 영역에 저장된 IndexedDB 키를 base64로 복원한다.
  * 디스크에서 메모리로 끌어올릴 때 사용.
  */
-async function restoreSessionExtras(session: Session): Promise<Session> {
+export async function restoreSessionExtras(session: Session): Promise<Session> {
   // generationHistory
   let nextGenerationHistory = session.generationHistory;
   if (nextGenerationHistory && nextGenerationHistory.length > 0) {
@@ -426,11 +447,26 @@ async function restoreSessionExtras(session: Session): Promise<Session> {
     }
   }
 
+  // tilemapData (시트 원본 — export 파일이 자기완결이 되도록 복원)
+  let nextTilemapData = session.tilemapData;
+  if (nextTilemapData && nextTilemapData.sheets.length > 0) {
+    const sheets = await Promise.all(
+      nextTilemapData.sheets.map(async (sheet) => {
+        const restored = await restoreImageField(sheet.imageKey);
+        return restored === sheet.imageKey ? sheet : { ...sheet, imageKey: restored ?? sheet.imageKey };
+      })
+    );
+    if (sheets.some((s, i) => s !== nextTilemapData!.sheets[i])) {
+      nextTilemapData = { ...nextTilemapData, sheets };
+    }
+  }
+
   if (
     nextGenerationHistory === session.generationHistory &&
     nextChatData === session.chatData &&
     nextConceptData === session.conceptData &&
-    nextIllustrationData === session.illustrationData
+    nextIllustrationData === session.illustrationData &&
+    nextTilemapData === session.tilemapData
   ) {
     return session;
   }
@@ -441,6 +477,7 @@ async function restoreSessionExtras(session: Session): Promise<Session> {
     chatData: nextChatData,
     conceptData: nextConceptData,
     illustrationData: nextIllustrationData,
+    tilemapData: nextTilemapData,
   };
 }
 
@@ -448,7 +485,7 @@ async function restoreSessionExtras(session: Session): Promise<Session> {
  * 세션에 포함된 모든 이미지/블롭 키를 수집한다.
  * (레거시 IndexedDB -> 파일 저장소 승격 대상으로 사용)
  */
-function collectSessionStorageKeys(session: Session): string[] {
+export function collectSessionStorageKeys(session: Session): string[] {
   const keys = new Set<string>();
   const pushIfKey = (value: string | undefined) => {
     if (!value) return;
@@ -473,6 +510,9 @@ function collectSessionStorageKeys(session: Session): string[] {
     for (const img of character.images || []) pushIfKey(img);
   }
   for (const bg of session.illustrationData?.backgroundImages || []) pushIfKey(bg);
+
+  // 타일맵 시트 키는 `{sessionId}-` 접두어가 없을 수 있어(`tilemap-sheet-{id}`) 참조로만 찾을 수 있다
+  for (const sheet of session.tilemapData?.sheets || []) pushIfKey(sheet.imageKey);
 
   return Array.from(keys);
 }

@@ -54,6 +54,12 @@
           "path": "$APPDATA/*"
         },
         {
+          "path": "$APPDATA/images/.trash"
+        },
+        {
+          "path": "$APPDATA/images/.trash/*"
+        },
+        {
           "path": "$APPLOCALDATA/**"
         },
         {
