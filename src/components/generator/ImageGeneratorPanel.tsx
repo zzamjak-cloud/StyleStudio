@@ -982,6 +982,8 @@ export function ImageGeneratorPanel({
           // UI 세션 전용 설정
           referenceDocuments: referenceDocuments, // 참조 문서 (UI 세션에서 기획 내용 반영)
           imageModel: imageModel, // 이미지 생성 모델
+          // 위에서 buildPromptForSession 으로 완성했다 — 훅이 템플릿을 다시 씌우지 않게 한다
+          promptIsFinal: true,
         },
         callbacks
       );

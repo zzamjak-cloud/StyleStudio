@@ -7,7 +7,7 @@ import { ReferenceDocument } from '../../types/referenceDocument';
 import { logger } from '../../lib/logger';
 import { PixelArtGridLayout } from '../../types/pixelart';
 import { ImageAnalysisResult } from '../../types/analysis';
-import { buildPromptForSession } from '../../lib/prompts/sessionPrompts';
+import { applyTransparentBackground, buildPromptForSession } from '../../lib/prompts/sessionPrompts';
 import { generateImageViaOpenRouter } from '../../lib/api/openrouter';
 import {
   AspectRatioOption,
@@ -41,6 +41,12 @@ export interface ImageGenerationParams {
   referenceDocuments?: ReferenceDocument[]; // 참조 문서 (UI 세션 전용)
   imageModel?: ImageGenerationModel; // 이미지 생성 모델
   transparentBackground?: boolean; // 알파 PNG로 생성 (gpt-image-2.5 계열만 지원)
+  /**
+   * 호출부가 이미 `buildPromptForSession` 으로 완성한 프롬프트인지.
+   * true 면 세션 템플릿을 다시 씌우지 않는다 — 두 번 감싸면 템플릿이 중첩되고(픽셀 규칙·AVOID 중복),
+   * 타일맵은 룰타일 프롬프트가 variation 템플릿 안에 통째로 들어가 버린다.
+   */
+  promptIsFinal?: boolean;
 }
 
 export interface GenerationCallbacks {
@@ -198,10 +204,11 @@ export function useImageGenerator() {
     }
 
     // 프롬프트 구성 (참조 이미지가 있으면 일관성 강조)
-    // ILLUSTRATION 세션은 ImageGeneratorPanel에서 이미 buildPromptForSession을 호출했으므로 재처리 안함
+    // 호출부가 완성한 프롬프트(생성 패널 — 일러스트 포함)는 템플릿을 다시 씌우지 않는다.
+    // 투명 배경 치환만은 여기서 보장한다 (모델 지원 여부를 이 훅이 최종 판정하므로).
     let fullPrompt: string;
-    if (params.sessionType === 'ILLUSTRATION') {
-      fullPrompt = params.prompt;
+    if (params.promptIsFinal || params.sessionType === 'ILLUSTRATION') {
+      fullPrompt = wantsTransparent ? applyTransparentBackground(params.prompt) : params.prompt;
     } else {
       fullPrompt = buildPromptForSession({
         basePrompt: params.prompt,

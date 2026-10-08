@@ -194,6 +194,60 @@ jobs:
           fi
           echo "TAURI signing key loaded (${#TAURI_SIGNING_PRIVATE_KEY} chars)"
 
+      # AI 에이전트 연동용 MCP 서버(ss-mcp, mcp/) → wiki/infra/mcp.md "배포 방식"
+      # - 앱에는 JS 번들(ss-mcp.mjs, 약 1MB)만 넣는다. 사용자 PC 의 Node 18+ 로 실행된다.
+      # - Node 가 없는 PC 용 단일 실행 파일(런타임 포함 100MB+)은 앱에 넣지 않고 릴리스 자산(.gz + .sha256)으로만 올린다.
+      #   앱이 설정 화면에서 v<앱 버전> 릴리스의 자산을 받아 해시·버전을 확인한 뒤 설치한다.
+      # 실패해도 앱 빌드는 막지 않는다(번들 누락 시 앱은 MCP 등록만 비활성화된다).
+      - name: Setup Bun (MCP server)
+        uses: oven-sh/setup-bun@v2
+        continue-on-error: true
+        with:
+          bun-version: 1.3.10
+
+      - name: Build MCP server script (bundled with app)
+        continue-on-error: true
+        shell: bash
+        run: node scripts/build-mcp.mjs && ls -lh src-tauri/binaries/
+
+      - name: Publish MCP standalone binary (macOS universal)
+        if: matrix.platform == 'macos-latest'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 임시 폴더에서 빌드·lipo·서명·검증을 모두 통과한 뒤에만 업로드한다
+          WORK="$RUNNER_TEMP/ss-mcp"
+          mkdir -p "$WORK"
+          node scripts/build-mcp.mjs --standalone --target bun-darwin-arm64 --out "$WORK/ss-mcp-arm64"
+          node scripts/build-mcp.mjs --standalone --target bun-darwin-x64 --out "$WORK/ss-mcp-x64"
+          lipo -create -output "$WORK/ss-mcp" "$WORK/ss-mcp-arm64" "$WORK/ss-mcp-x64"
+          # lipo 로 합친 뒤 ad-hoc 서명을 다시 입힌다 (사용자 PC 에서 앱 밖으로 내려받아 실행되므로 서명이 유효해야 한다)
+          codesign --force --sign - "$WORK/ss-mcp"
+          codesign -v "$WORK/ss-mcp"
+          lipo -info "$WORK/ss-mcp"
+          gzip -9 -c "$WORK/ss-mcp" > "$WORK/ss-mcp-macos-universal.gz"
+          (cd "$WORK" && shasum -a 256 ss-mcp-macos-universal.gz > ss-mcp-macos-universal.gz.sha256)
+          gh release upload "$RELEASE_TAG" "$WORK/ss-mcp-macos-universal.gz" "$WORK/ss-mcp-macos-universal.gz.sha256" --repo "${{ github.repository }}" --clobber
+
+      - name: Publish MCP standalone binary (Windows x64)
+        if: matrix.platform == 'windows-latest'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/ss-mcp"
+          mkdir -p "$WORK"
+          node scripts/build-mcp.mjs --standalone --out "$WORK/ss-mcp.exe"
+          "$WORK/ss-mcp.exe" --version
+          gzip -9 -c "$WORK/ss-mcp.exe" > "$WORK/ss-mcp-windows-x64.exe.gz"
+          (cd "$WORK" && sha256sum ss-mcp-windows-x64.exe.gz > ss-mcp-windows-x64.exe.gz.sha256)
+          gh release upload "$RELEASE_TAG" "$WORK/ss-mcp-windows-x64.exe.gz" "$WORK/ss-mcp-windows-x64.exe.gz.sha256" --repo "${{ github.repository }}" --clobber
+
       - name: Build and Release (macOS without Apple signing)
         if: matrix.platform == 'macos-latest'
         uses: tauri-apps/tauri-action@v0

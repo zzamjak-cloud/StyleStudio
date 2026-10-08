@@ -17,6 +17,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+mod mcp_commands;
+mod mcp_runtime;
+mod mcp_setup;
 mod oauth_server;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,7 +33,19 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
-        .invoke_handler(tauri::generate_handler![oauth_server::start_oauth_server])
+        .setup(|app| {
+            // 앱 업데이트 후 에이전트에 등록된 ss-mcp 사본을 새 버전으로 맞춘다
+            mcp_commands::refresh_installed_server(&app.handle().clone());
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            oauth_server::start_oauth_server,
+            mcp_commands::mcp_setup_status,
+            mcp_commands::mcp_register,
+            mcp_commands::mcp_unregister,
+            mcp_commands::mcp_config_snippet,
+            mcp_commands::mcp_download_server
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

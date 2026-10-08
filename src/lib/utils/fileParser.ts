@@ -1,6 +1,6 @@
 // 파일 파서 유틸리티 - 다양한 파일 형식을 텍스트로 변환
 
-import * as XLSX from 'xlsx';
+import { csvToText, excelToText, googleSheetCsvUrl, htmlToText } from './documentText';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { fetch } from '@tauri-apps/plugin-http';
 
@@ -239,39 +239,15 @@ export async function parsePDF(filePath: string, fileName: string): Promise<Pars
 export async function parseExcel(filePath: string, fileName: string): Promise<ParsedFileContent> {
   try {
     const fileData = await readFile(filePath);
-    const workbook = XLSX.read(fileData, { type: 'buffer' });
-
-    let text = '';
-    const sheetNames = workbook.SheetNames;
-
-    // 모든 시트를 순회하며 텍스트로 변환
-    for (const sheetName of sheetNames) {
-      const sheet = workbook.Sheets[sheetName];
-      const sheetData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-      text += `\n\n=== 시트: ${sheetName} ===\n\n`;
-
-      // 각 행을 텍스트로 변환
-      for (const row of sheetData as any[][]) {
-        if (Array.isArray(row) && row.length > 0) {
-          const rowText = row
-            .map((cell) => (cell !== null && cell !== undefined ? String(cell).trim() : ''))
-            .filter((cell) => cell.length > 0)
-            .join(' | ');
-
-          if (rowText) {
-            text += rowText + '\n';
-          }
-        }
-      }
-    }
+    // 변환 규칙은 MCP 서버와 공유한다 (documentText.ts)
+    const { text, sheetCount } = excelToText(fileData);
 
     return {
-      text: text.trim(),
+      text,
       metadata: {
         fileName,
         fileType: 'excel',
-        sheetCount: sheetNames.length,
+        sheetCount,
       },
     };
   } catch (error) {
@@ -287,16 +263,8 @@ export async function parseCSV(filePath: string, fileName: string): Promise<Pars
     const fileData = await readFile(filePath);
     const text = new TextDecoder('utf-8').decode(fileData);
 
-    // CSV를 파싱하여 읽기 쉬운 형식으로 변환
-    const lines = text.split('\n').filter((line) => line.trim().length > 0);
-    const parsedLines = lines.map((line) => {
-      // CSV 셀 분리 (쉼표로 구분, 따옴표 처리)
-      const cells = line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''));
-      return cells.filter((cell) => cell.length > 0).join(' | ');
-    });
-
     return {
-      text: parsedLines.join('\n'),
+      text: csvToText(text),
       metadata: {
         fileName,
         fileType: 'csv',
@@ -356,38 +324,16 @@ export async function parseGoogleSpreadsheet(url: string): Promise<ParsedFileCon
     // 예: https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit
     // -> https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0
 
-    let csvUrl = url;
-
-    // URL 형식 변환
-    if (url.includes('/spreadsheets/d/')) {
-      const sheetIdMatch = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-      if (sheetIdMatch) {
-        const sheetId = sheetIdMatch[1];
-        // gid 파라미터 추출 (있는 경우)
-        const gidMatch = url.match(/[#&]gid=(\d+)/);
-        const gid = gidMatch ? gidMatch[1] : '0';
-
-        csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
-      }
-    }
-
-    // CSV 다운로드
-    const response = await fetch(csvUrl);
+    // 변환 규칙은 MCP 서버와 공유한다 (documentText.ts)
+    const response = await fetch(googleSheetCsvUrl(url));
     if (!response.ok) {
       throw new Error(`Google Spreadsheet 다운로드 실패: ${response.status}`);
     }
 
     const csvText = await response.text();
 
-    // CSV 파싱
-    const lines = csvText.split('\n').filter((line) => line.trim().length > 0);
-    const parsedLines = lines.map((line) => {
-      const cells = line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''));
-      return cells.filter((cell) => cell.length > 0).join(' | ');
-    });
-
     return {
-      text: parsedLines.join('\n'),
+      text: csvToText(csvText),
       metadata: {
         fileName: 'Google Spreadsheet',
         fileType: 'google-spreadsheet',
@@ -410,30 +356,8 @@ export async function parseWebPage(url: string): Promise<ParsedFileContent> {
 
     const html = await response.text();
 
-    // HTML 태그 제거 및 텍스트 추출
-    let text = html
-      // script, style 태그와 그 내용 제거
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-      // HTML 태그 제거
-      .replace(/<[^>]+>/g, ' ')
-      // HTML 엔티티 디코딩
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      // 연속된 공백 제거
-      .replace(/\s+/g, ' ')
-      // 빈 줄 제거
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .join('\n');
-
     return {
-      text: text.trim(),
+      text: htmlToText(html),
       metadata: {
         fileName: url,
         fileType: 'webpage',

@@ -96,7 +96,7 @@ seed·temperature·topK·topP도 이 모델들의 `supported_parameters`에 없�
 - 엔드포인트: `POST https://openrouter.ai/api/v1/images`, `Authorization: Bearer {OpenRouter Key}`.
 - **요청 필드**: `model`(슬러그), `prompt`, `aspect_ratio`, Gemini 계열만 `resolution`('1K'|'2K'|'4K'), gpt-image 계열만 `quality`(`normalizeImageQuality`로 정규화), 참조는 `input_references[]`(`{type:'image_url', image_url:{url: dataURL}}`), **투명 배경 요청 시에만** `background: 'transparent'`(`openrouter.ts`의 `ImageApiRequest.background`, `getImageModelDefinition(modelId).supports.transparentBackground`일 때만 성립).
 - **참조 이미지 상한은 모델별**(`supports.maxReferenceImages` — 덕테이프 계열 16장 / 나노바나나 계열 14장). 업로드 UI가 14장에서 막으므로 덕테이프의 16장 여유는 아직 실제로 쓰이지 않는다 — 업로드 상한을 올리면 바로 반영된다.
-- **프롬프트 조립**: `sessionType === 'ILLUSTRATION'` 이면 완성 프롬프트 그대로, 아니면 `buildPromptForSession` 재조립(기존과 동일). `negativePrompt` 는 `Avoid: ...` 로 덧붙임(별도 API 필드 없음).
+- **프롬프트 조립**: `promptIsFinal`(생성 패널이 이미 `buildPromptForSession` 으로 완성) 또는 `ILLUSTRATION` 이면 완성 프롬프트 그대로(투명 배경 치환만 적용), 아니면 `buildPromptForSession` 1회(컨셉 등 원문을 넘기는 호출부). 2026-10-08 이전에는 패널 경로도 여기서 다시 감싸 템플릿이 이중으로 들어갔다. `negativePrompt` 는 `Avoid: ...` 로 덧붙임(별도 API 필드 없음).
 - **재시도**: 5xx(500/502/503) 시 최대 2회, 5초 간격. OpenRouter는 실패한 생성을 502로 반환하며 과금하지 않음. 4xx는 `formatImageApiError` 로 한국어 메시지 변환(401 키, 402 크레딧 부족, 403 안전 차단, 429 한도, 413 용량).
 - **응답 파싱**: `data[0].b64_json`(+`media_type`) → 기본 경로는 `convertBase64ToJpeg`(흰 배경 합성, 0.92)로 **내부 표준 JPEG 통일** 후 `onComplete(jpegBase64)`. **투명 배경 요청(`wantsTransparent`)이면 이 변환을 건너뛰고 원본 PNG를 그대로 `onComplete`에 전달**한다 — JPEG 합성이 알파 채널을 죽이기 때문. 수신부(`ImageGeneratorPanel`)는 매직 넘버로 포맷을 판별하므로 MIME 불일치 문제는 없다.
 - 콜백 인터페이스(`onProgress`/`onComplete`/`onError`)는 기존 두 훅과 동일하게 유지.

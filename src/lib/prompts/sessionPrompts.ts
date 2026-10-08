@@ -25,7 +25,7 @@ const THINKING_TYPE_BY_SESSION: Partial<Record<SessionType, ThinkingSessionType>
 /**
  * 해상도 문자열에서 숫자 추출
  */
-function parseResolutionEstimate(resolutionStr?: string): number {
+export function parseResolutionEstimate(resolutionStr?: string): number {
   if (!resolutionStr) return 128;
   const match = resolutionStr.match(/(\d+)x(\d+)/);
   if (!match) return 128;
@@ -170,7 +170,7 @@ const TRANSPARENT_BACKGROUND_INSTRUCTION =
  * 템플릿 10곳을 각각 분기시키는 대신 완성된 본문에서 한 번에 바꾼다 — 장면을 서술하는
  * 다른 `BACKGROUND:` 줄(배경 세션 등)은 `Pure white background`로 시작하지 않아 걸리지 않는다.
  */
-function applyTransparentBackground(body: string): string {
+export function applyTransparentBackground(body: string): string {
   return body.replace(
     WHITE_BACKGROUND_LINE,
     (_match, label: string) => `${label} ${TRANSPARENT_BACKGROUND_INSTRUCTION}`

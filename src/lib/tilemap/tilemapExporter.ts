@@ -64,7 +64,7 @@ export async function composeFinalSheet(tiles: string[], grid: TilemapGridLayout
 }
 
 /** signature 비트에서 유니티 Rule Tile 3x3 규칙 문자열을 만든다 */
-function buildRuleGrid(signature: number): string {
+export function buildRuleGrid(signature: number): string {
   // 대각은 인접 두 변이 모두 오버레이일 때만 의미가 있다 → 그 외는 Any(비워둠)
   const has = (b: number) => (signature & b) !== 0;
   const cell = (b: number, meaningful: boolean): string => {
@@ -105,7 +105,7 @@ function buildRoleTable(grid: TilemapGridLayout): string {
 }
 
 /** 유니티 임포트 안내 텍스트 */
-function buildImportGuide(
+export function buildImportGuide(
   grid: TilemapGridLayout,
   mode: TilemapMode,
   /** 룰타일: 베이스 지형이 투명이라 바닥 타일이 나가지 않는 경우 */

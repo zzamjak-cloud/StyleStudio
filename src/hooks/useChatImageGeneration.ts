@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Session } from '../types/session';
-import { ChatMessage, ChatGenerationSettings } from '../types/chat';
-import { getPixelArtGridInfo } from '../types/pixelart';
+import { ChatMessage } from '../types/chat';
 import { ReferenceDocument } from '../types/referenceDocument';
 import { logger } from '../lib/logger';
 import { loadImage } from '../lib/imageStorage';
@@ -9,37 +8,14 @@ import { GEMINI_FLASH_TEXT_MODEL } from '../types/constants';
 import { chatComplete, generateImageViaOpenRouter } from '../lib/api/openrouter';
 import { getImageModelDefinition, normalizeImageModelId, normalizeImageQuality } from './api/imageModels';
 import { convertBase64ToJpeg, formatImageApiError } from './api/useImageGenerator';
-import { PIXELART_MODERN_STYLE_RULES } from '../lib/prompts/sessionPrompts';
+import { buildChatConversationContext, buildChatSettingsPrefix, composeChatPrompt } from '../lib/prompts/chatPrompt';
 import { pixelateDataUrl } from '../lib/pixelart/pixelate';
 import { detectImageFormat } from '../lib/utils/imageDataUrl';
-
-// 사용자 메시지 앞에 그리드 힌트·픽셀아트 규칙을 prefix로 결합해 모델이 반영하도록 유도
-function buildSettingsPrefix(settings: ChatGenerationSettings | undefined): string {
-  if (!settings) return '';
-  const parts: string[] = [];
-
-  if (settings.pixelArtGrid && settings.pixelArtGrid !== '1x1') {
-    const info = getPixelArtGridInfo(settings.pixelArtGrid);
-    parts.push(
-      `[그리드 레이아웃: ${settings.pixelArtGrid} — 하나의 이미지 안에 ${info.totalFrames}개 프레임을 ${info.rows}행 ${info.cols}열로 균등 배치]`
-    );
-  }
-
-  // 픽셀아트 모드: 픽셀아트 세션과 동일한 채색 규칙을 적용한다.
-  // (디더링·그라데이션 금지, hue shifting + 하드 에지 색 띠, crisp pixel edges)
-  if (settings.pixelArtMode) {
-    parts.push(`🎮 PIXEL ART MODE\n${PIXELART_MODERN_STYLE_RULES}`);
-  }
-
-  return parts.length > 0 ? parts.join('\n\n') + '\n\n' : '';
-}
 
 // 최대 재시도 횟수
 const MAX_RETRIES = 2;
 // 재시도 대기 시간 (ms)
 const RETRY_DELAY = 5000;
-// 프롬프트에 결합할 최근 대화 턴 수 (Image API는 멀티턴 대화가 없어 텍스트로 맥락 전달)
-const MAX_CONTEXT_TURNS = 6;
 // 참조 이미지 상한 (OpenRouter input_references 한도)
 /** 참조 이미지 상한 폴백 — 실제 상한은 모델별 `supports.maxReferenceImages`를 쓴다 */
 const FALLBACK_MAX_REFERENCES = 14;
@@ -66,32 +42,10 @@ export function useChatImageGeneration(
   const [generationStatus, setGenerationStatus] = useState('');
   const chatData = session.chatData;
 
-  // 요약 + 최근 대화 텍스트를 프롬프트 컨텍스트로 결합
-  // (기존 Gemini 멀티턴 contents는 OpenRouter Image API가 지원하지 않아 텍스트 요약으로 대체)
+  // 요약 + 최근 대화 텍스트를 프롬프트 컨텍스트로 결합 (MCP 편집 체인과 공유 — lib/prompts/chatPrompt.ts)
   const buildConversationContext = useCallback((): string => {
-    const sections: string[] = [];
-
-    if (chatData?.summary) {
-      sections.push(`[이전 대화 요약]\n${chatData.summary}`);
-    }
-
     const startIndex = (chatData?.summarizedUpTo ?? -1) + 1;
-    const messages = (chatData?.messages?.slice(startIndex) ?? []).filter(
-      (m) => m.role !== 'summary' && m.content?.trim()
-    );
-    const recent = messages.slice(-MAX_CONTEXT_TURNS);
-    if (recent.length > 0) {
-      const lines = recent.map((m) => {
-        const role = m.role === 'user' ? '사용자' : 'AI';
-        const imageNote = m.images?.length ? ` [이미지 ${m.images.length}개]` : '';
-        return `${role}: ${m.content}${imageNote}`;
-      });
-      sections.push(`[최근 대화]\n${lines.join('\n')}`);
-    }
-
-    return sections.length > 0
-      ? `${sections.join('\n\n')}\n\n위 대화 맥락을 반영하여 아래 요청을 수행하세요.\n\n---\n\n`
-      : '';
+    return buildChatConversationContext(chatData?.summary, chatData?.messages?.slice(startIndex) ?? []);
   }, [chatData]);
 
   // 직전 생성 이미지를 참조로 복원 (이어지는 편집이 직전 결과를 기준으로 하도록)
@@ -130,37 +84,14 @@ export function useChatImageGeneration(
     const imageSize = settings?.imageSize ?? '1K';
     const imageQuality = settings?.imageQuality ?? 'medium';
 
-    // 스타일 프리셋·그리드는 API 파라미터가 아니라 프롬프트 prefix로 결합하여 전달
-    const prefix = buildSettingsPrefix(settings);
-
-    // v0.4.4: 문서 컨텍스트는 요약 중심으로 주입 (토큰 절약 + 핵심 정보 유지)
-    const documentContext = (userDocuments ?? [])
-      .map((d) => {
-        const summarized = d.summary?.trim();
-        const fallback = d.content?.slice(0, 1500).trim();
-        const coreContent = summarized && summarized.length > 0 ? summarized : fallback;
-        if (!coreContent) return '';
-        return `[첨부 문서 핵심 요약: ${d.fileName}]\n${coreContent}`;
-      })
-      .filter(Boolean)
-      .join('\n\n');
-
+    // 대화 맥락 + 그리드·픽셀 prefix + 문서 요약 + 사용자 메시지 (MCP 편집 체인과 공유)
+    const effectiveUserMessage = composeChatPrompt({
+      conversationContext: buildConversationContext(),
+      settingsPrefix: buildChatSettingsPrefix(settings),
+      userMessage,
+      documents: userDocuments,
+    });
     const documentImages = (userDocuments ?? []).flatMap((d) => d.extractedImages ?? []);
-
-    // 문서만 첨부하고 빈 프롬프트로 전송한 경우 자동 템플릿 사용
-    const trimmed = userMessage.trim();
-    const isDocumentOnly = trimmed.length === 0 && (userDocuments?.length ?? 0) > 0;
-    const basePrompt = isDocumentOnly
-      ? '첨부된 기획 문서를 바탕으로 완성도 높은 모바일 캐주얼 게임의 인게임 이미지를 생성해주세요.'
-      : userMessage;
-
-    const withDocContext = documentContext
-      ? `${documentContext}\n\n---\n\n${basePrompt}`
-      : basePrompt;
-
-    const conversationContext = buildConversationContext();
-    const effectiveUserMessage =
-      conversationContext + (prefix ? prefix + withDocContext : withDocContext);
 
     // 참조 이미지: 직전 생성 이미지(기준 이미지) + 사용자 첨부 + 문서 추출 이미지
     const latestGenerated = await resolveLatestGeneratedImage();
@@ -185,7 +116,7 @@ export function useChatImageGeneration(
       referenceCount: allImages.length,
       pixelArtGrid: settings?.pixelArtGrid,
       pixelArtMode: !!settings?.pixelArtMode,
-      prefixApplied: !!prefix,
+      prefixApplied: !!buildChatSettingsPrefix(settings),
     });
 
     let lastError: Error | null = null;

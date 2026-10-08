@@ -95,6 +95,8 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | 로컬 빌드가 업데이트를 못 받음 / 다운로드 후 재시작 안 됨 | `infra/auto-update.md` |
 | 재시작 시 창 위치 복원 안 됨 / 복원된 창이 화면 밖 | `infra/window.md` |
 | 파일 드롭이 한 컴포넌트에만 감 / 리스너 중복 / prod에 debug 로그 노출 | `infra/window.md` |
+| Claude Code·Codex로 세션 기능 대량 배치 생성 / MCP 도구·비용 견적 / ss-mcp 빌드(Bun)·번들 | `infra/mcp.md` |
+| MCP 등록 버튼이 비활성(ss-mcp 없음) / 앱 업데이트 후 에이전트가 구버전 서버 사용 | `infra/mcp.md` |
 | 로그인 콜백이 앱에 안 돌아옴 / 포트 9528 충돌 | `auth/overview.md` |
 | "loadcomplete.com 사용자만" 거부 / "Invalid state parameter" | `auth/overview.md` |
 | 재시작 후 매번 재로그인 요구 / 로그인 5분 후 자동 실패 | `auth/overview.md` |
@@ -178,6 +180,7 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 | `overview.md` | Tauri 셸 구조·플러그인·권한·빌드/실행·기술 스택 |
 | `auto-update.md` | 인앱 자동 업데이트·업데이터 설정·버전 동기화(3파일+CHANGELOG) |
 | `window.md` | 창 상태 저장/복원·드래그앤드롭 버스(windowDragDropBus)·로거 |
+| `mcp.md` | AI 에이전트용 대량 배치 생성 MCP 서버(ss-mcp, `mcp/` TS·앱 소스 번들) — 도구·그리드 패킹·n·비용 견적·배포(Node 우선/실행 파일 다운로드)·등록·빌드 |
 
 ### auth/ — 인증
 | 파일 | 내용 |
@@ -259,4 +262,6 @@ AI 게임 아트 제작 데스크톱 앱(React 19 + Tauri v2)의 AI 탐색용 �
 - **세션 삭제는 이미지 파일을 즉시 지우지 않는다** — `deleteSessionImages`는 dead code, 폴더 삭제 Ctrl+Z가 세션만 복원하므로 즉시 삭제로 연결 금지. 회수는 앱 시작 시 `imageOrphanCleanup`(시작 스냅샷 기준·24h 경과·알려진 키 형식만 `images/.trash/`로 이동 → 14일 후 영구 삭제, dev는 dry-run). 새 이미지 키는 `{sessionId}-` 접두어를 붙이고 세션 객체에 키를 남길 것 — 접두어 없는 키는 참조가 끊기는 순간 고아가 된다(`tilemap-sheet-*`는 참조 없으면 삭제, 모르는 형식은 보존). 새 접미 형식은 `SESSION_PREFIXED_KEY`에 추가해야 삭제 세션분이 회수된다. → `session/storage.md`
 - **히스토리의 `imageBase64`와 디스크 자동 저장 파일(`~/Downloads/AI_Gen/`)은 독립** — 히스토리 삭제가 파일을 지우지 않음.
 - **`useWindowState()` 는 정의만 있고 호출부 없음** — 창은 `tauri.conf.json`의 `maximized:true`로만 시작.
+- **MCP 서버(`mcp/`)는 앱 소스(`src/`)를 그대로 번들한다** — `sessionPrompts`·`openrouter`·`imageModels`·`pixelate`·분석기를 고치면 MCP 동작도 바뀐다(`npm run mcp:test` 로 확인). 공유 코드에 `console.log`·DOM·Tauri 의존을 새로 넣으면 헤드리스 서버가 깨질 수 있다. 등록되는 실행 파일은 `app_local_data_dir/mcp/` 사본이다. → `infra/mcp.md`
+- **`useImageGenerator` 는 `promptIsFinal` 이면 세션 템플릿을 다시 씌우지 않는다** — 생성 패널이 이미 완성한 프롬프트를 훅이 또 감싸던 이중 래핑(타일맵은 룰타일 프롬프트가 variation 템플릿 안에 통째로)을 2026-10-08 수정. 새 호출부가 완성 프롬프트를 넘기면 반드시 `promptIsFinal: true`. → `generator/image-generation-api.md`
 - **OpenRouter API 키는 `.env`가 아니라 SettingsModal 입력→store 영속.** `.env`의 `VITE_GOOGLE_*`는 OAuth 전용.

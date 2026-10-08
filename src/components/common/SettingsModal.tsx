@@ -4,6 +4,7 @@ import { openPath, openUrl } from '@tauri-apps/plugin-opener';
 import { getVersion } from '@tauri-apps/api/app';
 import { getAiGenRoot } from '../../lib/config/paths';
 import { useAuth } from '../../hooks/useAuth';
+import { McpSettingsSection } from './McpSettingsSection';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -186,6 +187,9 @@ export const SettingsModal = memo(function SettingsModal({
               </button>
             </div>
           </div>
+
+          {/* AI 에이전트 연동 (MCP) */}
+          <McpSettingsSection />
 
           {/* 정보 및 라이선스 (GPL-3.0 §5d 고지) */}
           <div>

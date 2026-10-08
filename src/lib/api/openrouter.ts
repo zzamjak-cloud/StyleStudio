@@ -128,11 +128,27 @@ export interface ImageApiRequest {
   background?: string;
   /** 참조 이미지 data URL 배열 */
   inputReferences?: string[];
+  /**
+   * 한 번에 받을 장수 (gpt-image 계열 1~10, Gemini 계열 1 고정 — `supports.maxImagesPerRequest`).
+   * 같은 프롬프트로 여러 장이 필요할 때 요청 수를 줄이는 비용 레버다. 생략하면 1장.
+   */
+  n?: number;
+  /** 요청 취소·타임아웃 신호 (MCP 배치는 요청당 5분 제한을 건다) */
+  signal?: AbortSignal;
 }
 
 export interface GeneratedImage {
   base64: string;
   mediaType: string;
+}
+
+/** Image API 응답 전체 — `n` 장 결과와 과금 정보(OpenRouter 가 주면) */
+export interface GeneratedImageBatch {
+  images: GeneratedImage[];
+  /** 응답의 `usage` 원본 (cost 등). 제공되지 않으면 undefined */
+  usage?: Record<string, unknown>;
+  /** 응답 id — 과금 조회(`/generation?id=`)에 쓸 수 있다 */
+  id?: string;
 }
 
 /**
@@ -144,6 +160,18 @@ export async function generateImageViaOpenRouter(
   apiKey: string,
   request: ImageApiRequest
 ): Promise<GeneratedImage> {
+  const batch = await generateImagesViaOpenRouter(apiKey, request);
+  return batch.images[0];
+}
+
+/**
+ * OpenRouter Image API 호출 — `n` 장 결과를 모두 돌려준다.
+ * 앱은 `generateImageViaOpenRouter`(첫 장)를, MCP 배치(`mcp/`)는 이 함수를 쓴다.
+ */
+export async function generateImagesViaOpenRouter(
+  apiKey: string,
+  request: ImageApiRequest
+): Promise<GeneratedImageBatch> {
   const cleanApiKey = String(apiKey || '').trim();
   if (!cleanApiKey) {
     throw new Error('API Key가 비어있습니다');
@@ -157,6 +185,7 @@ export async function generateImageViaOpenRouter(
   if (request.resolution) body.resolution = request.resolution;
   if (request.quality) body.quality = request.quality;
   if (request.background) body.background = request.background;
+  if (request.n && request.n > 1) body.n = request.n;
   if (request.inputReferences && request.inputReferences.length > 0) {
     body.input_references = request.inputReferences.map((img) => ({
       type: 'image_url',
@@ -170,6 +199,7 @@ export async function generateImageViaOpenRouter(
     method: 'POST',
     headers: openrouterHeaders(cleanApiKey),
     body: JSON.stringify(body),
+    signal: request.signal,
   });
 
   if (!response.ok) {
@@ -179,15 +209,25 @@ export async function generateImageViaOpenRouter(
   }
 
   const result = await response.json();
-  const first = result?.data?.[0];
-  const b64 = first?.b64_json;
+  const items: unknown[] = Array.isArray(result?.data) ? result.data : [];
+  const images: GeneratedImage[] = [];
+  for (const item of items) {
+    const entry = item as { b64_json?: unknown; media_type?: unknown };
+    if (typeof entry?.b64_json === 'string' && entry.b64_json.length > 0) {
+      images.push({
+        base64: entry.b64_json,
+        mediaType: typeof entry.media_type === 'string' ? entry.media_type : 'image/png',
+      });
+    }
+  }
 
-  if (typeof b64 !== 'string' || b64.length === 0) {
+  if (images.length === 0) {
     throw new Error('OpenRouter 응답에서 이미지 데이터를 찾을 수 없습니다 (b64_json)');
   }
 
   return {
-    base64: b64,
-    mediaType: typeof first.media_type === 'string' ? first.media_type : 'image/png',
+    images,
+    usage: result?.usage && typeof result.usage === 'object' ? result.usage : undefined,
+    id: typeof result?.id === 'string' ? result.id : undefined,
   };
 }
