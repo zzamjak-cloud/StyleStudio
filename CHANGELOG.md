@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-08
+
 ### Added — AI 에이전트 대량 배치 생성 (MCP)
 
 - 로컬에 설치된 **Claude Code(CLI·데스크톱), Codex(CLI·데스크톱), Claude 데스크톱**이 StyleStudio의 세션별 생성 기능으로 이미지를 대량 생성할 수 있습니다. 설정 → **AI 에이전트 연동 (MCP)** 에서 **등록**을 누르고 해당 앱을 재시작하면 됩니다. **StyleStudio 앱이 꺼져 있어도 동작**하며, 앱에 저장된 OpenRouter 키로 과금됩니다.
